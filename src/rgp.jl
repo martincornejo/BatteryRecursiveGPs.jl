@@ -60,7 +60,7 @@ end
 
 
 function inference(p, prior, posterior, X_batch, X_basis)
-    ## All kernelmatrix multiplication can be recomputed or paralellizable
+    ## All kernelmatrix computation can be precomputed or paralellizable
     """
     Performs predict step of the posterior
     # Arguments:
@@ -74,9 +74,10 @@ function inference(p, prior, posterior, X_batch, X_basis)
         - 'posterior' = Predicted posterior of p(g|y1:t-1)
     """
     H = kernelmatrix(p.kernel, X_batch, X_basis) * p.inv_cov_basis # eq.8
-    posterior[:test][:mu] = prior[:test][:mu] + H * (posterior[:basis][:mu] - prior[:basis][:mu]) #eq.6 
 
+    posterior[:test][:mu] = prior[:test][:mu] + H * (posterior[:basis][:mu] - prior[:basis][:mu]) #eq.6 
     R = kernelmatrix(p.kernel, X_batch) - H * kernelmatrix(p.kernel, X_basis, X_batch) #eq.7 
+    println(posterior[:test][:mu])
     posterior[:test][:cov] = R + H * posterior[:basis][:cov] * H' #eq.9
     return posterior, H
 end
@@ -88,7 +89,7 @@ function update(θ, posterior, H, Y_batch)
 
     # Arguments:
        - 'p' = ComponentArray RGP Parameters
-       - 'prior' = ComponentArray of Prior distributions
+       - 'prior' =  of Prior distributions
        - 'posterior' = ComponentArray of Posterior distributions
        - 'y_test' = Matrix (N_batch, D) of batch test points
     
@@ -99,7 +100,6 @@ function update(θ, posterior, H, Y_batch)
     Gk = posterior[:basis][:cov] * H' * inv(posterior[:test][:cov] + θ.std^2 * I(size(Y_batch, 1))) #eq.12
 
     posterior[:basis][:mu] = posterior[:basis][:mu] + Gk * (Y_batch - posterior[:test][:mu]) #eq.10
-
     posterior[:basis][:cov] = posterior[:basis][:cov] - Gk * H * posterior[:basis][:cov] #eq.11
 
     return posterior
@@ -133,7 +133,6 @@ function rgp(X_basis, X_test, Y_test, θ, batch_size, save_data=false)
     X_basis, X_test, Y_test = data_preprocessing(X_basis, X_test, Y_test)
     p, prior, posterior = gp_rgp0(X_basis, batch_size, θ)
     N_test = size(X_test, 1)
-    batch_div = div(N_test, batch_size)
     batch_rem = rem(N_test, batch_size)
 
     for batch_start in 1:batch_size:N_test-batch_rem
@@ -147,16 +146,13 @@ function rgp(X_basis, X_test, Y_test, θ, batch_size, save_data=false)
     end
 
     # Last iteration if batch_size non divisible by N_test
-    if batch_rem != 0
-        prior[:test][:mu] = fill(θ.mu, batch_rem)
-        batch_start = N_test - batch_rem + 1
-        batch_end = N_test
+    batch_start = N_test - batch_rem + 1
+    batch_end = N_test
+    prior[:test][:mu] = fill(θ.mu, batch_rem)
+    X_batch = X_test[batch_start:batch_end]
+    Y_batch = Y_test[batch_start:batch_end]
+    learning_step(p, prior, posterior, X_basis, X_batch, Y_batch, θ)
 
-        X_batch = X_test[batch_start:batch_end]
-        Y_batch = Y_test[batch_start:batch_end]
-
-        learning_step(p, prior, posterior, X_basis, X_batch, Y_batch, θ)
-    end
 
     return p, posterior
 end
@@ -165,7 +161,7 @@ end
 function predict(p, posterior, x_predict)
     ## Paralelizable if needed
     """
-    Does a prediction using a posterior at X_predict
+    Does a prediction using a posterior at X_predict assuming a prior mean 0
     Note: If N_predict high (Ej.: 3000-5000 points), do by batches
     # Arguments:
         - 'posterior' = Posterior distribition with p(g|y_test)
