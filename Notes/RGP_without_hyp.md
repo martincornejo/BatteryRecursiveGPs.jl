@@ -169,7 +169,7 @@ $$
 G^b_t = P^b_{t - 1} H_t  ( H_t P^b_{t - 1}  H^T_t + k(X_t, X_t) - H_t \cdot k(X, X_t) + I \sigma^2)^{-1}
 $$
 
-- Now, one can observe that $P^t{k - 1} = H_t P^b_{t - 1}  H^T_t + k(X_t, X_t) - H_t \cdot k(X, X_t)$:
+- Now, one can observe that $P^t_{k - 1} = H_t P^b_{t - 1}  H^T_t + k(X_t, X_t) - H_t \cdot k(X, X_t)$:
 
 $$
 G^b_t = P^b_{t-1} H_t \cdot (P^t_{t-1} + I \sigma^2)^{-1}
