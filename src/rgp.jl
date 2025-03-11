@@ -1,18 +1,34 @@
+module RecursiveGP
 
-function data_preprocessing(X_basis, X_test, Y_test)
-    """
-    Turns data into appropiate type for Stheno Package and shufles Text points
-    """
-    ## Shuffling data
-    shuffled_index = sample(1:size(X_test, 1), size(X_test, 1); replace=false)
-    X_test = X_test[shuffled_index, :]
-    Y_test = Y_test[shuffled_index, :]
+using LinearAlgebra
+using Distributions
+using KernelFunctions
 
-    return X_basis, X_test, Y_test
+export RecursiveGP
+export predict, update!
+
+# function data_preprocessing(X_basis, X_test, Y_test)
+#     """
+#     Turns data into appropiate type for Stheno Package and shufles Text points
+#     """
+#     ## Shuffling data
+#     shuffled_index = sample(1:size(X_test, 1), size(X_test, 1); replace=false)
+#     X_test = X_test[shuffled_index, :]
+#     Y_test = Y_test[shuffled_index, :]
+
+#     return X_basis, X_test, Y_test
+# end
+
+mutable struct RecursiveGP
+    kernel # -> hyperparameters
+    # mean_function ?
+    basis # mu, cov
+    # inv_cov_basis ?
+    # mean_basis
+    # noise ?
 end
 
-
-function gp_rgp0(X_basis, batch_size, θ)
+function gp_rgp0(X_basis, batch_size, kernel) # mean_function?
     """
     Initializes gaussian process Parameters
     # Arguments:
@@ -24,11 +40,11 @@ function gp_rgp0(X_basis, batch_size, θ)
         - 'posterior' = ComponentArray of Posterior distributions
     """
 
-    kernel = with_lengthscale(SEKernel(), θ.l)
+    # kernel = with_lengthscale(SEKernel(), θ.l)
 
     N_basis = size(X_basis, 1)
 
-    mu_basis = fill(θ.mu, N_basis)
+    mu_basis = fill(θ.mu, N_basis) # TODO: how to initialize? -> from mean function
     mu_test = fill(θ.mu, batch_size)
     cov_basis = kernelmatrix(kernel, X_basis, X_basis)
 
@@ -40,7 +56,7 @@ function gp_rgp0(X_basis, batch_size, θ)
 
     prior = Dict(
         :basis => Dict(:mu => mu_basis, :cov => cov_basis),
-        :test => Dict(:mu => mu_test, :cov => cov_test)
+        :test => Dict(:mu => mu_test, :cov => cov_test) # test not required to be stored
     )
 
     ## Posterior over p(g|y1:t) and  p(gt|y1:t) changes as new data arrives
@@ -48,14 +64,14 @@ function gp_rgp0(X_basis, batch_size, θ)
     posterior = Dict(
         :basis => Dict(:mu => mu_basis, :cov => cov_basis),
         :test => Dict(:mu => mu_test, :cov => cov_test)
-    )
+    ) # TODO: neccessary to initialize?
 
     ## Parameters which are not hypertuned and remain constant
     p = ComponentArray((;
         kernel=kernel,
         inv_cov_basis=inv_cov_basis,
     ))
-    return p, prior, posterior
+    return (; p, prior, posterior)
 end
 
 
@@ -79,7 +95,7 @@ function inference(p, prior, posterior, X_batch, X_basis)
     R = kernelmatrix(p.kernel, X_batch) - H * kernelmatrix(p.kernel, X_basis, X_batch) #eq.7 
     println(posterior[:test][:mu])
     posterior[:test][:cov] = R + H * posterior[:basis][:cov] * H' #eq.9
-    return posterior, H
+    return posterior, H # TODO
 end
 
 
@@ -97,12 +113,14 @@ function update(θ, posterior, H, Y_batch)
         - 'posterior' = Updated posterior of p(g|y1:t)
         - 'H' = Observe-state matrix
     """
+    # (; μ, Σ) = gpr.prior
+
     Gk = posterior[:basis][:cov] * H' * inv(posterior[:test][:cov] + θ.std^2 * I(size(Y_batch, 1))) #eq.12
 
     posterior[:basis][:mu] = posterior[:basis][:mu] + Gk * (Y_batch - posterior[:test][:mu]) #eq.10
     posterior[:basis][:cov] = posterior[:basis][:cov] - Gk * H * posterior[:basis][:cov] #eq.11
 
-    return posterior
+    # return posterior
 end
 
 function learning_step(p, prior, posterior, X_basis, X_batch, Y_batch, θ)
@@ -113,7 +131,16 @@ function learning_step(p, prior, posterior, X_basis, X_batch, Y_batch, θ)
     posterior, H = inference(p, prior, posterior, X_batch, X_basis)
     posterior = update(θ, posterior, H, Y_batch)
 
-    return posterior
+    # return posterior
+end
+
+function update!(rgp::RecursiveGP, x_test, y_test)
+    return nothing
+end
+
+function predict(rgp, x)
+
+    return y
 end
 
 function rgp(X_basis, X_test, Y_test, θ, batch_size, save_data=false)
@@ -177,5 +204,7 @@ function predict(p, posterior, x_predict)
     C_predict = R + H * posterior[:basis][:cov] * H'
 
     return mu_predict, C_predict
+
+end
 
 end
