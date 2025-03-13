@@ -1,9 +1,9 @@
-module RegressionGP
+module RecursiveGPs
 using LinearAlgebra
 using ComponentArrays
 using KernelFunctions
 
-export RGPModel, rgp_learn, predict
+export RGPModel, learn!, predict
 
 mutable struct RGPModel
     kernel::Kernel
@@ -40,7 +40,7 @@ function inference_step(rgp::RGPModel, H, X_batch)
     )
 end
 
-function update_step(rgp::RGPModel, predict_batch, H, Y_batch)
+function update_step!(rgp::RGPModel, predict_batch, H, Y_batch)
     """
     Update rgp parameters
     """
@@ -52,9 +52,10 @@ function update_step(rgp::RGPModel, predict_batch, H, Y_batch)
     rgp.μ = new_μ
     rgp.Σ = new_Σ
 
+    return
 end
 
-function rgp_learn(rgp::RGPModel, dataLoader)
+function learn!(rgp::RGPModel, X_batch, Y_batch)
     """ 
     Performs RGP learning
     Inputs:
@@ -64,18 +65,15 @@ function rgp_learn(rgp::RGPModel, dataLoader)
     Note:
         - Inference and update steps separable at the moment for future when switch between Hyp or non-Hyp
     """
-    for batch in dataLoader
-        X_batch, Y_batch = batch
 
-        ## Observation matrix
-        H = kernelmatrix(rgp.kernel, X_batch, rgp.X_basis) * rgp.inv_cov
+    ## Observation matrix
+    H = kernelmatrix(rgp.kernel, X_batch, rgp.X_basis) * rgp.inv_cov
 
-        ## Predict value
-        predict_batch = inference_step(rgp, H, X_batch)
+    ## Predict value
+    predict_batch = inference_step(rgp, H, X_batch)
 
-        ## Update model by predicted value error
-        update_step(rgp, predict_batch, H, Y_batch)
-    end
+    ## Update model by predicted value error
+    update_step!(rgp, predict_batch, H, Y_batch)
 
 end
 
@@ -84,8 +82,9 @@ function predict(rgp, X_predict)
     Does a prediction using a posterior at X_predict
     """
     H = kernelmatrix(rgp.kernel, X_predict, rgp.X_basis) * rgp.inv_cov
-    μ_predict, Σ_predict = inference_step(rgp, H, X_predict)
-    return μ_predict, Σ_predict
+    predict_batch = inference_step(rgp, H, X_predict)
+    return predict_batch
 end
+
 end
 
