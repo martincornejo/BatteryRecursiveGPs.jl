@@ -3,7 +3,7 @@
 
 ### Problem setting and notation
 
-In this project a Gaussian Process (GP) is modeled using a set of basis vectors $\{X_b\}$ and updated using a set of data set $\{X_d;Y_d\} = \{x_0, x_1,..., x_k; y_0, y_1,..., x_k\}$.
+In this project a Gaussian Process (GP) is modeled using a set of basis vectors $\{X_b\}$ and updated using a set of data set $\{X_d;Y_d\} = \{x_0, x_1,..., x_t; y_0, y_1,..., y_t\}$.
 
 We define the following GP analysis:
 
@@ -32,13 +32,13 @@ $$
 g^t_k \sim \mathcal{N}(\hat{g}^t_t, P^t_t)
 $$
 
-Finally, for the observed values of the GP and the measurement $y_k$ is defined as:
+Finally, for the observed values of the GP and the measurement $y_t$ is defined as:
 
 $$
 y^t = g^t_t + v, \quad v \sim \mathcal{N}(0, \sigma^2)
 $$
 
-With this setting, a Kalman filter update is derived for $g$ with the intermediate variable $g_k$.
+With this setting, a Kalman filter update is derived for $g$ with the intermediate variable $g_t$.
 
 ## Kalman Filter: Derivation state-observe matrix
 
@@ -92,7 +92,7 @@ $$
 From the derivation above one can infer the prediction step. On which $g^{t}\_{t-1}$ is the equivalent of $x\_{t | t-1}$.
 
 $$
-g^{t}_{t-1} = H_t \cdot g^{b}\_{t-1} + w_k
+g^{t}_{t-1} = H_t \cdot g^{b}\_{t-1} + w_t
 $$
 
 $$
@@ -144,10 +144,10 @@ $$
 
 Following above, for $g^t$ one can observe that its observation matrix $H$ is the identity and measurement noise $R^t = I\sigma^2$. Thus:
 
-- Gain Matrix $G^t_k$
+- Gain Matrix $G^t_t$
 
 $$
-G^t_k = P^t_{t - 1} I  ( I P^b_{t - 1}  I^T + I\sigma^2)^{-1} = P^{t - 1} ( P^t_{t - 1}  + I\sigma^2)^{-1}
+G^t_t = P^t_{t - 1} I  ( I P^b_{t - 1}  I^T + I\sigma^2)^{-1} = P^{t - 1} ( P^t_{t - 1}  + I\sigma^2)^{-1}
 $$
 
 - Update step:
