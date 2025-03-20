@@ -77,7 +77,7 @@ function learn!(rgp::RGPModel, X_batch, Y_batch)
 
 end
 
-function predict(rgp, X_predict)
+function predict(rgp::RGPModel, X_predict)
     """
     Does a prediction using a posterior at X_predict
     """
