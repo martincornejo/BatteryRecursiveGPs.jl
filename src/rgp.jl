@@ -20,7 +20,6 @@ mutable struct RGPModel
         Σ = kernelmatrix(kernel, X_basis)
         prior_μ = mean_function.(X_basis)
         inv_cov = inv(Σ)
-        ## params, kernelc = Flux.destructure(kernel) For future with parameter hypertuning
         new(kernel, σ, X_basis, μ, Σ, prior_μ, inv_cov, mean_function)
     end
 end
@@ -51,7 +50,6 @@ function update_step!(rgp::RGPModel, predict_batch, H, Y_batch)
 
     rgp.μ = new_μ
     rgp.Σ = new_Σ
-
     return
 end
 
@@ -77,12 +75,14 @@ function learn!(rgp::RGPModel, X_batch, Y_batch)
 
 end
 
+
 function predict(rgp::RGPModel, X_predict)
     """
     Does a prediction using a posterior at X_predict
     """
     H = kernelmatrix(rgp.kernel, X_predict, rgp.X_basis) * rgp.inv_cov
     predict_batch = inference_step(rgp, H, X_predict)
+
     return predict_batch
 end
 
