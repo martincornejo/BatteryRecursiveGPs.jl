@@ -1,62 +1,118 @@
-# using Revise
 using Distributions
 using MLUtils: DataLoader
 using LinearAlgebra
-
-using KernelFunctions
+using AbstractGPs
+using CSV
+using DataFrames
 import ComponentArrays: ComponentArray
+using DataInterpolations
 
 using CairoMakie
 using ColorSchemes
 
 include("src/rgp.jl")
+include("src/battModel.jl")
 using .RecursiveGPs
+using .battModel
 
+begin
+    df_p2 = CSV.read("data/profile2.csv", DataFrame)
+    ## Train
+    N_points = size(df_p2)[1]
+    soc_test = df_p2[!, "soc"][1:N_points]
+    i_test = df_p2[!, "i"][1:N_points]
 
-begin # generate training data
-    ## Dummy test
-    limit_test = [-8, 8]
-    limit_basis = [-8, 8]
-    step_test = 0.03
-    std_test = 0.01
-    ## Test
-    X_test = collect(limit_test[1]:step_test:limit_test[2])
-    Y_test = sin.(X_test) + rand(Normal(0, std_test), size(X_test)[1])
-    data = DataLoader((x=X_test, y=Y_test), batchsize=9, shuffle=true)
+    v_test = df_p2[!, "v"][1:N_points]
+    batch_size = 1
+    data = DataLoader((
+            x=(
+                soc=soc_test,
+                i=i_test
+            ),
+            y=v_test
+        ),
+        batchsize=batch_size, shuffle=false
+    )
 end
 
-begin # create RGP
-    limit_basis = [-10, 10]
-    step_basis = 0.7
-    X_basis = collect(limit_test[1]:step_basis:limit_test[2])
-    σ = 0.01
+begin
+    ## Building GPs
+    l_ocv = 0.2
+    σ_ocv = 0.1
 
-    kernel = 2 * with_lengthscale(SEKernel(), 1)
-    rgp = RGPModel(kernel, σ, X_basis)
+    l_r = 0.2
+    σ_r = 0.1
+
+    σ_f1 = 0.01
+    σ_f2 = 0.00005
+
+
+    limit_basis_ocv = [0, 1]
+    step_basis_ocv = 0.01
+    X_basis_ocv = collect(limit_basis_ocv[1]:step_basis_ocv:limit_basis_ocv[2])
+    n_basis = size(X_basis_ocv)[1]
+    X_basis_r = collect(limit_basis_ocv[1]:step_basis_ocv:limit_basis_ocv[2])
+
+    gp_ocv = gp_ocv = GP(
+        LinearKernel() +
+        σ_ocv * with_lengthscale(SEKernel(), l_ocv)
+    )
+    rgp_ocv = RGPModel(gp_ocv, σ_f1, X_basis_ocv)
+
+    gp_r = GP(σ_r * with_lengthscale(SEKernel(), l_r))
+    rgp_r = RGPModel(gp_r, σ_f2, X_basis_r)
+
+    batt = BATTModel(rgp_ocv, rgp_r)
 end
 
-for batch in data
-    learn!(rgp, batch.x, batch.y)
+begin
+    ##Train
+    for (n, batch) in enumerate(data)
+        battery_learn!(batt, batch)
+    end
 end
 
 
-begin # test regression
-    limit_predict = [-10, 10]
-    step_predict = 0.32
-    X_predict = collect(limit_predict[1]:step_predict:limit_predict[2])
-    Y_predict = sin.(X_predict)
-    (; μ, Σ) = predict(rgp, X_predict)
-    σ = sqrt.(diag(Σ))
+begin
+    ##PLot
+    limit_predict = [0, 1]
+    step_predict = 0.01
 
-    # plot
-    fig = Figure()
-    ax = Axis(fig[1, 1], title="GP updated for sin(x)", xlabel="x", ylabel="y", xticks=limit_predict[1]:1:limit_predict[2])
-    lines!(ax, X_predict, Y_predict, label="sin(x) real")
-    lines!(ax, X_predict, μ, label="sin(x) aprox")
-    lines!(ax, [limit_test[1], limit_test[1]], [-1.5, 1.5], color=:red, linestyle=:dash, label="Outsite test data")
-    lines!(ax, [limit_test[2], limit_test[2]], [-1.5, 1.5], color=:red, linestyle=:dash, label="Outsite test data")
+    X_predict_soc = collect(limit_predict[1]:step_predict:limit_predict[2])
+    rgp_ocv = batt.rgp_ocv
+    rgp_r = batt.rgp_r
 
-    band!(ax, X_predict, μ - 2σ, μ + 2σ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
-    axislegend(ax)
+    μ_ocv = predict(rgp_ocv, X_predict_soc).μ
+    Σ_ocv = predict(rgp_ocv, X_predict_soc).Σ
+    var_ocv = sqrt.(abs.(diag(Σ_ocv)))
+    μ_r = predict(rgp_r, X_predict_soc).μ
+    Σ_r = predict(rgp_r, X_predict_soc).Σ
+    var_r = sqrt.(abs.(diag(Σ_r)))
+
+    V_p = predict(rgp_ocv, soc_test[1:50:end]).μ + i_test[1:50:end] .* predict(rgp_r, soc_test[1:50:end]).μ
+    V_r = v_test[1:50:end]
+    ##  function
+    fig = Figure(size=(1200, 800))
+    ax1 = Axis(fig[1, 1], title="GP updated for ocv l = $(l_ocv), σ =$(σ_ocv), noise = $(σ_f1) ", xlabel="soc", ylabel="ocv", xticks=limit_predict[1]:0.1:limit_predict[2])
+    lines!(ax1, X_predict_soc, μ_ocv, label="OCV aprox")
+    vlines!(ax1, [minimum(soc_test), maximum(soc_test)], color=:red, linestyle=:dash, label="Outsite test data")
+    ylims!(ax1, 3.2, 4.2)
+    band!(ax1, X_predict_soc, μ_ocv - 2var_ocv, μ_ocv + 2var_ocv; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
+
+    ax2 = Axis(fig[2, 1], title="GP updated for R0 l = $(l_r), σ =$(σ_r), noise = $(σ_f2)  ", xlabel="soc", ylabel="R0", xticks=limit_predict[1]:0.1:limit_predict[2])
+    lines!(ax2, X_predict_soc, μ_r, label="R0 aprox")
+    vlines!(ax2, [minimum(soc_test), maximum(soc_test)], color=:red, linestyle=:dash, label="Outsite test data")
+    lines!(ax2, [minimum(soc_test), minimum(soc_test)], [minimum(μ_r), maximum(μ_r)], color=:red, linestyle=:dash, label="Outsite test data")
+    band!(ax2, X_predict_soc, μ_r - 2var_r, μ_r + 2var_r; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
+
+    ylims!(ax2, 0.0004, 0.0013)
+
+    #ax3 = Axis(fig[3,1], title = "SOC histogram", xticks=limit_predict[1]:0.1:limit_predict[2])
+    #hist!(ax3, soc_test; bins = 20, color =:gray)
+    #xlims!(ax3, 0, 1)
+
+
+    #save("pictures/profile2/ocv_parameters/profile2_r_l$(l_ocv)_sigma$(σ_ocv)_noise$(σ_f1)_n_basis_$(n_basis)_batch_size$(batch_size)_new_noise.png", fig)
     display(fig)
 end
+
