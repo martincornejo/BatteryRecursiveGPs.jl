@@ -4,14 +4,13 @@ using LinearAlgebra
 using AbstractGPs
 using CSV
 using DataFrames
-import ComponentArrays: ComponentArray
 using DataInterpolations
-
+using Revise
 using CairoMakie
 using ColorSchemes
 
-include("src/rgp.jl")
-include("src/battModel.jl")
+includet("src/rgp.jl")
+includet("src/battModel.jl")
 using .RecursiveGPs
 using .battModel
 
@@ -35,6 +34,8 @@ begin
     )
 end
 
+
+
 begin
     ## Building GPs
     l_ocv = 0.2
@@ -44,8 +45,8 @@ begin
     σ_r = 0.1
 
     σ_f1 = 0.01
-    σ_f2 = 0.00005
-
+    σ_f2 = 5e-5
+    σ_model = 0.1
 
     limit_basis_ocv = [0, 1]
     step_basis_ocv = 0.01
@@ -62,7 +63,7 @@ begin
     gp_r = GP(σ_r * with_lengthscale(SEKernel(), l_r))
     rgp_r = RGPModel(gp_r, σ_f2, X_basis_r)
 
-    batt = BATTModel(rgp_ocv, rgp_r)
+    batt = BATTModel(rgp_ocv, rgp_r, σ_model)
 end
 
 begin
@@ -112,7 +113,7 @@ begin
     #xlims!(ax3, 0, 1)
 
 
-    #save("pictures/profile2/ocv_parameters/profile2_r_l$(l_ocv)_sigma$(σ_ocv)_noise$(σ_f1)_n_basis_$(n_basis)_batch_size$(batch_size)_new_noise.png", fig)
+    #save("pictures/profile2_r_l$(l_ocv)_sigma$(σ_ocv)_noise$(σ_f1)_n_basis_$(n_basis)_batch_size$(batch_size)_Martin.png", fig)
     display(fig)
 end
 

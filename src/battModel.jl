@@ -15,8 +15,9 @@ mutable struct BATTModel
     rgp_r::RecursiveGPs.RGPModel
     μ::Vector{Float64}
     Σ::Matrix{Float64}
+    σ_model::Float64
 
-    function BATTModel(rgp_ocv, rgp_r)
+    function BATTModel(rgp_ocv, rgp_r, σ_model)
 
         filler = zeros(size(rgp_ocv.Σ, 1), size(rgp_r.Σ, 2))
         μ = [rgp_ocv.μ; rgp_r.μ]
@@ -25,7 +26,7 @@ mutable struct BATTModel
             [filler' rgp_r.Σ]
         )
 
-        new(rgp_ocv, rgp_r, μ, Σ)
+        new(rgp_ocv, rgp_r, μ, Σ, σ_model)
     end
 end
 
@@ -36,7 +37,50 @@ function battery_learn!(batt, batch)
     """
     ## Only update step
     ## Motion model
-    σ_model = 0.1
+    Σ = batt.Σ
+    μ = batt.μ
+
+    ocv = RecursiveGPs.predict(batt.rgp_ocv, batch.x.soc)
+    r0 = RecursiveGPs.predict(batt.rgp_r, batch.x.soc)
+    e = batch.y - (ocv.μ + batch.x.i .* r0.μ)
+
+    H1 = cov(batt.rgp_ocv.gp, batch.x.soc, batt.rgp_ocv.X_basis) * batt.rgp_ocv.inv_cov
+    H2 = batch.x.i .* cov(batt.rgp_r.gp, batch.x.soc, batt.rgp_r.X_basis) * batt.rgp_r.inv_cov
+    H = [H1 H2]
+
+    S = H * Σ * H' + (batch.x.i .^ 2 .* r0.Σ + ocv.Σ .+ batt.σ_model^2) * I(size(batch.y, 1))
+
+    Gk = Σ * H' * inv(S)
+
+    new_μ = μ + Gk * (e)
+    new_Σ = Σ - Gk * H * Σ
+
+    ## Updating model
+    size_ocv = size(batt.rgp_ocv.μ)[1]
+    size_r = size_ocv + 1
+
+    batt.rgp_ocv.μ = new_μ[1:size_ocv]
+    batt.rgp_ocv.Σ = new_Σ[1:size_ocv, 1:size_ocv]
+
+    batt.rgp_r.μ = new_μ[size_r:end]
+    batt.rgp_r.Σ = new_Σ[size_r:end, size_r:end]
+
+    batt.Σ = new_Σ
+    batt.μ = new_μ
+
+
+    return
+end
+
+
+
+function battery_learn_hyp!(batt, batch)
+    """
+    Performs join state estimation of ocv and R0
+    """
+    ## Only update step
+    ## Motion model
+    σ_model = 0.001
     Σ = batt.Σ
     μ = batt.μ
 

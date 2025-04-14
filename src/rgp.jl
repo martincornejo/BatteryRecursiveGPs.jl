@@ -24,12 +24,17 @@ mutable struct RGPModel
     end
 end
 
-function predict(rgp::RGPModel, X_batch)
+function predict(rgp::RGPModel, X_batch, train_mode=false)
     """
-    Inference step at batch points
+    Inference step at batch points.
+    Two modes:
+        train_mode = True -> Does not include noise since is already on update step
+        train_mode = False -> Includes GP noise 
     """
     H = cov(rgp.gp, X_batch, rgp.X_basis) * rgp.inv_cov
-    μ_predict = rgp.mean_function.(X_batch) + H * (rgp.μ - rgp.prior_μ) #eq.6 
+
+
+    μ_predict = rgp.mean_function.(X_batch) + H * (rgp.μ - rgp.prior_μ) #eq.6 +
 
     R = cov(rgp.gp, X_batch) - H * cov(rgp.gp, rgp.X_basis, X_batch) #eq.7 
     Σ_predict = R + H * rgp.Σ * H' #eq.9
@@ -67,7 +72,7 @@ function learn!(rgp::RGPModel, X_batch, Y_batch)
         - Inference and update steps separable at the moment for future when switch between Hyp or non-Hyp
     """
 
-    H = cov(rgp.gp, X_batch, rgp.X_basis) * rgp.inv_cov
+    H = cov(rgp.gp, X_batch, rgp.X_basis) * inv(rgp.Σ)
     ## Predict value
     predict_batch = predict(rgp, X_batch)
 
