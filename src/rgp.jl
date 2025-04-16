@@ -11,26 +11,34 @@ mutable struct RGPModel
     X_basis::Vector{Float64}
     μ::Vector{Float64}
     Σ::Matrix{Float64}
+
     prior_μ::Vector{Float64}
     inv_cov::Matrix{Float64}
+    inv_cov_noise::Matrix{Float64} # For testing purposes
+
     mean_function::Function
 
     function RGPModel(gp, σ, X_basis; mean_function::Function=x -> 0.0)
         μ = mean_function.(X_basis)
         Σ = cov(gp, X_basis) + σ^2 * I(size(X_basis, 1))
+        Σ_noise = cov(gp, X_basis) + σ^2 * I(size(X_basis, 1))
         prior_μ = mean_function.(X_basis)
+
         inv_cov = inv(Σ)
-        new(gp, σ, X_basis, μ, Σ, prior_μ, inv_cov, mean_function)
+        inv_cov_noise = inv(Σ_noise)
+
+        new(gp, σ, X_basis, μ, Σ, prior_μ, inv_cov, inv_cov_noise, mean_function)
     end
 end
 
-function predict(rgp::RGPModel, X_batch, train_mode=false)
+function predict(rgp::RGPModel, X_batch)
     """
     Inference step at batch points.
     Two modes:
         train_mode = True -> Does not include noise since is already on update step
         train_mode = False -> Includes GP noise 
     """
+
     H = cov(rgp.gp, X_batch, rgp.X_basis) * rgp.inv_cov
 
 
@@ -38,6 +46,7 @@ function predict(rgp::RGPModel, X_batch, train_mode=false)
 
     R = cov(rgp.gp, X_batch) - H * cov(rgp.gp, rgp.X_basis, X_batch) #eq.7 
     Σ_predict = R + H * rgp.Σ * H' #eq.9
+
 
     return (
         μ=μ_predict,
@@ -72,7 +81,7 @@ function learn!(rgp::RGPModel, X_batch, Y_batch)
         - Inference and update steps separable at the moment for future when switch between Hyp or non-Hyp
     """
 
-    H = cov(rgp.gp, X_batch, rgp.X_basis) * inv(rgp.Σ)
+    H = cov(rgp.gp, X_batch, rgp.X_basis) * rgp.inv_cov
     ## Predict value
     predict_batch = predict(rgp, X_batch)
 
@@ -80,6 +89,8 @@ function learn!(rgp::RGPModel, X_batch, Y_batch)
     update_step!(rgp, predict_batch, H, Y_batch)
 
 end
+
+
 
 
 end

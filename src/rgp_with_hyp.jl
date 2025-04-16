@@ -30,7 +30,7 @@ mutable struct RGPModel_HYP
 
         μ_z = vcat(
             μ,
-            params, ## for non-negative negative values look soluiont (Ej.: Log)
+            params, ## for non-negative negative values look solution (Ej.: Log)
             σ
         )
 
@@ -46,7 +46,7 @@ end
 
 function draw_sigma_points(μ_η, Σ_η)
     """
-    Draws sigma points
+    Draws sigma points by standard method
     """
     N_hyp = size(μ_η, 1)
     n_ηi = 2 * N_hyp + 1
@@ -54,7 +54,7 @@ function draw_sigma_points(μ_η, Σ_η)
     wi = zeros(n_ηi)
 
     wi[1] = 0.5
-    ηi[1, :, :] = μ_η
+    ηi[1, :] = μ_η
     sqrt_cov = real(sqrt(N_hyp / (1 - wi[1]) * Σ_η))
     for i in 1:1:N_hyp
 
@@ -66,6 +66,45 @@ function draw_sigma_points(μ_η, Σ_η)
     end
 
     return ηi, wi
+end
+
+function draw_sigma_points_v2(μ_η, Σ_η)
+    """
+    Draw Sigma points from:
+    Wan, Eric A., and Rudolph Van Der Merwe. "The unscented Kalman filter for nonlinear estimation." 
+    Proceedings of the IEEE 2000 adaptive systems for signal processing, 
+    communications, and control symposium (Cat. No. 00EX373). Ieee, 2000.
+    """
+    ### HYPERPAMETERS
+    α = 1e-3 #Spread of sigma points, set to small value 1e-3
+    β = 2 ## prior knowledge, set as 2 since optimal for Gaussian Distributions
+    𝓀 = 0.0 ## Scaling parameter, set to 0 usually
+
+    N_hyp = size(μ_η, 1)
+    λ = α^2 * (N_hyp + 𝓀) - N_hyp
+
+    n_ηi = 2 * N_hyp + 1
+    ηi = zeros(n_ηi, N_hyp)
+    wm = zeros(n_ηi) # Weight for mean
+    wc = zeros(n_ηi) #Weights for cov
+
+    wm[1] = λ / (N_hyp + λ)
+    wc[1] = wm[1] + (1 - α^2 + β)
+    ηi[:, 1] = μ_η
+    sqrt_cov = cholesky((N_hyp + λ) * Σ_η).L'
+
+    for i in 1:1:N_hyp
+
+        ηi[i+1, :] = μ_η + sqrt_cov[:, i]
+        ηi[i+N_hyp+1, :] = μ_η - sqrt_cov[:, i]
+
+        wm[i+1] = 1 / (2 * (N_hyp + λ))
+        wm[i+N_hyp+1] = 1 / (2 * (N_hyp + λ))
+
+        wc[i+1] = wm[i+1]
+        wc[i+N_hyp+1] = wm[i+N_hyp+1]
+    end
+
 end
 
 function inference_step(rgp, kernel, X_batch)
@@ -236,7 +275,6 @@ function update_step!(rgp, predict_batch, Y_batch)
         [new_un.Σ_u L * new_obs.Σ_o * h],
         [h' * new_obs.Σ_o * L' h' * new_obs.Σ_o * h]
     )
-
 
     new_params = new_z_μ[N_basis+1:end-1]
 
