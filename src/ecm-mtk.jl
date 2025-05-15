@@ -39,7 +39,7 @@ using CairoMakie
         vr ~ i * R0
         ocv ~ focv(soc)
         i ~ fi(t)
-        v ~ ocv + vr + v1 + v2
+        v ~ ocv + vr + v1 #+ v2
     end
 end
 
@@ -64,7 +64,7 @@ begin # create synthetic data
     v = sol[ecm.v]
     s = sol[ecm.soc]
     df_out = DataFrame(time=sol.t, voltage=v, soc=s)
-    CSV.write("output_data_with_rc.csv", df_out)
+    CSV.write("output_data_with_one_rc.csv", df_out)
     # plot  
     lines(sol.t / 3600, v; axis=(; xlabel="Time in h", ylabel="Voltage in V")) |> display
     lines(sol.t / 3600, s; axis=(; xlabel="Time in h", ylabel="SOC in p.u.")) |> display

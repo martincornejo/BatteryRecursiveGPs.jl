@@ -4,7 +4,9 @@ using ComponentArrays
 using AbstractGPs
 
 export RGPModel, learn!, predict
-
+"""
+RGP model 
+"""
 mutable struct RGPModel
     gp::GP
     σ::Float64
@@ -14,24 +16,20 @@ mutable struct RGPModel
 
     prior_μ::Vector{Float64}
     inv_cov::Matrix{Float64}
-    inv_cov_noise::Matrix{Float64} # For testing purposes
-
     mean_function::Function
 
     function RGPModel(gp, σ, X_basis; mean_function::Function=x -> 0.0)
         μ = mean_function.(X_basis)
-        Σ = cov(gp, X_basis) + σ^2 * I(size(X_basis, 1))
-        Σ_noise = cov(gp, X_basis) + σ^2 * I(size(X_basis, 1))
+        Σ = cov(gp, X_basis) + 1e-6 * I
+
         prior_μ = mean_function.(X_basis)
-
         inv_cov = inv(Σ)
-        inv_cov_noise = inv(Σ_noise)
 
-        new(gp, σ, X_basis, μ, Σ, prior_μ, inv_cov, inv_cov_noise, mean_function)
+        new(gp, σ, X_basis, μ, Σ, prior_μ, inv_cov, mean_function)
     end
 end
 
-function predict(rgp::RGPModel, X_batch)
+function predict(rgp::RGPModel, X_batch; train=true)
     """
     Inference step at batch points.
     Two modes:
@@ -47,6 +45,9 @@ function predict(rgp::RGPModel, X_batch)
     R = cov(rgp.gp, X_batch) - H * cov(rgp.gp, rgp.X_basis, X_batch) #eq.7 
     Σ_predict = R + H * rgp.Σ * H' #eq.9
 
+    if train == false
+        Σ_predict += rgp.σ^2 * I
+    end
 
     return (
         μ=μ_predict,
@@ -83,7 +84,7 @@ function learn!(rgp::RGPModel, X_batch, Y_batch)
 
     H = cov(rgp.gp, X_batch, rgp.X_basis) * rgp.inv_cov
     ## Predict value
-    predict_batch = predict(rgp, X_batch)
+    predict_batch = predict(rgp, X_batch, train=true)
 
     ## Update model by predicted value error
     update_step!(rgp, predict_batch, H, Y_batch)

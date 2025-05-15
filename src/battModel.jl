@@ -5,75 +5,142 @@ using LinearAlgebra
 using DataFrames
 using AbstractGPs
 using LinearAlgebra
+using ComponentArrays
 using ..RecursiveGPs
 
 export BATTModel, battery_learn!, battery_learn_rc!
-
+"""
+Battery model and battery model training functions
+    - BATTModel struct: Battery model with 1  rgp ocv, 1 rgp R0 and 1/2 RC, default 1
+    - battery_learn!: Train battery model without RC
+    - battery_learn_rc!: Train battery model with one RC (with 2 RC not implemented yet)
+    - battery_learn_dual_kf!: Train battery model with one RC and RC parameters
+"""
 mutable struct BATTModel
+    """
+    Battery model struct:
+        - Current implementation enables changing noise and RC parameters
+        - Number of RC not tuneable once the struct has been Build
+        - In case no RC parameters/set to false or dummy, or wrong specification one RC is assumed with R = 15e-3 and τ = 60
+    """
 
     rgp_ocv::RecursiveGPs.RGPModel
     rgp_r::RecursiveGPs.RGPModel
     μ::Vector{Float64}
     Σ::Matrix{Float64}
-    σ_model::Float64
-    R1::Float64
-    τ1::Float64
-    R2::Float64
-    τ2::Float64
+
+    μ_params::Vector{Float64}
+    Σ_params::Matrix{Float64}
+
+    model_noise::ComponentArray
+    param_noise::ComponentArray
+
     i::Float64
+    dt::NamedTuple
 
-    function BATTModel(rgp_ocv, rgp_r, σ_model)
+    function BATTModel(
+        rgp_ocv,
+        rgp_r,
+        μ_params,
+        dt
+    )
 
+        ## Checking number of RCs
+        if size(μ_params, 1) == 2
+            N_rc = 1
+        elseif size(μ_params, 1) == 4
+            @warn "2 RC functions not implemented yet: Set first RC only"
+            μ_params = μ_params[1:2]
+            N_rc = 1
+        else
+            @warn "No RC specified or wrong initialization, Set one RC with R = 15e-3 and τ = 60"
+            N_rc = 1
+            μ_params = [15e-4, 60.0]
+        end
+
+        Σ_params = 1e-6 .* I(length(μ_params))
+
+        ## Initializing model
         filler = zeros(size(rgp_ocv.μ, 1), size(rgp_r.μ, 1))
-        filler_rc = zeros(1, size(rgp_ocv.μ, 1) + size(rgp_r.μ, 1))
+        filler_rc = zeros(N_rc, size(rgp_ocv.μ, 1) + size(rgp_r.μ, 1))
 
-        Q_vrc = 10e-6
-        μ = [rgp_ocv.μ; rgp_r.μ; 0; 0]
+        μ = [rgp_ocv.μ; rgp_r.μ; zeros(N_rc)]
 
         Σ = vcat(
-            [rgp_ocv.Σ filler zeros(size(rgp_ocv.Σ, 1), 2)],
-            [filler' rgp_r.Σ zeros(size(rgp_r.Σ, 1), 2)],
-            [filler_rc Q_vrc 0],
-            [filler_rc 0 Q_vrc]
+            [rgp_ocv.Σ filler zeros(size(rgp_ocv.Σ, 1), N_rc)],
+            [filler' rgp_r.Σ zeros(size(rgp_r.Σ, 1), N_rc)],
+            [filler_rc 1e-4 * I(N_rc)],
         )
 
-        ### Temporal Placeholders for PROFILE 2 dataset
-        R1 = 1e-4
-        τ1 = 60.0
-        R2 = 1e-4
-        τ2 = 600.0
-        i = 0.0
+        ### Building Model Noise
+        # w is motion model noise, only affecting RC
+        # v is measurement model noise, affection all
+        N_state = size(μ, 1)
+        N_basis = size(rgp_ocv.μ, 1) + size(rgp_r.μ, 1)
+        N_out = 1
 
-        new(rgp_ocv, rgp_r, μ, Σ, σ_model, R1, τ1, R2, τ2, i)
+        model_noise = ComponentArray(
+            w=ComponentArray(
+                μ=zeros(1, N_state)),
+            Σ=vcat(
+                [zeros(N_basis, N_basis) zeros(N_basis, 1)],
+                [zeros(N_rc, N_basis) 10e-6 .* I(N_rc)],
+            ),
+            v=ComponentArray(
+                μ=zeros(1, N_out),
+                Σ=0.1 .* I(N_out)
+            ),
+        )
+
+        ## Building param_noise
+        w_noise_R = 1e-6
+        w_noise_τ = 1e-4
+
+        param_noise = ComponentArray(
+            w=ComponentArray(
+                μ=zeros(1, N_rc),
+                Σ=kron(
+                    Diagonal(ones(N_rc)),
+                    vcat(
+                        [w_noise_R 0],
+                        [0 w_noise_τ]
+                    )
+                )
+            ),
+            v=ComponentArray(
+                μ=zeros(1, N_out),
+                Σ=1e-3 .* I(N_out)
+            )
+        )
+
+        i = 0.0
+        new(rgp_ocv, rgp_r, μ, Σ, μ_params, Σ_params, model_noise, param_noise, i, dt)
     end
 end
 
 
 
+############ WITH RC
 function inference_step(batt)
-    ts = 10 ## PLaceholder for PROFILE 2 Dataset, to be changed for new data
+    ts = 1## PLaceholder for PROFILE 2 Dataset, to be changed for new data
     N_basis = size(batt.rgp_ocv.X_basis, 1) + size(batt.rgp_ocv.X_basis, 1)
+
+    R1 = batt.μ_params[1]
+    τ1 = batt.μ_params[2]
+
     A_batt = vcat(
         [I(N_basis) zeros(N_basis, 2)],
-        [zeros(1, N_basis) exp(-ts / (batt.τ1)) 0],
-        [zeros(1, N_basis) 0 exp(-ts / (batt.τ2))]
+        [zeros(1, N_basis) exp(-ts / (τ1))],
     )
 
     B_batt = [
         zeros(N_basis);
-        batt.R1 * (1 - exp(-ts / (batt.τ1)));
-        batt.R2 * (1 - exp(-ts / (batt.τ2)))
+        R1 * (1 - exp(-ts / (τ1)))
     ]
-    ## Noise of Motion model set as 10e-6 for Vrc Kalman filter side following Huwey papers
-    Q_batt = vcat(
-        [zeros(N_basis, N_basis) zeros(N_basis, 2)],
-        [zeros(1, N_basis) 10e-6 0],
-        [zeros(1, N_basis) 0 10e-6]
-    )
 
-    μ_predict = A_batt * batt.μ + B_batt * batt.i
-    Σ_predict = A_batt * batt.Σ * A_batt' + Q_batt
 
+    μ_predict = A_batt * batt.μ + B_batt * batt.i + batt.model_noise.w.μ
+    Σ_predict = A_batt * batt.Σ * A_batt' + batt.model_noise.w.Σ
     return (
         μ=μ_predict,
         Σ=Σ_predict,
@@ -81,7 +148,7 @@ function inference_step(batt)
 end
 
 
-function update_step!(batt, batch, μ_predict, Σ_predict)
+function update_step!(batt, batch, μ_predict, Σ_predict, dt)
     """
     Performs join state estimation of ocv and R0
     """
@@ -89,17 +156,28 @@ function update_step!(batt, batch, μ_predict, Σ_predict)
     Σ = Σ_predict
     μ = μ_predict
 
+    ## OCV
     ocv = RecursiveGPs.predict(batt.rgp_ocv, batch.x.soc)
-    r0 = RecursiveGPs.predict(batt.rgp_r, batch.x.soc)
-    e = batch.y - (ocv.μ + batch.x.i .* r0.μ .+ μ[end] .+ μ[end-1])
+    ocv_v = StatsBase.reconstruct(dt.v, ocv.μ)
+    ocv_σ = sqrt.(diag(ocv.Σ))
+    ocv_σ = StatsBase.reconstruct(dt.σ, ocv_σ)[1]
 
-    H_ocv = cov(batt.rgp_ocv.gp, batch.x.soc, batt.rgp_ocv.X_basis) * batt.rgp_ocv.inv_cov
-    H_r0 = batch.x.i .* cov(batt.rgp_r.gp, batch.x.soc, batt.rgp_r.X_basis) * batt.rgp_r.inv_cov
+    ## R0
+    R0 = RecursiveGPs.predict(batt.rgp_r, batch.x.soc)
+    R0_v = StatsBase.reconstruct(dt.v, R0.μ)
+    R0_σ = sqrt.(diag(R0.Σ))
+    R0_σ = StatsBase.reconstruct(dt.σ, R0_σ)[1]
+
+
+    e = batch.y - (ocv_v + batch.x.i .* R0_v .+ μ[end] + batt.model_noise.v.μ)
+
+    H_ocv = dt.v.scale .* cov(batt.rgp_ocv.gp, batch.x.soc, batt.rgp_ocv.X_basis) * batt.rgp_ocv.inv_cov
+    H_r0 = dt.v.scale .* batch.x.i .* cov(batt.rgp_r.gp, batch.x.soc, batt.rgp_r.X_basis) * batt.rgp_r.inv_cov
     H_rc1 = 1
-    H_rc2 = 1
-    H = [H_ocv H_r0 H_rc1 H_rc2]
 
-    S = H * Σ * H' + (batch.x.i .^ 2 .* r0.Σ + ocv.Σ .+ batt.σ_model^2) * I(size(batch.y, 1))
+    H = [H_ocv H_r0 H_rc1]
+
+    S = H * Σ * H' + (batch.x.i .^ 2 .* R0_σ .^ 2 + ocv_σ .^ 2 .+ batt.model_noise.v.Σ) * I(size(batch.y, 1))
 
     Gk = Σ * H' * inv(S)
 
@@ -140,10 +218,80 @@ function battery_learn_rc!(batt, batch)
     Performs join state estimation of ocv, R0, Vrc1, Vrc2
     """
     μ_predict, Σ_predict = inference_step(batt)
-    update_step!(batt, batch, μ_predict, Σ_predict)
+    update_step!(batt, batch, μ_predict, Σ_predict, dt)
+
+    Vrc1 = batt.μ[end-1]
+    Vrc2 = batt.μ[end]
+    return Vrc1, Vrc2
 end
 
 
+####### DUAL KF WITH RC
+
+function predict_params(batt)
+    """
+    Predicts parameters of RC
+    """
+
+    μ_params_predict = batt.μ_params + batt.param_noise.w.μ
+    Σ_params_predict = batt.Σ_params + batt.param_noise.w.Σ
+    return μ_params_predict, Σ_params_predict
+
+end
+
+
+function update_params!(batt, batch, μ_params_predict, Σ_params_predict)
+    """
+    Update parameters of RC
+    """
+    ts = 1
+    R0 = 15e-3
+
+    ocv = RecursiveGPs.predict(batt.rgp_ocv, batch.x.soc)
+    ocv_v = StatsBase.reconstruct(batt.dt.v, ocv.μ)
+
+    e = batch.v - (ocv_v .+ R0 * batch.x.i .+ new_μ[end] + batt.param_noise.v.μ)
+
+    R1 = μ_params_predict[1]
+    τ1 = μ_params_predict[2]
+
+    HR1 = (1 - exp(-ts / (τ1))) * i
+
+    Hτ1 = exp(-ts / τ1) * ts / (τ1^2) * ([old_μ[end]] .- R1 * i)
+
+    H = [HR1 Hτ1]
+
+
+
+
+    S = H * Σ_params_predict * H' + (batt.param_noise.v.Σ) * I(size(batch.v, 1))
+    Gk = Σ_params_predict * H' * inv(S)
+    new_μ_params = μ_params_predict + Gk * (e)
+    new_Σ_params = Σ_params_predict - Gk * H * Σ_params_predict
+
+
+    batt.μ_params = new_μ_params
+    batt.Σ_params = new_Σ_params
+end
+
+
+function battery_learn_dual_kf!(batt, batch, dt)
+    """
+    Performs dual KF of ocv,R0, Vrc1 and RC parameters
+    """
+    ### Updating model
+    μ_predict, Σ_predict = inference_step(batt)
+    update_step!(batt, batch, μ_predict, Σ_predict, dt)
+
+    ## Updating parameters
+    μ_params_predict, Σ_params_predict = predict_params(batt)
+    update_params!(batt, batch, μ_params_predict, Σ_params_predict)
+end
+
+
+
+
+###### WITHOUT RC
 function battery_learn!(batt, batch)
     """
     Performs join state estimation of ocv and R0
@@ -156,13 +304,13 @@ function battery_learn!(batt, batch)
 
     ocv = RecursiveGPs.predict(batt.rgp_ocv, batch.x.soc)
     r0 = RecursiveGPs.predict(batt.rgp_r, batch.x.soc)
-    e = batch.y - (ocv.μ + batch.x.i .* r0.μ)
+    e = batch.y - (ocv.μ + batch.x.i .* r0.μ + batt.model_noise.v.μ)
 
     H1 = cov(batt.rgp_ocv.gp, batch.x.soc, batt.rgp_ocv.X_basis) * batt.rgp_ocv.inv_cov
     H2 = batch.x.i .* cov(batt.rgp_r.gp, batch.x.soc, batt.rgp_r.X_basis) * batt.rgp_r.inv_cov
     H = [H1 H2]
 
-    S = H * Σ * H' + (batch.x.i .^ 2 .* r0.Σ + ocv.Σ .+ batt.σ_model^2) * I(size(batch.y, 1))
+    S = H * Σ * H' + (batch.x.i .^ 2 .* r0.Σ + ocv.Σ .+ batt.model_noise.v.Σ) * I(size(batch.y, 1))
 
     Gk = Σ * H' * inv(S)
 
@@ -185,6 +333,7 @@ function battery_learn!(batt, batch)
 
     return
 end
+
 
 
 end

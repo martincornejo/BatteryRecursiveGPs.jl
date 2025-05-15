@@ -23,5 +23,6 @@ docs/site/
 # environment.
 Manifest.toml
 
-# Ignore pictures
+# Ignore pictures and nature data
 pictures/
+src/residential_project/nature_data
