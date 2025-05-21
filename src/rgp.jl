@@ -16,9 +16,9 @@ mutable struct RGPModel
 
     prior_μ::Vector{Float64}
     inv_cov::Matrix{Float64}
-    mean_function::Function
+    mean_function::Any
 
-    function RGPModel(gp, σ, X_basis; mean_function::Function=x -> 0.0)
+    function RGPModel(gp, σ, X_basis; mean_function=x -> 0.0)
         μ = mean_function.(X_basis)
         Σ = cov(gp, X_basis) + 1e-6 * I
 
