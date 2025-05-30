@@ -10,8 +10,10 @@ using CairoMakie
 using ColorSchemes
 using StatsBase
 using Revise
-includet("../rgp.jl")
-includet("../battModel.jl")
+includet("../battModel/rgp.jl")
+includet("../battModel/battModel.jl")
+includet("../battModel/kf_utils.jl")
+includet("../battModel/kf_core.jl")
 using .RecursiveGPs
 using .battModel
 using JLD2
@@ -26,8 +28,8 @@ function fit_zscore(df)
 end
 
 function normalize_data(df, dt)
-    v = StatsBase.transform(dt.v, df.v)
-    i = StatsBase.transform(dt.i, df.i)
+    v = df.v#StatsBase.transform(dt.v, df.v)
+    i = df.i#StatsBase.transform(dt.i, df.i)
     q = StatsBase.transform(dt.soc, df.q)
     return DataFrame(; df.t, v, i, q)
 end
@@ -98,7 +100,7 @@ end
 # Months of interest
 ### Loading data and all that stuff
 begin
-    load_months = ["01", "02", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+    load_months = ["09"]
     data_yearly = DataFrame()
     for month in load_months
         sys_id = "11"
@@ -134,10 +136,10 @@ end
 ## OCV and R
 begin
 
-    train_months = ["01"]
+    train_months = ["09"]
 
     ## Train percentage per month
-    train = 1.0
+    train = 0.8
 
     ## GP parameters
     n_basis_ocv = 101
@@ -155,8 +157,8 @@ begin
 
 
     fig = Figure(size=(1200, 800))
-    ax1 = Axis(fig[1, 1], title="GP updated for ocv l = $(l_ocv), σ =$(σ_ocv), noise = $(σ_f1) ", xlabel="soc", ylabel="ocv")
-    ax2 = Axis(fig[2, 1], title="GP updated for R0 l = $(l_r), σ =$(σ_r), noise = $(σ_f2) ", xlabel="soc", ylabel="R0")
+    ax1 = CairoMakie.Axis(fig[1, 1], title="GP updated for ocv l = $(l_ocv), σ =$(σ_ocv), noise = $(σ_f1) ", xlabel="soc", ylabel="ocv")
+    ax2 = CairoMakie.Axis(fig[2, 1], title="GP updated for R0 l = $(l_r), σ =$(σ_r), noise = $(σ_f2) ", xlabel="soc", ylabel="R0")
     normal = true
     for month in train_months
         df = data_yearly[(month,)]
@@ -262,7 +264,7 @@ end
 begin
     n_train = 0.8
     sys_id = 11
-    for month in ["04", "05", "06", "07", "08", "09"]
+    for month in ["09"]
         df = data_yearly[(month,)]
         ## Setting up training
         dt = fit_zscore(df)
@@ -278,33 +280,39 @@ begin
         Step_comp = 12
 
         x_total = collect(1:Step_comp:size(df, 1))
+        ocv_train = RecursiveGPs.predict(rgp_ocv, df_train.q[1:Step_comp:end]).μ
+        ocv_train = StatsBase.reconstruct(dt.v, ocv_train)
+        r_train = RecursiveGPs.predict(rgp_ocv, df_train.q[1:Step_comp:end]).μ
+        r_train = StatsBase.reconstruct(dt.σ, ocv_train)
 
-        V_aprox_train = RecursiveGPs.predict(rgp_ocv, df_train.q[1:Step_comp:end])[1] +
-                        df_train.i[1:Step_comp:end] .* RecursiveGPs.predict(rgp_r, df_train.q[1:Step_comp:end])[1]
-        V_aprox_test = RecursiveGPs.predict(rgp_ocv, df_test.q[1:Step_comp:end])[1] +
-                       df_test.i[1:Step_comp:end] .* RecursiveGPs.predict(rgp_r, df_test.q[1:Step_comp:end])[1]
+        ocv_test = RecursiveGPs.predict(rgp_ocv, df_test.q[1:Step_comp:end]).μ
+        ocv_test = StatsBase.reconstruct(dt.v, ocv_test)
+        r_test = RecursiveGPs.predict(rgp_ocv, df_test.q[1:Step_comp:end]).μ
+        r_test = StatsBase.reconstruct(dt.σ, r_test)
+
+
+
+        V_aprox_train = ocv_train + df_train.i[1:Step_comp:end] .* r_train
+        V_aprox_test = ocv_test + df_test.i[1:Step_comp:end] .* r_test
 
         V_real = df.v[1:Step_comp:end]
 
-        if normal == true
-            V_aprox_train = StatsBase.reconstruct(dt.v, V_aprox_train)
-            V_aprox_test = StatsBase.reconstruct(dt.v, V_aprox_test)
-            V_real = StatsBase.reconstruct(dt.v, V_real)
-        end
+
         V_aprox = vcat(
             V_aprox_train,
             V_aprox_test)
-        ## Plooting
+
+        ## Ploting
         fig = Figure(size=(1200, 800))
         x_total = collect(1:Step_comp:size(df, 1))
 
-        ax1 = Axis(fig[1, 1], title="Train data month $(month)")
+        ax1 = CairoMakie.Axis(fig[1, 1], title="Train data month $(month)")
         lines!(ax1, V_aprox, label="V aprox")
         lines!(ax1, V_real, label="V real")
         ylims!(ax1, 3.2, 4.2)
         vlines!(ax1, n_train / Step_comp; color=:red, linestyle=:dash)
 
-        ax2 = Axis(fig[2, 1], title="Error")
+        ax2 = CairoMakie.Axis(fig[2, 1], title="Error")
         lines!(ax2, abs.(V_real - V_aprox), label="Abs error")
         vlines!(ax2, n_train / Step_comp; color=:red, linestyle=:dash)
 

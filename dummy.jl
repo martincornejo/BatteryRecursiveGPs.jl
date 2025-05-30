@@ -9,11 +9,19 @@ using CairoMakie
 using ColorSchemes
 using StatsBase
 using Revise
-includet("src/rgp.jl")
-includet("src/battModel.jl")
+using ComponentArrays
+includet("src/battModel/rgp.jl")
+includet("src/battModel/battModel.jl")
+includet("src/battModel/kf_utils.jl")
+includet("src/battModel/kf_core.jl")
 includet("src/plot/profile2.jl")
 using .RecursiveGPs
 using .battModel
+using .kf_core
+using .kf_utils
+
+
+
 
 function fit_zscore(df)
     v = StatsBase.fit(ZScoreTransform, df.v)
@@ -24,8 +32,8 @@ function fit_zscore(df)
 end
 
 function normalize_data(df, dt)
-    v = StatsBase.transform(dt.v, df.v)
-    i = StatsBase.transform(dt.i, df.i)
+    v = df.v#StatsBase.transform(dt.v, df.v)
+    i = df.i#StatsBase.transform(dt.i, df.i)
     soc = StatsBase.transform(dt.soc, df.soc)
     return DataFrame(; df.t, v, i, soc)
 end
@@ -63,8 +71,7 @@ begin
     ## Normalizing data
     dt = fit_zscore(df)
     df = normalize_data(df, dt)
-    df.v = StatsBase.reconstruct(dt.v, df.v)
-    df.i = StatsBase.reconstruct(dt.i, df.i)
+
 
     ## Generating ocv curve
     df_ocv.soc = StatsBase.transform(dt.soc, df_ocv.soc)
@@ -96,7 +103,6 @@ end
 
 ## Building GP
 begin
-    ## Building GPs
     l_ocv = 0.2
     σ_ocv = 0.1
     l_r = 0.2
@@ -112,10 +118,8 @@ begin
     n_basis = size(X_basis_ocv)[1]
     X_basis_r = collect(limit_basis_ocv[1]:step_basis_ocv:limit_basis_ocv[2])
 
-    if normalize == true
-        X_basis_ocv = StatsBase.transform(dt.soc, X_basis_ocv)
-        X_basis_r = StatsBase.transform(dt.soc, X_basis_r)
-    end
+    X_basis_ocv = StatsBase.transform(dt.soc, X_basis_ocv)
+    X_basis_r = StatsBase.transform(dt.soc, X_basis_r)
 
 
     gp_ocv = gp_ocv = GP(
@@ -124,20 +128,19 @@ begin
     )
 
 
-    mean_function_ocv = x -> focv(x) + rand(Normal(0, 0.01))
-    rgp_ocv = RGPModel(gp_ocv, σ_f1, X_basis_ocv, mean_function=mean_function_ocv)
+    mean_function_ocv = x -> focv(x)
+    rgp_ocv = RGPModel(gp_ocv, σ_f1, X_basis_ocv)
 
     gp_r = GP(σ_r * with_lengthscale(SEKernel(), l_r))
 
     mean_function_r0 = x -> StatsBase.transform(dt.σ, [15e-3])[1]
-    rgp_r = RGPModel(gp_r, σ_f2, X_basis_r, mean_function=mean_function_r0)
+    rgp_r = RGPModel(gp_r, σ_f2, X_basis_r; mean_function=mean_function_r0)
 
 
     #### Building RC
-    μ_params = [40e-3, 40.0]
+    μ_params = [30e-3, 40]
 
-    batt = BATTModel(focv, rgp_r, μ_params, dt, model_R=false)
-
+    batt = BATTModel(rgp_ocv, rgp_r, μ_params, dt, model_R=false)
 end
 
 
@@ -145,10 +148,10 @@ end
 begin
     batt.param_noise.w.Σ = [
         1e-9 0;
-        0 1e-1
+        0 9e-3
     ]
 
-    batt.param_noise.v.Σ = [1e-3]
+    batt.param_noise.v.Σ = [5e-4]
 
     ## Parameter evolution
     param_evo = DataFrame(
@@ -176,7 +179,8 @@ begin
             )
         end
 
-        battery_learn_dual_kf!(batt, batch; model_R=false, adaptive_noise=true)
+        test_battery_learn_dual_kf!(batt, batch; rts=false)
+
     end
 end
 
@@ -205,16 +209,18 @@ begin
 
 
     ## Voltage evolution
-    v = df.v[1:10:N_points]
+    """
+    v = df.v[1:100:N_points]
 
-    ocv_v = RecursiveGPs.predict(rgp_ocv, df.soc[1:10:N_points], train=false)[1]
-    R0_v = RecursiveGPs.predict(rgp_r, df.soc[1:10:N_points], train=false)[1]
-    i = df.i[1:10:N_points]
+    ocv_v = RecursiveGPs.predict(rgp_ocv, df.soc[1:100:N_points], train=false)[1]
+    R0_v = RecursiveGPs.predict(rgp_r, df.soc[1:100:N_points], train=false)[1]
+    i = df.i[1:100:N_points]
     if using_real == true
-        v_aprox = StatsBase.reconstruct(dt.v, focv(df.soc[1:10:N_points])) + 15e-3 * i + param_evo.vrc
+        v_aprox = StatsBase.reconstruct(dt.v, focv(df.soc[1:100:N_points])) + 15e-3 * i + param_evo.vrc
     else
         v_aprox = StatsBase.reconstruct(dt.v, ocv_v) + StatsBase.reconstruct(dt.σ, R0_v) .* i + param_evo.vrc
     end
+    """
 end
 
 
@@ -224,7 +230,7 @@ begin
     fig = Figure(size=(1200, 1200))
 
     # OCV curve
-    ax1 = Axis(fig[1, 1], title="OCV curve", xlabel="SOC", ylabel="V")
+    ax1 = CairoMakie.Axis(fig[1, 1], title="OCV curve", xlabel="SOC", ylabel="V")
     lines!(ax1, collect(limit_predict[1]:step_predict:limit_predict[2]), μ, label="OCV aprox")
     band!(ax1, collect(limit_predict[1]:step_predict:limit_predict[2]), μ - 2σ, μ + 2σ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
     lines!(ax1, collect(limit_predict[1]:step_predict:limit_predict[2]), Y_predict_ocv, label="OCV real")
@@ -234,31 +240,23 @@ begin
     axislegend(ax1)
 
 
-    # R0 Curve
-
-    ax7 = Axis(fig[2, 1], title="R0 curve", xlabel="SOC", ylabel="mOhms")
-    lines!(ax7, collect(limit_predict[1]:step_predict:limit_predict[2]), μ_r, label="R0 aprox")
-    band!(ax7, collect(limit_predict[1]:step_predict:limit_predict[2]), μ_r - 2σ_r, μ_r + 2σ_r; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
-
-    ylims!(ax7, 5e-3, 25e-3)
-    vlines!(ax7, minimum(StatsBase.reconstruct(dt.soc, df.soc[1:N_points])), color=:red, linestyle=:dash)
-    vlines!(ax7, maximum(StatsBase.reconstruct(dt.soc, df.soc[1:N_points])), color=:red, linestyle=:dash)
-    axislegend(ax7)
 
 
     # Parameter evolution curves
-    ax2 = Axis(fig[3, 1], title="Parameter evolution", xlabel="iter", ylabel="R1")
+    ax2 = CairoMakie.Axis(fig[2, 1], title="Parameter evolution", xlabel="iter", ylabel="R1")
     lines!(ax2, getindex.(param_evo.μ, 1))
     ylims!(ax2, 0.0, 50e-3)
-    ax3 = Axis(fig[4, 1], title="Parameter evolution", xlabel="iter", ylabel="τ1")
+    ax3 = CairoMakie.Axis(fig[3, 1], title="Parameter evolution", xlabel="iter", ylabel="τ1")
     lines!(ax3, getindex.(param_evo.μ, 2))
 
     hlines!(ax2, 15e-3, color=:red, linestyle=:dash)
     hlines!(ax3, 60, color=:red, linestyle=:dash)
     ylims!(ax3, 30.0, 80.0)
+    display(fig)
 
 
     # Voltage curve
+    """
     ax4 = Axis(fig[5, 1], title="Voltage", xlabel="iter", ylabel="V")
 
     lines!(ax4, v_aprox, label="Aprox")
@@ -274,9 +272,9 @@ begin
     axislegend(ax5)
 
 
-    #save("pictures/Week_28_04_25/different_noise_synthetic_Sig$(cov_noise)_l$(l_ocv)_sigma$(σ_ocv)_noise$(σ_f1)_R1_$(μ_params_0[1])_τ1_$(μ_params_0[2])_model_noise1e1.png", fig)
-    display(fig)
+    """
 end
+
 
 
 begin
@@ -286,23 +284,17 @@ begin
     wR_Σ = [d.w.Σ[1, 1] for d in param_evo.param_noise]
     wτ_Σ = [d.w.Σ[2, 2] for d in param_evo.param_noise]
 
-    ax1 = Axis(fig[1, 1], title="Parameter evolution", xlabel="iter", ylabel="Estimation noise")
+    ax1 = CairoMakie.Axis(fig[1, 1], title="Parameter evolution", xlabel="iter", ylabel="Estimation noise")
     lines!(ax1, v_Σ)
 
-
-
-    ax2 = Axis(fig[2, 1], title="Parameter evolution", xlabel="iter", ylabel="R1 noise")
+    ax2 = CairoMakie.Axis(fig[2, 1], title="Parameter evolution", xlabel="iter", ylabel="R1 noise")
     lines!(ax2, wR_Σ)
 
-    ax3 = Axis(fig[3, 1], title="Parameter evolution", xlabel="iter", ylabel="τ1 noise")
+    ax3 = CairoMakie.Axis(fig[3, 1], title="Parameter evolution", xlabel="iter", ylabel="τ1 noise")
     lines!(ax3, wτ_Σ)
 
     display(fig)
 end
-begin
-    wR_Σ
-end
-
 
 
 
@@ -313,12 +305,9 @@ end
 begin
     ## normalize_data
     df = CSV.read("data/profile2.csv", DataFrame)
-    normalize = true
 
-    if normalize == true
-        dt = fit_zscore(df)
-        df = normalize_data(df, dt)
-    end
+    dt = fit_zscore(df)
+    df = normalize_data(df, dt)
 
     ## Train
     N_points = size(df)[1]
@@ -357,10 +346,10 @@ begin
     n_basis = size(X_basis_ocv)[1]
     X_basis_r = collect(limit_basis_ocv[1]:step_basis_ocv:limit_basis_ocv[2])
 
-    if normalize == true
-        X_basis_ocv = StatsBase.transform(dt.soc, X_basis_ocv)
-        X_basis_r = StatsBase.transform(dt.soc, X_basis_r)
-    end
+
+    X_basis_ocv = StatsBase.transform(dt.soc, X_basis_ocv)
+    X_basis_r = StatsBase.transform(dt.soc, X_basis_r)
+
 
 
     gp_ocv = gp_ocv = GP(
@@ -380,27 +369,34 @@ begin
     batt = BATTModel(rgp_ocv, rgp_r, μ_params, dt)
 end
 
-begin
-    ##Train
+
+
+@time begin
+
     batt.i = i_test[1]
     Vrc = Vector{Float64}()
     for (n, batch) in enumerate(data)
-        battery_learn!(batt, batch)
+
+        battery_learn!(batt, batch, rts=true)
+
+        if n % 100 == 0
+            for k in collect(99:-1:1)
+                battery_rts_smoother!(batt, k)
+            end
+            empty_rts!(batt.histogram_model)
+            if n > 600
+                break
+            end
+        end
+
+
         #Vrc = push!(Vrc, Vrc1 + Vrc2)
     end
 end
 
-
 begin
     Vrc = false
-    fig = plot_profile2(batt, l_ocv, l_r, σ_f1, σ_f2, Vrc, soc_test; dt=dt, normalize=normalize)
-
-    if normalize == true
-        name = "normalized"
-    else
-        name = "non_normalized"
-    end
-
+    fig = plot_profile2(batt, l_ocv, l_r, σ_f1, σ_f2, Vrc, soc_test, dt)
     #save("pictures/Week_21_04_2025/TESTING_profile2_rc_Basis_vectors_mean_0_l$(l_ocv)_sigma$(σ_ocv)_noise$(σ_f1)_n_basis_$(n_basis)_batch_size$(batch_size)_$(name)_$(batt.R1)_$(batt.τ1)_$(batt.R2)_$(batt.τ2).png", fig)
 end
 
