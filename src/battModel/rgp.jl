@@ -14,18 +14,18 @@ mutable struct RGPModel
     μ::Vector{Float64}
     Σ::Matrix{Float64}
 
+    # Fixed
     prior_μ::Vector{Float64}
     inv_cov::Matrix{Float64}
-    mean_function::Any
 
-    function RGPModel(gp, σ, X_basis; mean_function=x -> 0.0)
-        μ = mean_function.(X_basis)
+    function RGPModel(gp, σ, X_basis)
+        μ = mean_vector(gp.mean, X_basis)
         Σ = cov(gp, X_basis) + 1e-6 * I
 
-        prior_μ = mean_function.(X_basis)
+        prior_μ = μ
         inv_cov = inv(Σ)
 
-        new(gp, σ, X_basis, μ, Σ, prior_μ, inv_cov, mean_function)
+        new(gp, σ, X_basis, μ, Σ, prior_μ, inv_cov)
     end
 end
 
@@ -40,7 +40,7 @@ function predict(rgp::RGPModel, X_batch; train=true)
     H = cov(rgp.gp, X_batch, rgp.X_basis) * rgp.inv_cov
 
 
-    μ_predict = rgp.mean_function.(X_batch) + H * (rgp.μ - rgp.prior_μ) #eq.6 +
+    μ_predict = mean_vector(rgp.gp.mean, X_batch) + H * (rgp.μ - rgp.prior_μ) #eq.6 +
 
     R = cov(rgp.gp, X_batch) - H * cov(rgp.gp, rgp.X_basis, X_batch) #eq.7 
     Σ_predict = R + H * rgp.Σ * H' #eq.9

@@ -122,20 +122,15 @@ begin
     X_basis_r = StatsBase.transform(dt.soc, X_basis_r)
 
 
-    gp_ocv = gp_ocv = GP(
-        LinearKernel() +
-        σ_ocv * with_lengthscale(SEKernel(), l_ocv)
-    )
-
-
-    mean_function_ocv = x -> focv(x)
+    ocv_kernel = LinearKernel() + σ_ocv * with_lengthscale(SEKernel(), l_ocv)
+    gp_ocv = gp_ocv = GP(focv, ocv_kernel)
     rgp_ocv = RGPModel(gp_ocv, σ_f1, X_basis_ocv)
 
-    gp_r = GP(σ_r * with_lengthscale(SEKernel(), l_r))
+    r0_mean = x -> StatsBase.transform(dt.σ, [15e-3])[1]
+    r0_kernel = σ_r * with_lengthscale(SEKernel(), l_r)
+    gp_r = GP(r0_mean, r0_kernel)
 
-    mean_function_r0 = x -> StatsBase.transform(dt.σ, [15e-3])[1]
-    rgp_r = RGPModel(gp_r, σ_f2, X_basis_r; mean_function=mean_function_r0)
-
+    rgp_r = RGPModel(gp_r, σ_f2, X_basis_r)
 
     #### Building RC
     μ_params = [30e-3, 40]
