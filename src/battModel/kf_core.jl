@@ -10,7 +10,8 @@ using ..kf_utils
 using ..battModel
 
 export battery_learn!, battery_learn_rc!, battery_learn_dual_kf!, RTS_Storage, push_rts!, empty_rts!,
-    battery_rts_smoother!, battery_params_rts_smoother, test_battery_learn_dual_kf!, test_battery_learn_rc!
+    battery_rts_smoother!, battery_params_rts_smoother, test_battery_learn_dual_kf!, test_battery_learn_rc!,
+    battery_learn_join_kf!
 ###### With GP OcV and R
 
 
@@ -70,7 +71,7 @@ function battery_learn_dual_kf!(batt, batch; adaptive_noise=false, rts=false)
     update_step!(batt, batch, μ_predict, Σ_predict)
 
     ## Kalman filter of parameters
-    μ_params_predict, Σ_params_predict = predict_params(batt)
+    μ_params_predict, Σ_params_predict = params_inference_step(batt)
     Gk, H, e = update_params!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params_predict; model_R=true)
 
     if adaptive_noise == true
@@ -78,7 +79,31 @@ function battery_learn_dual_kf!(batt, batch; adaptive_noise=false, rts=false)
     end
 end
 
+function battery_learn_join_kf!(batt, batch; adaptive_noise=false, rts=false)
+    """
+    Performs single Kf  of ocv, R0, Vrc1 and RC parameters
+    """
+    old_μ = copy(batt.μ)
+    old_i = copy(batt.i)
+    old_Σ_params = copy(batt.Σ_params)
+
+    ## Model Kalman Filter
+    μ_predict, Σ_predict = join_inference_step(batt)
+
+
+    ## Kalman filter
+    update_step_joint_state!(batt, batch, old_μ, old_i, μ_predict, Σ_predict)
+
+
+
+
+end
+
+
 function test_battery_learn_dual_kf!(batt, batch; rts=false)
+    """
+    Testing functions for dataset where R0 is known
+    """
     old_μ = copy(batt.μ)
     old_i = copy(batt.i)
     old_Σ_params = copy(batt.Σ_params)
@@ -88,7 +113,7 @@ function test_battery_learn_dual_kf!(batt, batch; rts=false)
     test_update_step!(batt, batch, μ_predict, Σ_predict)
 
     ## Kalman filter of parameters
-    μ_params_predict, Σ_params_predict = predict_params(batt)
+    μ_params_predict, Σ_params_predict = params_inference_step(batt)
     Gk, H, e = update_params!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params_predict; model_R=false)
 
     if rts
@@ -140,7 +165,10 @@ function battery_rts_smoother!(batt, k)
 
     μ_s = histogram.μ[k] + Gk * (batt.μ - histogram.μ_predict[k+1])
     Σ_s = histogram.Σ[k] + Gk * (batt.Σ - histogram.Σ_predict[k+1]) * Gk'
-    println(batt.μ - histogram.μ_predict[k+1])
+
+
+
+    ### Updating Model
     ocv_start = 1
     ocv_end = size(batt.rgp_ocv.μ)[1]
 
@@ -177,6 +205,7 @@ function battery_params_rts_smoother(batt, k)
     μ_s = histogram.μ[k] + Gk * (batt.μ_params - histogram.μ_predict[k+1])
     Σ_s = histogram.Σ[k] + Gk * (batt.Σ_params - histogram.Σ_predict[k+1]) * Gk'
 
+    ### Updating RC parameters
     batt.μ_params = copy(μ_s)
     batt.Σ_params = copy(Σ_s)
 end

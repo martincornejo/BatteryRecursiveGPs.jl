@@ -9,7 +9,8 @@ using ..RecursiveGPs
 export inference_step, inference_step_R, predict_params,
     update_step!, update_step_R!, update_step_no_rc!,
     update_params!, adaptive_extended_kf!, push_rts!, empty_rts!,
-    test_inference_step, test_update_step!
+    test_inference_step, test_update_step!, update_step_joint_state!,
+    join_inference_step, update_step_joint_state!
 
 
 
@@ -26,18 +27,17 @@ function inference_step(batt)
     R1 = batt.μ_params[1]
     τ1 = batt.μ_params[2]
 
-    A_batt = vcat(
+    A = vcat(
         hcat(I(N_basis), zeros(N_basis, 1)),
         hcat(zeros(1, N_basis), exp(-ts / (τ1))),
     )
 
-    B_batt = vcat(
+    B = vcat(
         zeros(N_basis),
         R1 * (1 - exp(-ts / (τ1)))
     )
 
-    μ_predict = A_batt * batt.μ + B_batt * batt.i + batt.model_noise.w.μ
-    Σ_predict = A_batt * batt.Σ * A_batt' + batt.model_noise.w.Σ
+    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w.μ)
     return (
         μ=μ_predict,
         Σ=Σ_predict,
@@ -49,40 +49,91 @@ function test_inference_step(batt)
     """
     Inference step of Kalman filter with but  R0 exact
     """
-    ts = 1## PLaceholder for PROFILE 2 Dataset, to be changed for new data
+    ts = batt.ts
     N_basis = size(batt.rgp_ocv.X_basis, 1)
 
     R1 = batt.μ_params[1]
     τ1 = batt.μ_params[2]
 
-    A_batt = vcat(
+    A = vcat(
         hcat(I(N_basis), zeros(N_basis, 1)),
         hcat(zeros(1, N_basis), exp(-ts / (τ1))),
     )
 
-    B_batt = vcat(
+    B = vcat(
         zeros(N_basis),
         R1 * (1 - exp(-ts / (τ1)))
     )
 
-    μ_predict = A_batt * batt.μ + B_batt * batt.i + batt.model_noise.w.μ
-    Σ_predict = A_batt * batt.Σ * A_batt' + batt.model_noise.w.Σ
+    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w.μ)
     return (
         μ=μ_predict,
         Σ=Σ_predict,
     )
 end
 
+function join_inference_step(batt)
+    """
+    Inference step for joint state
+    """
+
+    ts = batt.ts
+    N_basis = size(batt.rgp_ocv.μ, 1) + size(batt.rgp_r.μ, 1)
+    N_params = size(batt.μ_params, 1)
+    N_rc = 1
+
+    R1 = batt.μ_params[1]
+    τ1 = batt.μ_params[2]
+
+    A = vcat(
+        hcat(I(N_basis), zeros(N_basis, N_rc), zeros(N_basis, N_params)),
+        hcat(zeros(N_rc, N_basis), exp(-ts / (τ1)), zeros(N_rc, N_params)),
+        hcat(zeros(N_params, N_basis + N_rc), I(N_params))
+    )
+
+    B = vcat(
+        zeros(N_basis),
+        R1 * (1 - exp(-ts / (τ1))),
+        zeros(N_params)
+    )
+
+    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w.μ)
+
+    return (
+        μ=μ_predict,
+        Σ=Σ_predict,
+    )
+
+end
+
+function params_q_inference_step(batt)
+    """
+    Performs parameters estimation with q inference step
+    """
+    ts = batt.ts
+
+    N_params = size(batt.μ, 1)
+
+    A = I
+
+    B = vcat(
+        zeros(N_params, 1),
+        ts
+    )
+
+    μ_params_predict, Σ_params_predict = kf_inference(A, B, batt.μ_params, batt.Σ_params, batt.i, batt.param_noise.w.μ)
+    return μ_params_predict, Σ_params_predict
+end
 
 
 
-function predict_params(batt)
+function params_inference_step(batt)
     """
     Predicts parameters of RC
     """
-
-    μ_params_predict = batt.μ_params + batt.param_noise.w.μ
-    Σ_params_predict = batt.Σ_params + batt.param_noise.w.Σ
+    A = I
+    B = [0.0]
+    μ_params_predict, Σ_params_predict = kf_inference(A, B, batt.μ_params, batt.Σ_params, batt.i, batt.param_noise.w.μ)
     return μ_params_predict, Σ_params_predict
 
 end
@@ -97,8 +148,8 @@ function update_step_no_rc!(batt, batch)
     """
     dt = batt.dt
     N_basis = size(batt.rgp_ocv.μ, 1) + size(batt.rgp_r.μ, 1)
-    Σ = batt.Σ[1:N_basis, 1:N_basis]
-    μ = batt.μ[1:N_basis]
+    Σ_predict = batt.Σ[1:N_basis, 1:N_basis]
+    μ_predict = batt.μ[1:N_basis]
 
     ## OCV
     ocv = RecursiveGPs.predict(batt.rgp_ocv, batch.x.soc)
@@ -118,12 +169,13 @@ function update_step_no_rc!(batt, batch)
 
     H = [H_ocv H_R0]
 
-    S = H * Σ * H' + (batt.model_noise.v.Σ) * I(size(batch.y, 1))
+    S = H * Σ_predict * H' + (batt.model_noise.v.Σ) * I(size(batch.y, 1))
 
-    Gk = Σ * H' * inv(S)
+    Gk = Σ_predict * H' * inv(S)
 
-    new_μ = μ + Gk * (e)
-    new_Σ = Σ - Gk * H * Σ
+    new_μ = μ_predict + Gk * (e)
+    new_Σ = Σ_predict - Gk * H * Σ_predict
+
 
     ## Updating model
     size_ocv = size(batt.rgp_ocv.μ)[1]
@@ -203,13 +255,16 @@ function update_step!(batt, batch, μ_predict, Σ_predict)
 end
 
 
-function correct_update_step!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params_predict)
+function update_step_joint_state!(batt, batch, old_μ, old_i, μ_predict, Σ_predict)
     """
-    This update step, updates teh RC parameters as joint, no need of Voltage really
+    This update step, updates thr RC parameters as joint
     """
-    N_state = size(batt.μ)
-    N_params = size(batt.μ_params)
+    N_state = size(batt.μ, 1)
+    N_params = size(batt.μ_params, 1)
+    N_basis = size(batt.rgp_ocv.μ, 1) + size(batt.rgp_r.μ, 1)
+    N_rc = 1
 
+    ts = batt.ts
     dt = batt.dt
 
     ## OCV
@@ -222,40 +277,35 @@ function correct_update_step!(batt, batch, old_μ, old_i, μ_params_predict, Σ_
     r0_v = StatsBase.reconstruct(dt.σ, r0.μ)
     r0_Σ = r0.Σ .* (dt.σ.scale .^ 2)
 
+    ## RC params
+    R1 = batt.μ_params[end-1]
+    τ1 = batt.μ_params[end]
 
-    e = batch.y - (ocv_v + batch.x.i .* r0_v .+ μ_predict[end] + batt.model_noise.v.μ)
+    ## Building Kalman Filter
+    e = batch.y - (ocv_v + batch.x.i .* r0_v .+ μ_predict[end-N_params] + batt.model_noise.v.μ)
+
+
 
     H_ocv = dt.v.scale .* cov(batt.rgp_ocv.gp, batch.x.soc, batt.rgp_ocv.X_basis) * batt.rgp_ocv.inv_cov
     H_r0 = dt.σ.scale .* batch.x.i .* cov(batt.rgp_r.gp, batch.x.soc, batt.rgp_r.X_basis) * batt.rgp_r.inv_cov
     H_rc1 = 1
     HR1 = (1 - exp(-ts / (τ1))) * old_i
-    Hτ1 = exp(-ts / τ1) * ts / (τ1^2) * ([old_μ[end]] .- R1 * old_i)
+    Hτ1 = exp(-ts / τ1) * ts / (τ1^2) * ([old_μ[end-N_params]] .- R1 * old_i)
 
 
     H = hcat(H_ocv, H_r0, H_rc1, HR1, Hτ1)
-    Σ_kf = vcat(
-        hcat(Σ_predict, zeros(1, size(μ_params_predict, 1))),
-        hcat(zeros(2, size(Σ_predict, 1)), Σ_params_predict)
-    )
 
-    μ_kf = vcat(
-        μ,
-        μ_params_predict)
 
-    S = H * Σ_kf * H' + (batt.model_noise.v.Σ) * I(size(batch.y, 1))
 
-    Gk = Σ_kf * H' * inv(S)
+    S = H * Σ_predict * H' + (batt.model_noise.v.Σ) * I(size(batch.y, 1))
 
-    new_μ_kf = μ_predict + Gk * (e)
-    new_Σ_kf = Σ_kf - Gk * H * Σ_kf
+    Gk = Σ_predict * H' * inv(S)
 
-    new_μ = new_μ_kf[1:N_state]
-    new_μ_params = new_μ_kf[1:N_params]
+    new_μ = μ_predict + Gk * (e)
+    new_Σ = Σ_predict - Gk * H * Σ_predict
 
-    new_Σ = new_Σ_kf[1:N_state, 1:N_state]
-    new_Σ_params = new_Σ_kf[1:N_params, 1:N_params]
 
-    ## Updating model with new parameter
+    ## Updating model
     ocv_start = 1
     ocv_end = size(batt.rgp_ocv.μ)[1]
 
@@ -283,8 +333,10 @@ function correct_update_step!(batt, batch, old_μ, old_i, μ_params_predict, Σ_
 
     batt.μ = new_μ
     batt.Σ = new_Σ
-    batt.μ_params = new_μ_params
-    batt.Σ_params = new_Σ_params
+
+    ## Updating RC parameters
+    batt.μ_params = new_μ[N_basis+N_rc+1:end]
+    batt.Σ_params = new_Σ[N_basis+N_rc+1:end, N_basis+N_rc+1:end]
 
     batt.i = batch.x.i[1]
 end
@@ -330,7 +382,7 @@ function test_update_step!(batt, batch, μ_predict, Σ_predict)
     ]
     ## Updating model with new parameter
 
-    batt.μ = vec(new_μ)
+    batt.μ = new_μ
     batt.Σ = new_Σ
     batt.i = batch.x.i[1]
 
@@ -341,7 +393,7 @@ function update_params!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params
     """
     Update parameters of RC
     """
-    ts = 1
+    ts = batt.ts
     dt = batt.dt
 
     ## OCV
@@ -409,5 +461,85 @@ function adaptive_extended_kf!(batt, batch, old_Σ_params, Gk, H, e; b=0.99)
 
 end
 
+
+
+### Helper functions for repeated code
+
+function kf_inference(A, B, μ, Σ, u, w)
+    """
+    Standard kf inference step assuming
+    """
+    μ_predict = A * μ + B * u + w.μ
+    Σ_predict = A * Σ * A' + w.Σ
+
+    return μ_predict, Σ_predict
 end
 
+
+function kf_update(H, e, μ_predict, Σ_predict, v)
+    """
+    Standard kalman filter update step assuming 
+    """
+    S = H * Σ_predict * H' + (v.Σ) * I(size(v.μ), 1)
+    Gk = Σ_predict * H' * inv(S)
+    new_μ = μ_predict + Gk * (e)
+    new_Σ = Σ_predict - Gk * H * Σ_predict
+    return new_μ, new_Σ
+end
+
+function save_ocv!(batt, new_μ, new_Σ)
+    """
+    Saves the ocv parameters with a new mean and cov
+    Note: For future better batt.μ and batt.Σ and rgp_ocv point to same place
+    """
+    ocv_start = 1
+    ocv_end = size(batt.rgp_ocv.μ)[1]
+
+    batt.rgp_ocv.μ = new_μ[
+        ocv_start:ocv_end
+    ]
+    batt.rgp_ocv.Σ = new_Σ[
+        ocv_start:ocv_end,
+        ocv_start:ocv_end
+    ]
+
+end
+
+function save_r!(batt, new_μ, new_Σ)
+    """
+    Saves the R parameters with a new mean
+    Note: For future better batt.μ and batt.Σ and rgp_r point to same place
+    """
+
+    ocv_end = size(batt.rgp_ocv.μ)[1]
+    r_start = ocv_end + 1
+    r_end = ocv_end + size(batt.rgp_r.μ)[1]
+
+    batt.rgp_r.μ = new_μ[
+        r_start:r_end
+    ]
+    batt.rgp_r.Σ = new_Σ[
+        r_start:r_end,
+        r_start:r_end
+    ]
+
+
+end
+
+function save_params!(batt, new_μ_params)
+    """
+    Save model parameters
+    """
+    batt.μ_params = new_μ_params
+    batt.Σ_params = new_Σ_params
+end
+
+function save_model!(batt, new_μ)
+    """
+    Saves model state
+    """
+    batt.μ = new_μ
+    batt.Σ = new_Σ
+
+end
+end

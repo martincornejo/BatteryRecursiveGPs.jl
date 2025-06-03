@@ -20,7 +20,7 @@ mutable struct RGPModel
 
     function RGPModel(gp, σ, X_basis)
         μ = mean_vector(gp.mean, X_basis)
-        Σ = cov(gp, X_basis) + 1e-6 * I
+        Σ = cov(gp, X_basis) + 1e-6I
 
         prior_μ = μ
         inv_cov = inv(Σ)
