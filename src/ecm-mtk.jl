@@ -39,13 +39,13 @@ using CairoMakie
         vr ~ i * R0
         ocv ~ focv(soc)
         i ~ fi(t)
-        v ~ ocv + vr + v1 + v2
+        v ~ ocv + vr + v1 #+ v2
     end
 end
 
 begin # read OCV look-up-table and current profile
     df_ocv = CSV.File("data/ocv.csv") |> DataFrame
-    focv = LinearInterpolation(df_ocv.ocv, df_ocv.soc, extrapolation=ExtrapolationType.Constant)
+    focv = LinearInterpolation(df_ocv.ocv, df_ocv.soc; extrapolation=ExtrapolationType.Constant)
 
     df = CSV.File("data/profile.csv") |> DataFrame
     fi = ConstantInterpolation(df.i, df.t)
@@ -60,12 +60,14 @@ end
 begin # create synthetic data
     Ts = 1.0 # time sampling
     sol = solve(ode, Tsit5(); saveat=Ts)
-
+    display(sol)
     v = sol[ecm.v]
     s = sol[ecm.soc]
-
-    # plot
+    df_out = DataFrame(time=sol.t, voltage=v, soc=s)
+    CSV.write("output_data_with_one_rc.csv", df_out)
+    # plot  
     lines(sol.t / 3600, v; axis=(; xlabel="Time in h", ylabel="Voltage in V")) |> display
     lines(sol.t / 3600, s; axis=(; xlabel="Time in h", ylabel="SOC in p.u.")) |> display
 end
+
 
