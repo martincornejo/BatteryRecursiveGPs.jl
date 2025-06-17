@@ -3,6 +3,7 @@ using LinearAlgebra
 using ComponentArrays
 using AbstractGPs
 
+
 export RGPModel, learn!, predict
 """
 RGP model 
@@ -39,8 +40,7 @@ function predict(rgp::RGPModel, X_batch; train=true)
 
     H = cov(rgp.gp, X_batch, rgp.X_basis) * rgp.inv_cov
 
-
-    μ_predict = mean_vector(rgp.gp.mean, X_batch) + H * (rgp.μ - rgp.prior_μ) #eq.6 +
+    μ_predict = H * rgp.μ - mean_vector(rgp.gp.mean, X_batch) + H * rgp.prior_μ #eq.6 +
 
     R = cov(rgp.gp, X_batch) - H * cov(rgp.gp, rgp.X_basis, X_batch) #eq.7 
     Σ_predict = R + H * rgp.Σ * H' #eq.9

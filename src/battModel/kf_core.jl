@@ -11,7 +11,7 @@ using ..battModel
 
 export battery_learn!, battery_learn_rc!, battery_learn_dual_kf!, RTS_Storage, push_rts!, empty_rts!,
     battery_rts_smoother!, battery_params_rts_smoother, test_battery_learn_dual_kf!, test_battery_learn_rc!,
-    battery_learn_join_kf!
+    battery_learn_join_kf!, battery_learn_dual_kf2!
 ###### With GP OcV and R
 
 
@@ -48,7 +48,6 @@ function battery_learn_rc!(batt, batch; rts=false)
         push_rts!(batt.histogram_model, μ, Σ, μ_predict, Σ_predict, I)
     end
 end
-
 function test_battery_learn_rc!(batt, batch; rts=false)
     μ_predict, Σ_predict = test_inference_step(batt)
     test_update_step!(batt, batch, μ_predict, Σ_predict)
@@ -79,6 +78,27 @@ function battery_learn_dual_kf!(batt, batch; adaptive_noise=false, rts=false)
     end
 end
 
+function battery_learn_dual_kf2!(batt, batch; adaptive_noise=false, rts=false)
+    """
+    Performs dual KF of ocv,R0, Vrc1 and RC parameters
+    """
+    old_μ = copy(batt.μ)
+    old_i = copy(batt.i)
+    old_Σ_params = copy(batt.Σ_params)
+
+    ## Model Kalman Filter
+    μ_predict, Σ_predict = inference_step2(batt)
+    update_step!(batt, batch, μ_predict, Σ_predict)
+
+    ## Kalman filter of parameters
+    μ_params_predict, Σ_params_predict = params_inference_step(batt)
+    Gk, H, e = update_params2!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params_predict; model_R=true)
+
+    if adaptive_noise == true
+        adaptive_extended_kf!(batt, batch, old_Σ_params, Gk, H, e)
+    end
+end
+
 function battery_learn_join_kf!(batt, batch; adaptive_noise=false, rts=false)
     """
     Performs single Kf  of ocv, R0, Vrc1 and RC parameters
@@ -93,9 +113,6 @@ function battery_learn_join_kf!(batt, batch; adaptive_noise=false, rts=false)
 
     ## Kalman filter
     update_step_joint_state!(batt, batch, old_μ, old_i, μ_predict, Σ_predict)
-
-
-
 
 end
 
@@ -114,7 +131,7 @@ function test_battery_learn_dual_kf!(batt, batch; rts=false)
 
     ## Kalman filter of parameters
     μ_params_predict, Σ_params_predict = params_inference_step(batt)
-    Gk, H, e = update_params!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params_predict; model_R=false)
+    H, e = update_params!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params_predict; model_R=false)
 
     if rts
         push_rts!(

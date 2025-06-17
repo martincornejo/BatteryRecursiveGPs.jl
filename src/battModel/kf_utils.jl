@@ -6,11 +6,11 @@ using ComponentArrays
 using StatsBase
 using ..RecursiveGPs
 
-export inference_step, inference_step_R, predict_params,
+export inference_step, inference_step_R, params_inference_step,
     update_step!, update_step_R!, update_step_no_rc!,
     update_params!, adaptive_extended_kf!, push_rts!, empty_rts!,
     test_inference_step, test_update_step!, update_step_joint_state!,
-    join_inference_step, update_step_joint_state!
+    join_inference_step, update_step_joint_state!, inference_step2, update_params2!
 
 
 
@@ -21,7 +21,7 @@ function inference_step(batt)
     """
     Inference step of Kalman filter with one RC
     """
-    ts = 1## PLaceholder for PROFILE 2 Dataset, to be changed for new data
+    ts = batt.ts ## PLaceholder for PROFILE 2 Dataset, to be changed for new data
     N_basis = size(batt.rgp_ocv.X_basis, 1) + size(batt.rgp_r.X_basis, 1)
 
     R1 = batt.μ_params[1]
@@ -37,13 +37,37 @@ function inference_step(batt)
         R1 * (1 - exp(-ts / (τ1)))
     )
 
-    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w.μ)
+    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w)
     return (
         μ=μ_predict,
         Σ=Σ_predict,
     )
 end
 
+function inference_step2(batt)
+    ts = batt.ts
+    N_basis = size(batt.rgp_ocv.X_basis, 1) + size(batt.rgp_r.X_basis, 1)
+
+    R1 = batt.μ_params[1]
+    C1 = batt.μ_params[2]
+    τ1 = R1 * C1
+
+    A = vcat(
+        hcat(I(N_basis), zeros(N_basis, 1)),
+        hcat(zeros(1, N_basis), exp(-ts / (τ1))),
+    )
+
+    B = vcat(
+        zeros(N_basis),
+        R1 * (1 - exp(-ts / (τ1)))
+    )
+
+    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w)
+    return (
+        μ=μ_predict,
+        Σ=Σ_predict,
+    )
+end
 
 function test_inference_step(batt)
     """
@@ -65,7 +89,7 @@ function test_inference_step(batt)
         R1 * (1 - exp(-ts / (τ1)))
     )
 
-    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w.μ)
+    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w)
     return (
         μ=μ_predict,
         Σ=Σ_predict,
@@ -97,34 +121,13 @@ function join_inference_step(batt)
         zeros(N_params)
     )
 
-    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w.μ)
+    μ_predict, Σ_predict = kf_inference(A, B, batt.μ, batt.Σ, batt.i, batt.model_noise.w)
 
     return (
         μ=μ_predict,
         Σ=Σ_predict,
     )
-
 end
-
-function params_q_inference_step(batt)
-    """
-    Performs parameters estimation with q inference step
-    """
-    ts = batt.ts
-
-    N_params = size(batt.μ, 1)
-
-    A = I
-
-    B = vcat(
-        zeros(N_params, 1),
-        ts
-    )
-
-    μ_params_predict, Σ_params_predict = kf_inference(A, B, batt.μ_params, batt.Σ_params, batt.i, batt.param_noise.w.μ)
-    return μ_params_predict, Σ_params_predict
-end
-
 
 
 function params_inference_step(batt)
@@ -132,8 +135,8 @@ function params_inference_step(batt)
     Predicts parameters of RC
     """
     A = I
-    B = [0.0]
-    μ_params_predict, Σ_params_predict = kf_inference(A, B, batt.μ_params, batt.Σ_params, batt.i, batt.param_noise.w.μ)
+    B = [0.0; 0.0]
+    μ_params_predict, Σ_params_predict = kf_inference(A, B, batt.μ_params, batt.Σ_params, batt.i, batt.param_noise.w)
     return μ_params_predict, Σ_params_predict
 
 end
@@ -168,24 +171,11 @@ function update_step_no_rc!(batt, batch)
     H_R0 = dt.v.scale .* batch.x.i .* cov(batt.rgp_r.gp, batch.x.soc, batt.rgp_r.X_basis) * batt.rgp_r.inv_cov
 
     H = [H_ocv H_R0]
-
-    S = H * Σ_predict * H' + (batt.model_noise.v.Σ) * I(size(batch.y, 1))
-
-    Gk = Σ_predict * H' * inv(S)
-
-    new_μ = μ_predict + Gk * (e)
-    new_Σ = Σ_predict - Gk * H * Σ_predict
-
+    new_μ, new_Σ = kf_update(H, e, μ_predict, Σ_predict, batt.model_noise.v)
 
     ## Updating model
-    size_ocv = size(batt.rgp_ocv.μ)[1]
-    size_r = size_ocv + 1
-
-    batt.rgp_ocv.μ = new_μ[1:size_ocv]
-    batt.rgp_ocv.Σ = new_Σ[1:size_ocv, 1:size_ocv]
-
-    batt.rgp_r.μ = new_μ[size_r:end]
-    batt.rgp_r.Σ = new_Σ[size_r:end, size_r:end]
+    save_ocv!(batt, new_μ, new_Σ)
+    save_r!(batt, new_μ, new_Σ)
 
     batt.Σ[1:N_basis, 1:N_basis] = new_Σ
     batt.μ[1:N_basis] = new_μ
@@ -209,6 +199,7 @@ function update_step!(batt, batch, μ_predict, Σ_predict)
     r0_v = StatsBase.reconstruct(dt.σ, r0.μ)
     r0_Σ = r0.Σ .* (dt.σ.scale .^ 2)
 
+    ## Kalman Filter
     e = batch.y - (ocv_v + batch.x.i .* r0_v .+ μ_predict[end] + batt.model_noise.v.μ)
 
     H_ocv = dt.v.scale .* cov(batt.rgp_ocv.gp, batch.x.soc, batt.rgp_ocv.X_basis) * batt.rgp_ocv.inv_cov
@@ -216,41 +207,13 @@ function update_step!(batt, batch, μ_predict, Σ_predict)
     H_rc1 = 1
 
     H = hcat(H_ocv, H_r0, H_rc1)
-
-    S = H * Σ_predict * H' + (batt.model_noise.v.Σ) * I(size(batch.y, 1))
-
-    Gk = Σ_predict * H' * inv(S)
-
-    new_μ = μ_predict + Gk * (e)
-    new_Σ = Σ_predict - Gk * H * Σ_predict
+    new_μ, new_Σ = kf_update(H, e, μ_predict, Σ_predict, batt.model_noise.v)
 
     ## Updating model with new parameter
-    ocv_start = 1
-    ocv_end = size(batt.rgp_ocv.μ)[1]
-
-    r_start = ocv_end + 1
-    r_end = ocv_end + size(batt.rgp_r.μ)[1]
-
-    batt.rgp_ocv.μ = new_μ[
-        ocv_start:ocv_end
-    ]
-    batt.rgp_ocv.Σ = new_Σ[
-        ocv_start:ocv_end,
-        ocv_start:ocv_end
-    ]
-
-    batt.rgp_r.μ = new_μ[
-        r_start:r_end
-    ]
-    batt.rgp_r.Σ = new_Σ[
-        r_start:r_end,
-        r_start:r_end
-    ]
-
-
-    batt.μ = vec(new_μ)
-    batt.Σ = new_Σ
-    batt.i = batch.x.i[1]
+    save_ocv!(batt, new_μ, new_Σ)
+    save_r!(batt, new_μ, new_Σ)
+    save_model!(batt, new_μ, new_Σ)
+    save_i!(batt, batch.x.i[1])
 
 end
 
@@ -295,39 +258,12 @@ function update_step_joint_state!(batt, batch, old_μ, old_i, μ_predict, Σ_pre
 
     H = hcat(H_ocv, H_r0, H_rc1, HR1, Hτ1)
 
-
-
-    S = H * Σ_predict * H' + (batt.model_noise.v.Σ) * I(size(batch.y, 1))
-
-    Gk = Σ_predict * H' * inv(S)
-
-    new_μ = μ_predict + Gk * (e)
-    new_Σ = Σ_predict - Gk * H * Σ_predict
-
+    new_μ, new_Σ = kf_update(H, e, μ_predict, Σ_predict, batt.model_noise.v)
 
     ## Updating model
-    ocv_start = 1
-    ocv_end = size(batt.rgp_ocv.μ)[1]
 
-    r_start = ocv_end + 1
-    r_end = ocv_end + size(batt.rgp_r.μ)[1]
-
-    batt.rgp_ocv.μ = new_μ[
-        ocv_start:ocv_end
-    ]
-    batt.rgp_ocv.Σ = new_Σ[
-        ocv_start:ocv_end,
-        ocv_start:ocv_end
-    ]
-
-    batt.rgp_r.μ = new_μ[
-        r_start:r_end
-    ]
-    batt.rgp_r.Σ = new_Σ[
-        r_start:r_end,
-        r_start:r_end
-    ]
-
+    save_ocv!(batt, new_μ, new_Σ)
+    save_r!(batt, new_μ, new_Σ)
     N_state = size(batt.μ)
     N_params = size(batt.μ_params)
 
@@ -420,16 +356,52 @@ function update_params!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params
 
     H = hcat(HR1, Hτ1)
 
-
-    S = H * Σ_params_predict * H' + (batt.param_noise.v.Σ) * I(size(batch.y, 1))
+    new_μ_params, new_Σ_params = kf_update(H, e, μ_params_predict, Σ_params_predict, batt.param_noise.v)
+    S = H * Σ_params_predict * H' + (batt.param_noise.v.Σ) * I(size(batt.param_noise.v.μ, 1))
     Gk = Σ_params_predict * H' * inv(S)
-    new_μ_params = μ_params_predict + Gk * (e)
-    new_Σ_params = Σ_params_predict - Gk * H * Σ_params_predict
+
+    save_params!(batt, new_μ_params, new_Σ_params)
+    return Gk, H, e
+end
 
 
-    batt.μ_params = new_μ_params
-    batt.Σ_params = new_Σ_params
+function update_params2!(batt, batch, old_μ, old_i, μ_params_predict, Σ_params_predict; model_R=true)
+    """
+    Update parameters of RC
+    """
+    ts = batt.ts
+    dt = batt.dt
 
+    ## OCV
+    if model_R == true
+        ocv = RecursiveGPs.predict(batt.rgp_ocv, batch.x.soc)
+        ocv_v = ocv.μ
+        r0 = RecursiveGPs.predict(batt.rgp_r, batch.x.soc)
+        r0_v = StatsBase.reconstruct(dt.σ, r0.μ)
+    else
+        ocv_v = RecursiveGPs.predict(batt.rgp_ocv, batch.x.soc).μ
+        r0_v = 15e-3
+    end
+    ocv_v = StatsBase.reconstruct(dt.v, ocv_v)
+
+
+    e = batch.y - (ocv_v .+ r0_v .* batch.x.i .+ batt.μ[end] + batt.param_noise.v.μ)
+
+    R1 = μ_params_predict[1]
+    C1 = μ_params_predict[2]
+
+    HR1 = exp(-ts / (R1 * C1)) * (ts / (R1^2 * C1)) * old_μ[end] + (1 - exp(-ts / (R1 * C1))) * old_i - R1 * exp(-ts / (R1 * C1)) * (ts / (R1^2 * C1)) * old_i
+
+    HC1 = exp(-ts / (R1 * C1)) * (ts / (R1 * C1^2)) * old_μ[end] - R1 * exp(-ts / (R1 * C1)) * (ts / (R1 * C1^2)) * old_i
+
+
+    H = hcat(HR1, HC1)
+
+    new_μ_params, new_Σ_params = kf_update(H, e, μ_params_predict, Σ_params_predict, batt.param_noise.v)
+    S = H * Σ_params_predict * H' + (batt.param_noise.v.Σ) * I(size(batt.param_noise.v.μ, 1))
+    Gk = Σ_params_predict * H' * inv(S)
+
+    save_params!(batt, new_μ_params, new_Σ_params)
     return Gk, H, e
 end
 
@@ -438,11 +410,10 @@ end
 
 
 #### Adaptive noise
-function adaptive_extended_kf!(batt, batch, old_Σ_params, Gk, H, e; b=0.99)
+function adaptive_extended_kf!(batt, batch, old_Σ_params, Gk, H, e; b=0.5)
 
-    d = (1 - b) / (1 - b^(batch.x.t[1] + 1))
+    d = (1 - b)
     A = I
-
 
     new_v = ComponentArray(
         μ=batt.param_noise.v.μ,
@@ -480,7 +451,7 @@ function kf_update(H, e, μ_predict, Σ_predict, v)
     """
     Standard kalman filter update step assuming 
     """
-    S = H * Σ_predict * H' + (v.Σ) * I(size(v.μ), 1)
+    S = H * Σ_predict * H' + (v.Σ) * I(size(v.μ, 1))
     Gk = Σ_predict * H' * inv(S)
     new_μ = μ_predict + Gk * (e)
     new_Σ = Σ_predict - Gk * H * Σ_predict
@@ -526,20 +497,27 @@ function save_r!(batt, new_μ, new_Σ)
 
 end
 
-function save_params!(batt, new_μ_params)
+function save_params!(batt, new_μ_params, new_Σ_params)
     """
     Save model parameters
     """
-    batt.μ_params = new_μ_params
+    batt.μ_params = max.(1e-6, new_μ_params)
     batt.Σ_params = new_Σ_params
 end
 
-function save_model!(batt, new_μ)
+function save_model!(batt, new_μ, new_Σ)
     """
     Saves model state
     """
     batt.μ = new_μ
     batt.Σ = new_Σ
 
+end
+
+function save_i!(batt, i)
+    """
+    Updates the intensity value of batt
+    """
+    batt.i = i
 end
 end
