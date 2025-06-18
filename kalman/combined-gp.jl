@@ -38,7 +38,7 @@ end
 ##
 m1(x) = 0.1 + 0.5 .* x
 kernel1 = 0.02 * with_lengthscale(SEKernel(), 0.1)
-gp1 = GP(m, kernel)
+gp1 = GP(m1, kernel1)
 
 kernel2 = LinearKernel() + 0.02 * with_lengthscale(SEKernel(), 0.1)
 gp2 = GP(kernel2)
