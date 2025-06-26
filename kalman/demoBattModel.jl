@@ -7,17 +7,17 @@ using CSV
 using AbstractGPs
 using DataInterpolations
 using CairoMakie
+using StatsBase
 
 import ComponentArrays: ComponentVector, getaxes, ComponentMatrix
 
 
 
-### Julia style, only functions and only generate_X will be the user function that return all Kalman filter needed parameters
+### Julia style, only functions will be the user function that return all Kalman filter needed parameters
 
 ## Module of RGP
-# NOTE:FOR NORMALIZED RGP THE EQUATIONS CHANGE; FOR SIMPLICITY NOT IMPLEMENTED BUT CAN BE EASILY CHANGED
 begin
-    function generate_RGP(gp, b0)
+    function RGP(gp, b0, σ=1)
         """
         Main function and only functoins user need to know
         """
@@ -25,7 +25,7 @@ begin
         nx = length(b0)
         ny = 1
 
-        p = generate_p_gp(gp, b0)
+        p = generate_p_gp(gp, b0, σ)
         d0 = MvNormal(mean(gp, b0), cov(gp, b0) + 1e-6I)
 
         rgp = (;
@@ -42,7 +42,7 @@ begin
         return rgp
     end
 
-    function generate_p_gp(gp, b0)
+    function generate_p_gp(gp, b0, σ)
         μ = mean(gp, b0)
         Σ = cov(gp, b0) + 1e-6I
         μ0 = μ
@@ -52,17 +52,18 @@ begin
             gp=gp,     # gp (mean + kernel functions)
             b0=b0,      # basis vector
             μ0=μ0,     # ptir of basis vector
-            Σ0⁻¹=Σ0⁻¹,   # inv convariance basis vector
+            Σ0⁻¹=Σ0⁻¹,
+            σ=σ      # inv convariance basis vector
         )
         return p
     end
 
 
     function R2fun_gp(x, u, p, t)
-        (; gp, b0, Σ0⁻¹) = p
+        (; gp, b0, Σ0⁻¹, σ) = p
         b = u.b  ## Each submodule is the one of retrieving its control parameter
         H = cov(gp, b, b0) * Σ0⁻¹
-        return cov(gp, b) - H * cov(gp, b0, b)
+        return σ.scale .^ 2 * (cov(gp, b) - H * cov(gp, b0, b))
     end
 
     function dynamics_gp(x, u, p, t)
@@ -70,29 +71,54 @@ begin
     end
 
     function measurement_gp(x, u, p, t)
-        (; gp, b0, μ0, Σ0⁻¹) = p
+        (; gp, b0, μ0, Σ0⁻¹, σ) = p
 
         g = x
         b = u.b ## Each submodule is the one of retrieving its control parameter
 
         H = cov(gp, b, b0) * Σ0⁻¹
-        mean(gp, b) + H * (g - μ0)
+        ## Denormalizing the measurement))
+
+        return StatsBase.reconstruct(σ, mean(gp, b) + H * (g - μ0))
     end
 end
 
 ## Module of RC
 ## NOTE: FOR SIMPLICITY RC PARAMETERS ARE NOT ADDED TO THE KF; BUT THEY CAN BE EASILY ADDED
 begin
-    function generate_rc(ts, τ, R; σ1=1e-2, σ2=1e-2, d0=MvNormal([0], 1e-4 * I(1)))
+    function RC(ts, τ0, R0; Vrc0=0.0, σ1=sqrt(1e-3), σ2=sqrt(1e-3))
         """
         Main function and only functions user need to know
         """
-        R1 = Diagonal(fill(σ1^2, 1))
-        R2 = Diagonal(fill(σ2^2, 1))
+
+
+        R1 = [
+            1e-3 0 0
+            0 1e-2 0
+            0 0 2e-6
+        ]
+        R2(x, u, p, t) = Diagonal(fill(σ2^2, 1))
         nx = 1
         ny = 1
 
-        p = generate_p_rc(ts, τ, R)
+        x0 = ComponentVector(
+            Vrc=Vrc0,
+            τ=τ0,
+            R=R0
+        )
+
+        Σ0 = false .* x0 * x0'
+        Σ0[:Vrc, :Vrc] = σ1^2
+        Σ0[:τ, :τ] = (60 - τ0)^2
+        Σ0[:R, :R] = (15e-3 - R0)^2
+
+
+        d0 = MvNormal(x0, Σ0)
+
+
+        xid = getaxes(x0)
+        Σid = getaxes(Σ0)
+        p = generate_p_rc(ts, xid, Σid)
 
         rc = (;
             dynamics=dynamics_rc,
@@ -108,25 +134,36 @@ begin
         return rc
     end
 
-    function generate_p_rc(ts, τ, R)
-        p = (;
+    function generate_p_rc(ts, xid, Σid, i=[0.0])
+        p = ComponentVector(;
             ts,
-            τ,
-            R
+            xid,
+            Σid,
+            i
         )
         return p
     end
 
 
     function dynamics_rc(x, u, p, t)
-        (; ts, τ, R) = p
-        i = u.i ## Each submodule is the one of retrieving its control parameter
-        return exp(-ts / τ) * x + i * R * (1 - exp(-ts / τ))
+        (; ts, xid) = p
+        c = ComponentVector(x, xid)
+        i = p.i[1]
+        c.Vrc = exp(-ts / c.τ) * c.Vrc + i * c.R * (1 - exp(-ts / c.τ))
+        c.τ = c.τ
+        c.R = c.R
 
+        p.i = copy(u.i)
+
+
+        return c
     end
 
     function measurement_rc(x, u, p, t)
-        return x
+        (; xid) = p
+        c = ComponentVector(x, xid)
+        Vrc = c.Vrc
+        return Vrc
     end
 
 end
@@ -139,35 +176,32 @@ end
 ### Module of BattModel
 begin
 
-    function generate_BattModel(components_batt, batt_function=nothing)
+
+    function BattModel(components, model)
         """
         Generates the Kalman filter model for the battery
         components_batt: a tuple with the components of the battery
         batt_function: a function that will be used to generate the model-function
         currently not made optimal/a lot of hard coded functions
         """
-        ## d0
-        x0 = ComponentVector(;
-            ocv=mean(components_batt.ocv.d0),
-            r0=mean(components_batt.r0.d0),
-            rc=mean(components_batt.rc.d0)
-        )
+
+
+        component_names = keys(components)
+        x0 = ComponentVector(; (name => mean(components[name].d0) for name in component_names)...)
+
         Σ0 = false .* x0 * x0'
-        Σ0[:ocv, :ocv] = cov(components_batt.ocv.d0)
-        Σ0[:r0, :r0] = cov(components_batt.r0.d0)
-        Σ0[:rc, :rc] = cov(components_batt.rc.d0)
+        R1 = false .* x0 * x0'
+        for name in component_names
+            component = components[name]
+            Σ0[name, name] = cov(component.d0)
+            R1[name, name] = component.R1
+        end
 
         d0 = MvNormal(x0, Σ0)
         xid = getaxes(x0)
         Σid = getaxes(Σ0)
 
-        ## R1
-        R1 = false .* x0 * x0'
-        R1[:ocv, :ocv] = components_batt.ocv.R1
-        R1[:r0, :r0] = components_batt.r0.R1
-        R1[:rc, :rc] = components_batt.rc.R1
-
-        p = generate_p_batt(components_batt, xid, Σid)
+        p = generate_p_batt(components, model, xid, Σid)
 
 
         battModel = (;
@@ -186,17 +220,15 @@ begin
 
 
 
-    function generate_p_batt(components_batt, xid, Σid)
+    function generate_p_batt(components, model, xid, Σid)
         """
         Can be done automatic and easier
         """
-
         p = (;
-            ocv=components_batt.ocv,
-            r0=components_batt.r0,
-            rc=components_batt.rc,
-            xid=xid,
-            Σid=Σid
+            xid=xid,  # axes for state vector
+            Σid=Σid,
+            model=model,  # axes for covariance matrix
+            components=components,  # components of the battery
         )
 
         return p
@@ -205,14 +237,17 @@ begin
 
 
     function R2_batt_fun(x, u, p, t)
-        (; xid, ocv, r0, rc) = p
+        (; xid, components, model) = p
         c = ComponentVector(x, xid)
+        model_coeff = model(c, u, p, t)
 
-        ocvR2 = ocv.R2(c.ocv, u, ocv.p, t)
-        r0R2 = r0.R2(c.r0, u, r0.p, t)
-        rcR2 = rc.R2
+        #### HARD CODED ONE FOR NOW
+        R2 = zeros(1)
 
-        R2 = @. ocvR2 + u[2] * r0R2 + rcR2
+        for name in keys(components)
+            component = components[name]
+            R2 += (model_coeff[name] .^ 2) .* component.R2(c[name], u, component.p, t)
+        end
 
         return R2
     end
@@ -223,28 +258,32 @@ begin
         Calling measurement on all components
         This functions should be automatic
         """
-        (; xid, ocv, r0, rc) = p
+        (; xid, components) = p
         c = ComponentVector(x, xid)
-        c.ocv = ocv.dynamics(c.ocv, u, ocv.p, t)
-        c.r0 = r0.dynamics(c.r0, u, r0.p, t)
-        c.rc = rc.dynamics(c.rc, u, rc.p, t)
-        x = c
-
+        for name in keys(components)
+            component = components[name]
+            c[name] = component.dynamics(c[name], u, component.p, t)
+        end
+        return c
     end
 
     function measurement_batt(x, u, p, t)
         """
         This function should be generated automatically given a model_function
         """
-        (; xid, ocv, r0, rc) = p
+        (; xid, components, model) = p
         c = ComponentVector(x, xid)
+        model_coeff = model(c, u, p, t)
+        v = [0.0]
+        for name in keys(components)
+            component = components[name]
+            coeff = model_coeff[name]
+            v = v .+ coeff .* component.measurement(c[name], u, component.p, t)
+        end
 
-        ocv = ocv.measurement(c.ocv, u, ocv.p, t)
-        r0 = r0.measurement(c.r0, u, r0.p, t)
-        rc = rc.measurement(c.rc, u, rc.p, t)
-
-        x = @. ocv + u.i .* r0 + rc ## This should be a parameter
+        return v
     end
+
 
 end
 
@@ -253,6 +292,7 @@ end
 ######################### Example of usage ##########################
 
 ## Loading data
+
 
 begin
     df_data = CSV.read("data/output_data_with_one_rc.csv", DataFrame)
@@ -270,6 +310,27 @@ begin
         i=fi.(df_data.time),  # interpolated current
         soc=df_data.soc
     )
+
+
+    function fit_zscore(df)
+        v = StatsBase.fit(ZScoreTransform, df.v)
+        σ = StatsBase.fit(ZScoreTransform, df.v, center=false)
+        i = StatsBase.fit(ZScoreTransform, df.i, center=false)
+        soc = StatsBase.fit(ZScoreTransform, df.soc)
+        return (; v, σ, i, soc)
+    end
+
+    function normalize_data(df, dt)
+        v = df.v
+        i = df.i
+        soc = StatsBase.transform(dt.soc, df.soc)
+        return DataFrame(; df.t, v, i, soc)
+    end
+
+
+    dt = fit_zscore(df)
+    df = normalize_data(df, dt)
+
     N_points = size(df, 1)
     data = DataLoader((
             u=(;
@@ -288,26 +349,51 @@ begin
     l_ocv = 0.2
     σ_ocv = 0.1
     b0 = collect(0:0.01:1)  # basis vector for OCV
-    gp_ocv = GP(ZeroMean(), LinearKernel() + σ_ocv * with_lengthscale(SEKernel(), l_ocv))
+    b0 = StatsBase.transform(dt.soc, b0)
+
+    focv_mean = LinearInterpolation(
+        StatsBase.transform(dt.v, df_ocv.ocv),
+        StatsBase.transform(dt.soc, df_ocv.soc);
+        extrapolation=ExtrapolationType.Constant)
+
+    ocv_mean = x -> focv_mean(x)
+    gp_ocv = GP(focv_mean, LinearKernel() + σ_ocv * with_lengthscale(SEKernel(), l_ocv))
+    ocv = RGP(gp_ocv, b0, dt.v)
+
 
     l_r = 0.2
     σ_r = 0.1
-    r0_mean = x -> 15e-3
-    r0_kernel = σ_r * with_lengthscale(SEKernel(), l_r)
-    gp_r0 = GP(r0_mean, r0_kernel)
+    r0_mean = x -> StatsBase.transform(dt.σ, [15e-3])[1]
+    gp_r0 = GP(r0_mean, σ_r * with_lengthscale(SEKernel(), l_r))
+
+
+
+    r0 = RGP(gp_r0, b0, dt.σ)
+
+    rc = RC(1, 40, 30e-3; σ1=1e-3, σ2=1e-3)
 
     components_batt = (;
-        ocv=generate_RGP(gp_ocv, b0),
-        r0=generate_RGP(gp_r0, b0),
-        rc=generate_rc(1, 60, 15e-3)
+        ocv=ocv,
+        r0=r0,
+        rc=rc
     )
 
-    battModel = generate_BattModel(components_batt)
+    model(x, u, p, t) = ComponentVector(;
+        ocv=1,
+        r0=u.i,
+        rc=1
+    )
+
+    battModel = BattModel(components_batt, model)
 end
+
+
+
 
 # Training
 # ExtendedKalmanFilter for testing purposes since is Faster
-begin
+@time begin
+    rc_values = []
     kf = ExtendedKalmanFilter(
         battModel.dynamics,
         battModel.measurement,
@@ -321,10 +407,61 @@ begin
     )
 
     for (n, batch) in enumerate(data)
-        kf(batch.u, batch.y)
+        #kf(batch.u, batch.y)
+        predict!(kf, batch.u)
+        correct!(kf, batch.u, batch.y)
+
+
+
+        x_rc = ComponentVector(kf.x, battModel.p.xid)[:rc]
+        push!(rc_values, (; t=batch.u, rc_values=copy(x_rc)))
     end
 
 
+end
+
+
+
+
+begin
+    V = df.v[1:N_points]
+    x = ComponentVector(kf.x, battModel.p.xid)
+    Σx = ComponentMatrix(kf.R, battModel.p.Σid)
+    u = (b=df.soc, i=df.i)
+    V_ocv = measurement_gp(x[:ocv], u, ocv.p, 0)
+    V_r0 = df.i .* measurement_gp(x[:r0], u, r0.p, 0)
+    V_rc = [entry.rc_values.Vrc for entry in rc_values]
+
+
+    V_aprox = V_ocv + V_r0 + V_rc
+
+
+    fig = Figure(size=(1200, 1200))
+    # OCV curve
+    ax1 = CairoMakie.Axis(fig[1, 1], title="V", xlabel="t", ylabel="V")
+    lines!(ax1, V, label="V real")
+    lines!(ax1, V_aprox, label="V aprox", linestyle=:dash)
+    axislegend(ax1)
+
+
+    # Calculate absolute errors
+    abs_errors = abs.(V - V_aprox)
+
+    # Group into chunks of 100 and calculate MAE for each chunk
+    chunk_size = 100
+    n_chunks = div(length(abs_errors), chunk_size)
+
+    # Calculate MAE for each chunk
+    mae_values = [mean(abs_errors[(i-1)*chunk_size+1:i*chunk_size]) for i in 1:n_chunks]
+
+    # Create time points for plotting (center of each 10-step interval)
+    t_mae = [(i - 1) * chunk_size + chunk_size / 2 for i in 1:n_chunks]
+
+    # Plot MAE every 10 steps
+    ax2 = CairoMakie.Axis(fig[2, 1], title="V error", xlabel="t", ylabel="MAE ($chunk_size steps)")
+    lines!(ax2, t_mae, mae_values, label="V MAE", color=:red)
+    axislegend(ax2)
+    display(fig)
 end
 
 
@@ -335,21 +472,47 @@ begin
     fig = Figure(size=(1200, 1200))
     # OCV curve
     ax1 = CairoMakie.Axis(fig[1, 1], title="OCV curve", xlabel="SOC", ylabel="V")
-    lines!(ax1, b0, x[:ocv], label="OCV aprox")
-    band!(ax1, b0, x[:ocv] - 2sqrt.(diag(Σx[:ocv])), x[:ocv] + 2sqrt.(diag(Σx[:ocv])), ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
-    lines!(ax1, b0, focv(b0), label="OCV real")
-    ylims!(ax1, minimum(focv(b0)), maximum(focv(b0)))
+    lines!(ax1, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.v, x[:ocv]), label="OCV aprox")
+    band!(ax1, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.v, x[:ocv]) - 2sqrt.(diag(dt.v.scale .^ 2 .* Σx[:ocv])), StatsBase.reconstruct(dt.v, x[:ocv]) + 2sqrt.(diag(dt.v.scale .^ 2 .* Σx[:ocv])), ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
+    lines!(ax1, collect(0:0.01:1), focv(collect(0:0.01:1)), label="OCV real")
+    ylims!(ax1, minimum(focv(collect(0:0.01:1))), maximum(focv(collect(0:0.01:1))))
     axislegend(ax1)
 
 
     ax2 = CairoMakie.Axis(fig[2, 1], title="R0 curve", xlabel="SOC", ylabel="V")
-    lines!(ax2, b0, x[:r0], label="R0 aprox")
-    band!(ax2, b0, x[:r0] - 2sqrt.(diag(Σx[:r0])), x[:r0] + 2sqrt.(diag(Σx[:r0])), ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
+    lines!(ax2, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.σ, x[:r0]), label="R0 aprox")
+    band!(ax2, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.σ, x[:r0]) - 2sqrt.(diag(dt.σ.scale .^ 2 .* Σx[:r0])), StatsBase.reconstruct(dt.σ, x[:r0]) + 2sqrt.(diag(dt.σ.scale .^ 2 .* Σx[:r0])), ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
+
     hlines!(ax2, 15e-3, label="R0 real")
-    ylims!(ax2, 0, 30e-3)
+    #ylims!(ax2, 10e-3, 20e-3)
     axislegend(ax2)
     display(fig)
 
 end
+
+
+
+
+begin
+    df_rc = DataFrame(
+        Vrc=[entry.rc_values.Vrc for entry in rc_values],
+        tau=[entry.rc_values.τ for entry in rc_values],
+        R=[entry.rc_values.R for entry in rc_values]
+    )
+    f = Figure(size=(800, 600))
+
+    ax1 = Axis(f[1, 1], title="Vrc over Time", xlabel="Time", ylabel="Vrc [V]")
+    lines!(ax1, df_rc.Vrc)
+
+    ax2 = Axis(f[2, 1], title="τ over Time", xlabel="Time", ylabel="τ [s]")
+    lines!(ax2, df_rc.tau)
+
+    ax3 = Axis(f[3, 1], title="R over Time", xlabel="Time", ylabel="R [Ω]")
+    lines!(ax3, df_rc.R)
+    ylims!(ax3, 10e-3, 20e-3)
+
+    display(f)
+end
+
 
 

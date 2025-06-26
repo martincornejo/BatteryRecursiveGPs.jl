@@ -53,18 +53,21 @@ BattModel is the main Kalman filter, and on it's parameters stores the named tup
             xid=xid
         )
 
-Currently is done hardCoded for easiens to read, but it can be easily updated to be completely automatic in function of a Model (Ej.: How is the battery voltage computed) and all the components of the battery
+Currently is done hardCoded for easiens to read (not anymore), but it can be easily updated to be completely automatic in function of a Model (Ej.: How is the battery voltage computed) and all the components of the battery
 
 The main goal would be to also add a model which will define with ease all the measurement, dynamic, R1 and R2 based on it's components:
 
     - BattModel(components, model)
 
+Currently:
+Currently BattModel dh
+
 ## Improvements
 
 - Make BattModel easily tuneable in functions of the components and a model as input. No need to define by hand measurement, dynamic or R2 computations.
-- Make RGP work with normalization
-- Implement RC parameter tuning kalman filter.
+- Make RGP work with normalization (Done)
+- Implement RC parameter tuning kalman filter. (Done)
 - Make ts on RC a part of the control parameter
-- Make R2 on RC a function
-- Make functions to update in-place and return nothing
+- Make R2 on RC a function (Done)
+- Make functions to update in-place and return nothing 
 - Think is is a good idea so user can components or delete components once a battModel is generated -> Currently not necessary
