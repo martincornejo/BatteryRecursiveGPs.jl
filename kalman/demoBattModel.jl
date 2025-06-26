@@ -78,7 +78,6 @@ begin
 
         H = cov(gp, b, b0) * Σ0⁻¹
         ## Denormalizing the measurement))
-
         return StatsBase.reconstruct(σ, mean(gp, b) + H * (g - μ0))
     end
 end
