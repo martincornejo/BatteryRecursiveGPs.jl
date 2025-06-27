@@ -80,21 +80,23 @@ begin
         ## Denormalizing the measurement))
         return StatsBase.reconstruct(σ, mean(gp, b) + H * (g - μ0))
     end
+
+
 end
 
 ## Module of RC
 ## NOTE: FOR SIMPLICITY RC PARAMETERS ARE NOT ADDED TO THE KF; BUT THEY CAN BE EASILY ADDED
 begin
-    function RC(ts, τ0, R0; Vrc0=0.0, σ1=sqrt(1e-3), σ2=sqrt(1e-3))
+    function RC(ts, τ0, R0; Vrc0=0.0, σ1=sqrt(1e-2), σ2=sqrt(1e-3))
         """
         Main function and only functions user need to know
         """
 
 
         R1 = [
-            1e-3 0 0
-            0 1e-2 0
-            0 0 2e-6
+            1e-2 0 0
+            0 2e-6 0
+            0 0 3e-11
         ]
         R2(x, u, p, t) = Diagonal(fill(σ2^2, 1))
         nx = 1
@@ -110,7 +112,7 @@ begin
         Σ0[:Vrc, :Vrc] = σ1^2
         Σ0[:τ, :τ] = (60 - τ0)^2
         Σ0[:R, :R] = (15e-3 - R0)^2
-
+        Σ0 = Σ0 + 1e-6 * I
 
         d0 = MvNormal(x0, Σ0)
 
@@ -147,12 +149,10 @@ begin
     function dynamics_rc(x, u, p, t)
         (; ts, xid) = p
         c = ComponentVector(x, xid)
-        i = p.i[1]
+        i = u.i[1]
         c.Vrc = exp(-ts / c.τ) * c.Vrc + i * c.R * (1 - exp(-ts / c.τ))
         c.τ = c.τ
         c.R = c.R
-
-        p.i = copy(u.i)
 
 
         return c
@@ -343,44 +343,67 @@ begin
 
 end
 
+
+
 ## Generating model
 begin
     l_ocv = 0.2
-    σ_ocv = 0.1
+    σ_ocv = 0.8
     b0 = collect(0:0.01:1)  # basis vector for OCV
     b0 = StatsBase.transform(dt.soc, b0)
 
     focv_mean = LinearInterpolation(
-        StatsBase.transform(dt.v, df_ocv.ocv),
-        StatsBase.transform(dt.soc, df_ocv.soc);
-        extrapolation=ExtrapolationType.Constant)
+        StatsBase.transform(dt.v, df_ocv.ocv[1:100:end]),
+        StatsBase.transform(dt.soc, df_ocv.soc[1:100:end]);
+        extrapolation=ExtrapolationType.Linear)
 
     ocv_mean = x -> focv_mean(x)
-    gp_ocv = GP(focv_mean, LinearKernel() + σ_ocv * with_lengthscale(SEKernel(), l_ocv))
+    gp_ocv = GP(ZeroMean(), LinearKernel() + σ_ocv * with_lengthscale(SEKernel(), l_ocv))
     ocv = RGP(gp_ocv, b0, dt.v)
 
+    ocv = (;
+        dynamics=ocv.dynamics,
+        measurement=ocv.measurement,
+        R1=ocv.R1,
+        R2=ocv.R2,
+        d0=MvNormal(ocv_mean.(b0), cov(ocv.d0)),
+        nx=ocv.nx,
+        ny=ocv.ny,
+        p=ocv.p
+    )
 
-    l_r = 0.2
-    σ_r = 0.1
+
+    l_r = 1.2
+    σ_r = 0.5
     r0_mean = x -> StatsBase.transform(dt.σ, [15e-3])[1]
-    gp_r0 = GP(r0_mean, σ_r * with_lengthscale(SEKernel(), l_r))
-
-
+    gp_r0 = GP(ZeroMean(), σ_r * with_lengthscale(SEKernel(), l_r))
 
     r0 = RGP(gp_r0, b0, dt.σ)
 
-    rc = RC(1, 40, 30e-3; σ1=1e-3, σ2=1e-3)
+    r0 = (;
+        dynamics=r0.dynamics,
+        measurement=r0.measurement,
+        R1=r0.R1,
+        R2=r0.R2,
+        d0=MvNormal(r0_mean.(b0), cov(r0.d0)),
+        nx=r0.nx,
+        ny=r0.ny,
+        p=r0.p
+    )
+
+    rc1 = RC(1, 40, 15e-3)
+    rc2 = RC(1, 120, 30e-3)
 
     components_batt = (;
         ocv=ocv,
         r0=r0,
-        rc=rc
+        rc1=rc1,
     )
 
     model(x, u, p, t) = ComponentVector(;
         ocv=1,
         r0=u.i,
-        rc=1
+        rc1=1,
     )
 
     battModel = BattModel(components_batt, model)
@@ -406,19 +429,18 @@ end
     )
 
     for (n, batch) in enumerate(data)
-        #kf(batch.u, batch.y)
-        predict!(kf, batch.u)
-        correct!(kf, batch.u, batch.y)
+        kf(batch.u, batch.y)
+        #predict!(kf, batch.u)
+        #correct!(kf, batch.u, batch.y)
 
 
 
-        x_rc = ComponentVector(kf.x, battModel.p.xid)[:rc]
-        push!(rc_values, (; t=batch.u, rc_values=copy(x_rc)))
+        x_rc1 = ComponentVector(kf.x, battModel.p.xid)[:rc1]
+        push!(rc_values, (; t=batch.u, rc1_values=copy(x_rc1)))
     end
 
 
 end
-
 
 
 
@@ -429,10 +451,10 @@ begin
     u = (b=df.soc, i=df.i)
     V_ocv = measurement_gp(x[:ocv], u, ocv.p, 0)
     V_r0 = df.i .* measurement_gp(x[:r0], u, r0.p, 0)
-    V_rc = [entry.rc_values.Vrc for entry in rc_values]
+    V_rc1 = [entry.rc1_values.Vrc for entry in rc_values]
 
 
-    V_aprox = V_ocv + V_r0 + V_rc
+    V_aprox = V_ocv + V_r0 + V_rc1
 
 
     fig = Figure(size=(1200, 1200))
@@ -459,6 +481,7 @@ begin
     # Plot MAE every 10 steps
     ax2 = CairoMakie.Axis(fig[2, 1], title="V error", xlabel="t", ylabel="MAE ($chunk_size steps)")
     lines!(ax2, t_mae, mae_values, label="V MAE", color=:red)
+    ylims!(ax2, 0.0, 0.015)
     axislegend(ax2)
     display(fig)
 end
@@ -469,6 +492,13 @@ begin
     x = ComponentVector(kf.x, battModel.p.xid)
     Σx = ComponentMatrix(kf.R, battModel.p.Σid)
     fig = Figure(size=(1200, 1200))
+
+    bp = StatsBase.transform(dt.soc, collect(0.0:0.015:1))
+    up = (
+        b=bp, i=df.i
+    )
+
+    ocv_values = ocv.measurement(x[:ocv], up, ocv.p, 0)
     # OCV curve
     ax1 = CairoMakie.Axis(fig[1, 1], title="OCV curve", xlabel="SOC", ylabel="V")
     lines!(ax1, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.v, x[:ocv]), label="OCV aprox")
@@ -483,7 +513,7 @@ begin
     band!(ax2, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.σ, x[:r0]) - 2sqrt.(diag(dt.σ.scale .^ 2 .* Σx[:r0])), StatsBase.reconstruct(dt.σ, x[:r0]) + 2sqrt.(diag(dt.σ.scale .^ 2 .* Σx[:r0])), ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
 
     hlines!(ax2, 15e-3, label="R0 real")
-    #ylims!(ax2, 10e-3, 20e-3)
+    ylims!(ax2, 10e-3, 20e-3)
     axislegend(ax2)
     display(fig)
 
@@ -494,9 +524,9 @@ end
 
 begin
     df_rc = DataFrame(
-        Vrc=[entry.rc_values.Vrc for entry in rc_values],
-        tau=[entry.rc_values.τ for entry in rc_values],
-        R=[entry.rc_values.R for entry in rc_values]
+        Vrc=[entry.rc1_values.Vrc for entry in rc_values],
+        tau=[entry.rc1_values.τ for entry in rc_values],
+        R=[entry.rc1_values.R for entry in rc_values]
     )
     f = Figure(size=(800, 600))
 
@@ -508,10 +538,12 @@ begin
 
     ax3 = Axis(f[3, 1], title="R over Time", xlabel="Time", ylabel="R [Ω]")
     lines!(ax3, df_rc.R)
-    ylims!(ax3, 10e-3, 20e-3)
+    #ylims!(ax3, 10e-3, 20e-3)
 
     display(f)
 end
+
+
 
 
 
