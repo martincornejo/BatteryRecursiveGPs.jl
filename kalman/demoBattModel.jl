@@ -8,6 +8,7 @@ using AbstractGPs
 using DataInterpolations
 using CairoMakie
 using StatsBase
+using BenchmarkTools
 
 import ComponentArrays: ComponentVector, getaxes, ComponentMatrix
 
@@ -87,17 +88,13 @@ end
 ## Module of RC
 ## NOTE: FOR SIMPLICITY RC PARAMETERS ARE NOT ADDED TO THE KF; BUT THEY CAN BE EASILY ADDED
 begin
-    function RC(ts, τ0, R0; Vrc0=0.0, σ1=sqrt(1e-2), σ2=sqrt(1e-3))
+    function RC(ts, τ0, R0; Vrc0=0.0, Vrc_σ=1e-6, σ1=[1e-2, 2e-6, 3e-11], σ2=sqrt(1e-3))
         """
         Main function and only functions user need to know
         """
 
 
-        R1 = [
-            1e-2 0 0
-            0 2e-6 0
-            0 0 3e-11
-        ]
+        R1 = Diagonal(σ1 .^ 2)
         R2(x, u, p, t) = Diagonal(fill(σ2^2, 1))
         nx = 1
         ny = 1
@@ -109,7 +106,7 @@ begin
         )
 
         Σ0 = false .* x0 * x0'
-        Σ0[:Vrc, :Vrc] = σ1^2
+        Σ0[:Vrc, :Vrc] = Vrc_σ^2
         Σ0[:τ, :τ] = (60 - τ0)^2
         Σ0[:R, :R] = (15e-3 - R0)^2
         Σ0 = Σ0 + 1e-6 * I
@@ -162,7 +159,7 @@ begin
         (; xid) = p
         c = ComponentVector(x, xid)
         Vrc = c.Vrc
-        return Vrc
+        return [Vrc]
     end
 
 end
@@ -282,8 +279,6 @@ begin
 
         return v
     end
-
-
 end
 
 
@@ -305,7 +300,7 @@ begin
     # data
     df = DataFrame(
         t=df_data.time,
-        v=df_data.voltage,
+        v=df_data.voltage,  # voltage minus OCV
         i=fi.(df_data.time),  # interpolated current
         soc=df_data.soc
     )
@@ -353,8 +348,8 @@ begin
     b0 = StatsBase.transform(dt.soc, b0)
 
     focv_mean = LinearInterpolation(
-        StatsBase.transform(dt.v, df_ocv.ocv[1:100:end]),
-        StatsBase.transform(dt.soc, df_ocv.soc[1:100:end]);
+        StatsBase.transform(dt.v, df_ocv.ocv[100:100:end]),
+        StatsBase.transform(dt.soc, df_ocv.soc[100:100:end]);
         extrapolation=ExtrapolationType.Linear)
 
     ocv_mean = x -> focv_mean(x)
@@ -373,9 +368,10 @@ begin
     )
 
 
-    l_r = 1.2
-    σ_r = 0.5
-    r0_mean = x -> StatsBase.transform(dt.σ, [15e-3])[1]
+
+    l_r = 0.2
+    σ_r = 0.8
+    r0_mean = x -> StatsBase.transform(dt.σ, [12e-3])[1]
     gp_r0 = GP(ZeroMean(), σ_r * with_lengthscale(SEKernel(), l_r))
 
     r0 = RGP(gp_r0, b0, dt.σ)
@@ -391,7 +387,9 @@ begin
         p=r0.p
     )
 
-    rc1 = RC(1, 40, 15e-3)
+
+
+    rc1 = RC(1, 40, 30e-3, Vrc_σ=1e-3, σ1=[1e-3, 2e-3, 3e-11], σ2=sqrt(1e-3))
     rc2 = RC(1, 120, 30e-3)
 
     components_batt = (;
@@ -402,19 +400,54 @@ begin
 
     model(x, u, p, t) = ComponentVector(;
         ocv=1,
-        r0=u.i,
         rc1=1,
+        r0=u.i
     )
 
     battModel = BattModel(components_batt, model)
 end
 
+begin
+
+    fig = Figure(size=(1200, 1200))
+
+    bp = StatsBase.transform(dt.soc, collect(0.0:0.015:1))
+    up = (
+        b=bp, i=df.i
+    )
+    # OCV curve
+    ax1 = CairoMakie.Axis(fig[1, 1], title="OCV curve", xlabel="SOC", ylabel="V")
+    lines!(ax1, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.v, mean(ocv.d0)), label="OCV aprox")
+    band!(
+        ax1, StatsBase.reconstruct(dt.soc, b0),
+        StatsBase.reconstruct(dt.v, mean(ocv.d0)) - 2sqrt.(diag(dt.v.scale .^ 2 .* cov(ocv.d0))),
+        StatsBase.reconstruct(dt.v, mean(ocv.d0)) + 2sqrt.(diag(dt.v.scale .^ 2 .* cov(ocv.d0))),
+        ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
+
+    lines!(ax1, collect(0:0.01:1), focv(collect(0:0.01:1)), label="OCV real")
+    ylims!(ax1, minimum(focv(collect(0:0.01:1))), maximum(focv(collect(0:0.01:1))))
+    axislegend(ax1)
+
+    #r0 curve
+    ax2 = CairoMakie.Axis(fig[2, 1], title="R0 curve", xlabel="SOC", ylabel="R0")
+    lines!(ax2, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.σ, mean(r0.d0)), label="R0 aprox")
+    band!(
+        ax2, StatsBase.reconstruct(dt.soc, b0),
+        StatsBase.reconstruct(dt.σ, mean(r0.d0)) - 2sqrt.(diag(dt.σ.scale .^ 2 .* cov(r0.d0))),
+        StatsBase.reconstruct(dt.σ, mean(r0.d0)) + 2sqrt.(diag(dt.σ.scale .^ 2 .* cov(r0.d0))),
+        ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
+
+    axislegend(ax2)
+
+    display(fig)
+end
 
 
 
 # Training
 # ExtendedKalmanFilter for testing purposes since is Faster
 @time begin
+
     rc_values = []
     kf = ExtendedKalmanFilter(
         battModel.dynamics,
@@ -424,7 +457,7 @@ end
         battModel.d0;
         nx=battModel.nx,
         ny=battModel.ny,
-        nu=3,
+        nu=2,
         battModel.p
     )
 
@@ -437,10 +470,36 @@ end
 
         x_rc1 = ComponentVector(kf.x, battModel.p.xid)[:rc1]
         push!(rc_values, (; t=batch.u, rc1_values=copy(x_rc1)))
+
     end
 
-
 end
+
+begin
+    df_rc = DataFrame(
+        Vrc=[entry.rc1_values.Vrc for entry in rc_values],
+        tau=[entry.rc1_values.τ for entry in rc_values],
+        R=[entry.rc1_values.R for entry in rc_values]
+    )
+    f = Figure(size=(800, 600))
+
+    ax1 = Axis(f[1, 1], title="Vrc error", xlabel="Time", ylabel="Vrc [V]")
+    lines!(ax1, df_rc.Vrc, label="V real", color=:red)
+
+    ax2 = Axis(f[2, 1], title="τ over Time", xlabel="Time", ylabel="τ [s]")
+    lines!(ax2, df_rc.tau)
+    hlines!(ax2, 60, label="τ real", color=:red)
+    ylims!(ax2, 40, 80)
+
+    ax3 = Axis(f[3, 1], title="R over Time", xlabel="Time", ylabel="R [Ω]")
+    lines!(ax3, df_rc.R)
+    hlines!(ax3, 15e-3, label="R real", color=:red)
+    ylims!(ax3, 10e-3, 20e-3)
+
+    display(f)
+end
+
+
 
 
 
@@ -450,11 +509,11 @@ begin
     Σx = ComponentMatrix(kf.R, battModel.p.Σid)
     u = (b=df.soc, i=df.i)
     V_ocv = measurement_gp(x[:ocv], u, ocv.p, 0)
-    V_r0 = df.i .* measurement_gp(x[:r0], u, r0.p, 0)
+    #V_r0 = df.i .* measurement_gp(x[:r0], u, r0.p, 0)
     V_rc1 = [entry.rc1_values.Vrc for entry in rc_values]
 
 
-    V_aprox = V_ocv + V_r0 + V_rc1
+    V_aprox = V_ocv + V_rc1
 
 
     fig = Figure(size=(1200, 1200))
@@ -508,13 +567,13 @@ begin
     axislegend(ax1)
 
 
-    ax2 = CairoMakie.Axis(fig[2, 1], title="R0 curve", xlabel="SOC", ylabel="V")
+    # r0 curve
+    ax2 = CairoMakie.Axis(fig[2, 1], title="R0 curve", xlabel="SOC", ylabel="R0")
     lines!(ax2, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.σ, x[:r0]), label="R0 aprox")
     band!(ax2, StatsBase.reconstruct(dt.soc, b0), StatsBase.reconstruct(dt.σ, x[:r0]) - 2sqrt.(diag(dt.σ.scale .^ 2 .* Σx[:r0])), StatsBase.reconstruct(dt.σ, x[:r0]) + 2sqrt.(diag(dt.σ.scale .^ 2 .* Σx[:r0])), ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
-
-    hlines!(ax2, 15e-3, label="R0 real")
-    ylims!(ax2, 10e-3, 20e-3)
+    ylims!(ax2, 0.0, 30e-3)
     axislegend(ax2)
+
     display(fig)
 
 end
@@ -522,26 +581,7 @@ end
 
 
 
-begin
-    df_rc = DataFrame(
-        Vrc=[entry.rc1_values.Vrc for entry in rc_values],
-        tau=[entry.rc1_values.τ for entry in rc_values],
-        R=[entry.rc1_values.R for entry in rc_values]
-    )
-    f = Figure(size=(800, 600))
 
-    ax1 = Axis(f[1, 1], title="Vrc over Time", xlabel="Time", ylabel="Vrc [V]")
-    lines!(ax1, df_rc.Vrc)
-
-    ax2 = Axis(f[2, 1], title="τ over Time", xlabel="Time", ylabel="τ [s]")
-    lines!(ax2, df_rc.tau)
-
-    ax3 = Axis(f[3, 1], title="R over Time", xlabel="Time", ylabel="R [Ω]")
-    lines!(ax3, df_rc.R)
-    #ylims!(ax3, 10e-3, 20e-3)
-
-    display(f)
-end
 
 
 
