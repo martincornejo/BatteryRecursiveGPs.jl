@@ -2812,9 +2812,6 @@ version = "0.3.0"
     [deps.UnsafeAtomics.weakdeps]
     LLVM = "929cbde3-209d-540e-8aea-75f648917ca0"
 
-    [deps.UnsafeAtomics.weakdeps]
-    LLVM = "929cbde3-209d-540e-8aea-75f648917ca0"
-
 [[deps.VectorizationBase]]
 deps = ["ArrayInterface", "CPUSummary", "HostCPUFeatures", "IfElse", "LayoutPointers", "Libdl", "LinearAlgebra", "SIMDTypes", "Static", "StaticArrayInterface"]
 git-tree-sha1 = "4ab62a49f1d8d9548a1c8d1a75e5f55cf196f64e"
