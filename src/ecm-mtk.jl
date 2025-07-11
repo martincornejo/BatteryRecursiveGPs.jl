@@ -13,7 +13,6 @@ using CairoMakie
 @mtkmodel ECM begin
     @parameters begin
         Q = 4.8
-        R0 = 15e-3
         R1 = 15e-3
         τ1 = 60.0
         R2 = 15e-3
@@ -25,21 +24,24 @@ using CairoMakie
     end
     @variables begin
         i(t), [input = true]
+        w(t), [input = true]
         v(t), [output = true]
         vr(t)
         v1(t) = 0.0
         v2(t) = 0.0
         ocv(t)
         soc(t)
+
     end
     @equations begin
-        D(soc) ~ i / (Q * 3600.0)
+        D(soc) ~ i / (Q * 3600.0) + w
         D(v1) ~ -v1 / τ1 + i * (R1 / τ1)
         D(v2) ~ -v2 / τ2 + i * (R2 / τ2)
+        R0(soc) ~ 0.005 + 0.004 * soc^2 - 0.006 * soc
         vr ~ i * R0
         ocv ~ focv(soc)
         i ~ fi(t)
-        v ~ ocv + vr + v1 + v2
+        v ~ ocv + vr + v1
     end
 end
 
@@ -59,7 +61,11 @@ end
 
 begin # create synthetic data
     Ts = 1.0 # time sampling
-    sol = solve(ode, Tsit5(); saveat=Ts)
+    w_fun(t) = 1e-3 * randn()
+    sol = solve(ode, Tsit5();
+        saveat=Ts,
+        inputs=Dict(ecm.w => w_fun)
+    )
 
     v = sol[ecm.v]
     s = sol[ecm.soc]
@@ -68,4 +74,16 @@ begin # create synthetic data
     lines(sol.t / 3600, v; axis=(; xlabel="Time in h", ylabel="Voltage in V")) |> display
     lines(sol.t / 3600, s; axis=(; xlabel="Time in h", ylabel="SOC in p.u.")) |> display
 end
+
+
+begin # save data to CSV
+    df_out = DataFrame(
+        time_s=sol.t,
+        voltage_V=sol[ecm.v],
+        soc=sol[ecm.soc],
+    )
+
+    CSV.write("output/simulated_data.csv", df_out)
+end
+
 
