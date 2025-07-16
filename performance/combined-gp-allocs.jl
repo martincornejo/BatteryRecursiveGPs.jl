@@ -1,25 +1,3 @@
-using LowLevelParticleFilters
-using Distributions
-using LinearAlgebra
-
-using StableRNGs
-
-using DataFrames
-
-using AbstractGPs
-
-using CairoMakie
-
-using StaticArrays
-import ComponentArrays: ComponentVector, ComponentMatrix, getaxes, @static_unpack
-
-using ForwardDiff
-
-using Statistics
-
-using BenchmarkTools
-using JET
-
 # Extends AbstractGPs to evaluate `mean` and `cov` of a GP to single values (instead of `Vector`s only)
 mean_value(m::ZeroMean, x::Real) = zero(x)
 mean_value(m::ConstMean, x::Real) = m.c
@@ -34,29 +12,6 @@ function cov!(c::AbstractVector, gp::GP, x::AbstractVector, y::Real)
     @. c = gp.kernel(x, y)
 end
 
-
-## synthetic dataset
-
-f1(b) = 0.1 + 0.5 * b + 0.1 * sinpi(b * 2) # <- function to infer
-
-f2(b) = exp(b)
-
-df = let n = 100
-    rng = StableRNG(123)
-    b = 0.1 .+ rand(rng, n) / 1.5
-    i = 0.2 .* randn(rng, n)
-    y = @. f2(b) + i * f1(b)
-    DataFrame(; b, i, y)
-end
-
-let fig = Figure()
-    ax = Makie.Axis(fig[1, 1], xlabel="b", ylabel="f(b)")
-    lines!(ax, 0:0.01:1, f2.(0:0.01:1), label="f2")
-    sc = scatter!(ax, df.b, df.y, color=abs.(df.i))
-    Colorbar(fig[1, 2], sc, label="abs(i)")
-    axislegend(ax; position=:lt)
-    fig
-end
 
 ##
 function dynamics!(dx, x, u, p, t)
@@ -193,70 +148,4 @@ function make_kf_opt()
     kf = ExtendedKalmanFilter(dynamics, measurement_combined_noallocs, R1, R2combined_noallocs, d0; Ajac=fAjac, Cjac=fCjac, nx=length(x0), ny=1, nu=1, p)
     # kf = UnscentedKalmanFilter(dynamics!, measurement_combined_noallocs, R1, R2combined_noallocs, d0; nx=length(x0), ny=1, nu=1, p)
     # return d0
-end
-
-ys = [SA[y] for y in df.y]
-us = [SA[x.b, x.i] for x in eachrow(df)]
-
-function run_kf(kf, us, ys)
-    for (u, y) in zip(us, ys)
-        kf(u, y)
-    end
-end
-
-# kf(us[1], ys[1])
-
-kf1 = make_kf_opt();
-run_kf(kf1, us, ys)
-@benchmark run_kf(kf1, $us, $ys)
-@profview_allocs begin
-    for i in 1:1000
-        run_kf(kf1, us, ys)
-    end
-end
-
-
-
-let
-    fig = Figure()
-    ax = [Axis(fig[i, 1]) for i in 1:2]
-    colors = Makie.wong_colors()
-    (; xid, Σid) = p
-    x = ComponentVector(kf.x, xid)
-    Σx = ComponentMatrix(kf.R, Σid)
-
-    # predict new points -> mean and std
-    for (i, id) in enumerate((:x1, :x2))
-        (; f, gp, b0, Σ0⁻¹) = p[id]
-        xid = x[id]
-        Σxid = Σx[id, id]
-        bgp = 0:0.01:1
-        H = cov(gp, bgp, b0) * Σ0⁻¹
-        μ = H * xid
-        R = cov(gp, bgp) - H * cov(gp, b0, bgp) #eq.7 
-        Σgp = R + H * Σxid * H' #eq.9
-        σ = sqrt.(diag(Σgp))
-
-        # plot results 
-        lines!(ax[i], 0:0.01:1, f.(0:0.01:1), color=colors[1], label="f(x)")
-        # scatter!(ax, df.b, df.y, color=(:red, 0.5), label="Data")
-        lines!(ax[i], bgp, μ, color=colors[2], label="GP")
-        band!(ax[i], bgp, μ + 2σ, μ - 2σ, color=(colors[2], 0.5), label="GP")
-        axislegend(ax[i]; merge=true, position=:lt)
-        ax[i].title = "f$i(b)"
-    end
-    fig
-end
-
-C = zeros(1, 42)
-
-C = ForwardDiff.jacobian!(C, x -> measurement_combined_noallocs(x, first(us), kf1.p, 0.0), kf1.x)
-C = ForwardDiff.jacobian(x -> measurement_combined_noallocs(x, first(us), kf1.p, 0.0), SVector{42}(kf1.x))
-
-
-function Cjac(x, u, p, t)
-    (; cache) = p
-    (; C) = cache
-    ForwardDiff.jacobian!(C, x -> measurement_combined_noallocs(x, u, p, t), x)
-    return C
 end
