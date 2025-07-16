@@ -9,8 +9,8 @@ using DataInterpolations
 using CairoMakie
 using StatsBase
 using BenchmarkTools
-using JET
 using Revise
+using Optim
 includet("battModel/rc.jl")
 includet("battModel/r0_ocv.jl")
 includet("battModel/batt.jl")
@@ -66,7 +66,7 @@ begin
     dt = fit_zscore(df)
     df = normalize_data(df, dt)
 
-    N_points = 20_000#size(df_data, 1)
+    N_points = size(df_data, 1)
     data = DataLoader((
             u=(;
                 i=df.i[1:N_points]
@@ -83,7 +83,7 @@ end
 
 begin
 
-    l_ocv = 0.4
+    l_ocv = 0.2
     σ_ocv = 0.8
     b0 = collect(0:0.01:1)  # basis vector for OCV
     b0 = StatsBase.transform(dt.soc, b0)
@@ -95,7 +95,7 @@ begin
         tr=dt.v)
 
 
-    l_r = 0.4
+    l_r = 0.2
     σ_r = 0.8
     gp_r0 = GP(ZeroMean(), σ_r * with_lengthscale(SEKernel(), l_r))
 
@@ -106,44 +106,10 @@ begin
     soc = SOC(;
         Q=Q_,
         soc0=soc0,
-        σ1=0.0,
+        σ1=1e-9,
         Σ_soc=(soc0 - 0.5)^2 + 1e-6
     )
 
-    """
-    focv_mean = LinearInterpolation(
-        StatsBase.transform(dt.v, df_ocv.ocv[100:100:end]),
-        StatsBase.transform(dt.soc, df_ocv.soc[100:100:end]);
-        extrapolation=ExtrapolationType.Linear)
-
-    ocv_mean = x -> focv_mean(x)
-    r0_mean = x -> StatsBase.transform(dt.σ, [10.0e-3])[1]
-
-    ocv = (;
-        dynamics=ocv.dynamics,
-        measurement=ocv.measurement,
-        R1=ocv.R1,
-        R2=ocv.R2,
-        d0=MvNormal(ocv_mean.(b0), cov(ocv.d0)),
-        nx=ocv.nx,
-        ny=ocv.ny,
-        p=ocv.p
-    )
-
-    r0 = (;
-        dynamics=r0.dynamics,
-        measurement=r0.measurement,
-        R1=r0.R1,
-        R2=r0.R2,
-        d0=MvNormal(r0_mean.(b0), cov(r0.d0)),
-        nx=r0.nx,
-        ny=r0.ny,
-        p=r0.p
-    )
-
-    rc1 = RC(1, 30, 50e-3,
-        Vrc_σ=1e-3, σ1=[1e-3, 2e-3, 3e-11], σ2=sqrt(1e-3), τh=90, Rh=10e-3)
-    """
     r0_ocv = R0_OCV(ocv, r0, soc, dt.soc)
 
 
@@ -225,32 +191,189 @@ begin
         Σ_soc = 2sqrt.(ComponentMatrix(kf.R, battModel.p.Σid)[:ocv][end, end])
         push!(soc_values, x_soc)
         push!(soc_sigmas, Σ_soc)
-
         #x_rc = ComponentVector(kf.x, battModel.p.xid)[:rc1]
         #push!(rc_values, (; t=batch.u, rc1_values=copy(ComponentVector(kf.x, battModel.p.xid)[:rc1])))
     end
+end
+
+
+"""
+begin
+
+    x = ComponentVector(kf.x, battModel.p.xid)[:ocv]
+    Σx = ComponentMatrix(kf.R, battModel.p.Σid)[:ocv, :ocv]
+
+    maxSoc = maximum(StatsBase.transform(dt.soc, Float64.(soc_values)))
+    minSoc = minimum(StatsBase.transform(dt.soc, Float64.(soc_values)))
+
+
+    maxSocIdx = argmin(abs.(b0 .- maxSoc)) - 1
+    minSocIdx = argmin(abs.(b0 .- minSoc)) + 1
+
+    mean_ocv = LinearInterpolation(x[:ocv][minSocIdx:maxSocIdx], b0[minSocIdx:maxSocIdx]; extrapolation=ExtrapolationType.Linear)
+    mean_r0 = LinearInterpolation(x[:r0][minSocIdx:maxSocIdx], b0[minSocIdx:maxSocIdx]; extrapolation=ExtrapolationType.Constant)
+
+
+    ocv = (;
+        dynamics=ocv.dynamics,
+        measurement=ocv.measurement,
+        R1=ocv.R1,
+        R2=ocv.R2,
+        d0=MvNormal(mean_ocv.(b0), cov(ocv.d0)),
+        nx=ocv.nx,
+        ny=ocv.ny,
+        p=ocv.p
+    )
+
+    r0 = (;
+        dynamics=r0.dynamics,
+        measurement=r0.measurement,
+        R1=r0.R1,
+        R2=r0.R2,
+        d0=MvNormal(mean_r0.(b0), cov(r0.d0)),
+        nx=r0.nx,
+        ny=r0.ny,
+        p=r0.p
+    )
+
+    soc0 = soc0
+    Q_ = Q_
+    soc = SOC(;
+        Q=Q_,
+        soc0=soc0,
+        σ1=0.0,
+        Σ_soc=(soc0 - 0.5)^2 + 1e-6
+    )
+
+
+    rc1 = RC(
+        1, 30, 50e-3,
+        Vrc_σ=1e-3,
+        σ1=[1e-3, 2e-3, 3e-11],
+        σ2=sqrt(1e-3),
+        τh=90,
+        Rh=10e-3)
+    r0_ocv = R0_OCV(ocv, r0, soc, dt.soc)
+
+
+    components_batt = (;
+        ocv=r0_ocv,
+        rc1=rc1
+    )
+
+
+    battModel = BattModel(components_batt)
 
 end
 
 
 
+
+begin
+    soc_values = []
+    soc_sigmas = []
+    rc_values = []
+    kf = ExtendedKalmanFilter(
+        battModel.dynamics,
+        battModel.measurement,
+        battModel.R1,
+        battModel.R2,
+        battModel.d0;
+        nx=battModel.nx,
+        ny=battModel.ny,
+        nu=1,
+        battModel.p
+    )
+    for (n, batch) in enumerate(data)
+        kf(batch.u, batch.y)
+        x_soc = ComponentVector(kf.x, battModel.p.xid)[:ocv][end]
+        Σ_soc = 2sqrt.(ComponentMatrix(kf.R, battModel.p.Σid)[:ocv][end, end])
+        push!(soc_values, x_soc)
+        push!(soc_sigmas, Σ_soc)
+
+        x_rc = ComponentVector(kf.x, battModel.p.xid)
+        push!(rc_values, (; t=batch.u, rc1_values=copy(ComponentVector(kf.x, battModel.p.xid)[:rc1])))
+
+    end
+end
+"""
+
+
+
+
+
+
 begin
     f = Figure(size=(800, 600))
+    N_points = size(df.soc, 1)
     ax1 = CairoMakie.Axis(f[1, 1], title="SOC curve", xlabel="time", ylabel="soc")
     lines!(ax1, soc_values, label="SOC aprox")
     lines!(ax1, df_data.soc[1:N_points], label="SOC real")
 
     band!(
         ax1, collect(1:1:N_points), soc_values - soc_sigmas, soc_values + soc_sigmas,
-        ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3))
+        ; label="uncertainty band", color=(Makie.wong_colors()[2], 0.3)
+    )
 
     axislegend(ax1)
     display(f)
 end
 
+begin
+    x = ComponentVector(kf.x, battModel.p.xid)
+    # Loss function: mean squared error
+    function loss(soc_real)
+        fix_soc = (;
+            soc=0.5,
+            ocv=3.73
+        )
+        u = (;
+            b=StatsBase.transform(dt.soc, [soc_real])
+        )
+
+        ocv_aprox = measurement_gp(x[:ocv][:ocv], u, ocv.p, 0)[1]
+
+        return abs(ocv_aprox - fix_soc.ocv)
+    end
+
+    # Optimization
+    result = Optim.optimize(loss, 0.0, 1.0, Brent())
+    soc_right = Optim.minimizer(result)
+    soc_shift = 0.5 - soc_right
+
+    println("shift: $(soc_shift)")
+end
+
 
 begin
+    x = ComponentVector(kf.x, battModel.p.xid)
+    # Loss function: mean squared error
+    function loss(shift)
+        u = (;
+            b=StatsBase.transform(
+                dt.soc, [soc_values .+ shift])
+        )
 
+        ocv_aprox = measurement_gp(x[:ocv][:ocv], u, ocv.p, 0)[1]
+        r0_
+
+        return abs(ocv_aprox - fix_soc.ocv)
+    end
+
+    # Optimization
+    result = Optim.optimize(loss, 0.0, 1.0, Brent())
+    soc_right = Optim.minimizer(result)
+    soc_shift = 0.5 - soc_right
+
+    println("shift: $(soc_shift)")
+end
+
+
+
+
+
+begin
+    soc_shift = 0.0
     f = Figure(size=(800, 600))
 
     x = ComponentVector(kf.x, battModel.p.xid)[:ocv]
@@ -262,6 +385,7 @@ begin
     )
 
     name = :ocv
+
     # OCV curve
     ax1 = CairoMakie.Axis(f[1, 1], title="OCV curve", xlabel="SOC", ylabel="V")
     lines!(ax1, StatsBase.reconstruct(dt.soc, bp), StatsBase.reconstruct(dt.v, x[name]), label="OCV aprox")
@@ -289,10 +413,10 @@ begin
     lines!(ax2, soc, R0(soc), label="R0 real")
     ylims!(ax2, 0.0, 10e-3 * 7)
     axislegend(ax2)
+
     display(f)
 
 end
-
 
 
 
@@ -300,7 +424,12 @@ begin
     V = df.v[1:N_points]
     x = ComponentVector(kf.x, battModel.p.xid)
     Σx = ComponentMatrix(kf.R, battModel.p.Σid)
-    u = (b=Float64.(df.soc[1:N_points]), i=df.i[1:N_points])
+    u = (
+        b=StatsBase.transform(dt.soc, Float64.(soc_values)),
+        i=df.i[1:N_points]
+    )
+
+
     V_ocv = measurement_gp(x[:ocv][:ocv], u, ocv.p, 0)
     V_r0 = df.i[1:N_points] .* measurement_gp(x[:ocv][:r0], u, r0.p, 0)
     V_rc1 = [entry.rc1_values.Vrc for entry in rc_values]
@@ -333,7 +462,7 @@ begin
     # Plot MAE every 10 steps
     ax2 = CairoMakie.Axis(fig[2, 1], title="V error", xlabel="t", ylabel="MAE ($chunk_size steps)")
     lines!(ax2, t_mae, mae_values, label="V MAE", color=:red)
-    ylims!(ax2, 0.0, 0.05)
+    ylims!(ax2, 0.0, 0.01)
     axislegend(ax2)
     display(fig)
 end
@@ -348,7 +477,7 @@ begin
     )
     f = Figure(size=(800, 600))
 
-    ax1 = Axis(f[1, 1], title="Vrc error", xlabel="Time", ylabel="Vrc [V]")
+    ax1 = Axis(f[1, 1], title="Vrc", xlabel="Time", ylabel="Vrc [V]")
     lines!(ax1, df_rc.Vrc, label="V real", color=:red)
 
     ax2 = Axis(f[2, 1], title="τ over Time", xlabel="Time", ylabel="τ [s]")
