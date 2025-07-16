@@ -67,12 +67,13 @@ end
 function R2fun_r0_ocv(x, u, p, t)
     (; xid, ocv, r0, σ_soc) = p
     c = ComponentVector(x, xid)
-    u_r0_ocv = ComponentVector(;
+
+    u_ = ComponentVector(;
         b=StatsBase.transform(σ_soc, c.soc),
         i=u.i
     )
-    R2ocv = ocv.R2(c.ocv, u_r0_ocv, ocv.p, t)
-    R2r0 = r0.R2(c.r0, u_r0_ocv, r0.p, t)
+    R2ocv = ocv.R2(c.ocv, u_, ocv.p, t)
+    R2r0 = r0.R2(c.r0, u_, r0.p, t)
     R2 = R2ocv + R2r0
 
     return R2
@@ -81,13 +82,14 @@ end
 function dynamics_r0_ocv(x, u, p, t)
     (; xid, ocv, soc, σ_soc) = p
     c = ComponentVector(x, xid)
-    u_r0_ocv = ComponentVector(;
+    u_ = ComponentVector(;
         b=StatsBase.transform(σ_soc, c.soc),
         i=u.i
     )
-    c.ocv .= ocv.dynamics(c.ocv, u_r0_ocv, ocv.p, t)
-    c.r0 .= r0.dynamics(c.r0, u_r0_ocv, r0.p, t)
-    c.soc .= soc.dynamics(c.soc, u, soc.p, t)
+
+    c.ocv .= ocv.dynamics(c.ocv, u_, ocv.p, t)
+    c.r0 .= r0.dynamics(c.r0, u_, r0.p, t)
+    c.soc .= soc.dynamics(c.soc, u_, soc.p, t)
 
     return c
 end
@@ -95,12 +97,12 @@ end
 function measurement_r0_ocv(x, u, p, t)
     (; xid, ocv, σ_soc) = p
     c = ComponentVector(x, xid)
-    u_r0_ocv = ComponentVector(;
+    u_ = ComponentVector(;
         b=StatsBase.transform(σ_soc, c.soc),
         i=u.i
     )
-    v_ocv = ocv.measurement(c.ocv, u_r0_ocv, ocv.p, t)
-    v_r0 = r0.measurement(c.r0, u_r0_ocv, r0.p, t)
+    v_ocv = ocv.measurement(c.ocv, u_, ocv.p, t)
+    v_r0 = r0.measurement(c.r0, u_, r0.p, t)
     v = v_ocv + v_r0
 
     return v
@@ -149,8 +151,7 @@ end
 
 function dynamics_soc(x, u, p, t)
     (; Q, ts) = p
-    x = x .+ u.i[1] / Q * ts
-    return x # identity
+    return x .+ u.i[1] / Q * ts # identity
 end
 
 function measurement_soc(x, u, p, t)
@@ -214,8 +215,6 @@ function Q(; q0, σ1=0.01, Σ_q=0.1)
 
 end
 
-
-
 function generate_p_q(Q)
 
     p = (;
@@ -226,8 +225,7 @@ end
 
 function dynamics_q(x, u, p, t)
     (; ts) = p
-    x = x .+ u.i[1] * ts
-    return x # identity
+    return x .+ u.i[1] * ts # identity
 end
 
 function measurement_q(x, u, p, t)
