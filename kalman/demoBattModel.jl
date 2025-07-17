@@ -78,6 +78,9 @@ begin
 
 end
 
+begin
+    dt.v
+end
 
 ## Generating model
 
