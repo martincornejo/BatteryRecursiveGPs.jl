@@ -1,5 +1,5 @@
 
-function R0_OCV(ocv, r0, soc, σ_soc)
+function R0_OCV(ocv, r0, soc)
     """
     Main function and only functions user need to know
     """
@@ -69,7 +69,7 @@ function R2fun_r0_ocv(x, u, p, t)
     c = ComponentVector(x, xid)
 
     u_ = ComponentVector(;
-        b=StatsBase.transform(σ_soc, c.soc),
+        b=c.soc,
         i=u.i
     )
     R2ocv = ocv.R2(c.ocv, u_, ocv.p, t)
@@ -83,7 +83,7 @@ function dynamics_r0_ocv(x, u, p, t)
     (; xid, ocv, soc, σ_soc) = p
     c = ComponentVector(x, xid)
     u_ = ComponentVector(;
-        b=StatsBase.transform(σ_soc, c.soc),
+        b=c.soc,
         i=u.i
     )
 
@@ -98,7 +98,7 @@ function measurement_r0_ocv(x, u, p, t)
     (; xid, ocv, σ_soc) = p
     c = ComponentVector(x, xid)
     u_ = ComponentVector(;
-        b=StatsBase.transform(σ_soc, c.soc),
+        b=c.soc,
         i=u.i
     )
     v_ocv = ocv.measurement(c.ocv, u_, ocv.p, t)
