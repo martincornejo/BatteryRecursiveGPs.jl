@@ -2,7 +2,11 @@
 
 julia_version = "1.11.3"
 manifest_format = "2.0"
+<<<<<<< HEAD
 project_hash = "4e5c03ffabc8294cdb7c7498b0646ad599c718df"
+=======
+project_hash = "0e44ce392ac72922ca44a18e98c1c50e3b5d3070"
+>>>>>>> 73544b2 (Clean commit)
 
 [[deps.ADTypes]]
 git-tree-sha1 = "be7ae030256b8ef14a441726c4c37766b90b93a3"
@@ -2218,9 +2222,15 @@ version = "0.2.4"
 
 [[deps.PreallocationTools]]
 deps = ["Adapt", "ArrayInterface", "ForwardDiff"]
+<<<<<<< HEAD
 git-tree-sha1 = "7a5e02659e293b25a4bfaeeb6cd268acd0742eba"
 uuid = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
 version = "0.4.28"
+=======
+git-tree-sha1 = "2cc315bb7f6e4d59081bad744cdb911d6374fc7f"
+uuid = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
+version = "0.4.29"
+>>>>>>> 73544b2 (Clean commit)
 
     [deps.PreallocationTools.extensions]
     PreallocationToolsReverseDiffExt = "ReverseDiff"

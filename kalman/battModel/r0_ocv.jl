@@ -5,26 +5,26 @@ function R0_OCV(ocv, r0, soc)
     """
 
     x0 = ComponentVector(;
-        ocv=mean(ocv.d0),
-        r0=mean(r0.d0),
-        soc=mean(soc.d0)
+        c_ocv=mean(ocv.d0),
+        c_r0=mean(r0.d0),
+        c_soc=mean(soc.d0)
     )
 
     Σ0 = false .* x0 * x0'
 
-    Σ0[:ocv, :ocv] = cov(ocv.d0)
-    Σ0[:r0, :r0] = cov(ocv.d0)
-    Σ0[:soc, :soc] = cov(soc.d0)
+    Σ0[:c_ocv, :c_ocv] = cov(ocv.d0)
+    Σ0[:c_r0, :c_r0] = cov(ocv.d0)
+    Σ0[:c_soc, :c_soc] = cov(soc.d0)
 
     xid = getaxes(x0)
     Σid = getaxes(Σ0)
     d0 = MvNormal(x0, Σ0)
 
-    p = generate_p_r0_ocv(ocv, r0, soc, xid, Σid, σ_soc)
+    p = generate_p_r0_ocv(ocv, r0, soc, xid, Σid)
 
-    n_ocv = size(x0.ocv, 1)
-    n_r0 = size(x0.r0, 1)
-    n_soc = size(x0.soc, 1)
+    n_ocv = size(x0.c_ocv, 1)
+    n_r0 = size(x0.c_r0, 1)
+    n_soc = size(x0.c_soc, 1)
 
     R1 = vcat(
         hcat(ocv.R1, zeros(n_ocv, n_r0 + n_soc)),
@@ -50,59 +50,68 @@ function R0_OCV(ocv, r0, soc)
     return r0_ocv
 end
 
-function generate_p_r0_ocv(ocv, r0, soc, xid, Σid, σ_soc)
-
+function generate_p_r0_ocv(ocv, r0, soc, xid, Σid)
+    cache = (;
+        u_=(;
+            b=0,
+            i=0)
+    )
     p = (
         ocv=ocv,
         soc=soc,
         r0=r0,
         xid=xid,
         Σid=Σid,
-        σ_soc=σ_soc
+        cache=cache
     )
     return p
 end
 
 
 function R2fun_r0_ocv(x, u, p, t)
-    (; xid, ocv, r0, σ_soc) = p
+    (; xid, ocv, r0, cache) = p
     c = ComponentVector(x, xid)
-
-    u_ = ComponentVector(;
-        b=c.soc,
+    #c. in all
+    @unpack c_ocv, c_r0, c_soc = c
+    u_ = (;
+        b=c_soc,
         i=u.i
     )
-    R2ocv = ocv.R2(c.ocv, u_, ocv.p, t)
-    R2r0 = r0.R2(c.r0, u_, r0.p, t)
+    R2ocv = ocv.R2(c_ocv, u_, ocv.p, t)
+    R2r0 = r0.R2(c_r0, u_, r0.p, t)
     R2 = R2ocv + R2r0
 
     return R2
 end
 
 function dynamics_r0_ocv(x, u, p, t)
-    (; xid, ocv, soc, σ_soc) = p
+    (; xid, ocv, r0, soc, cache) = p
     c = ComponentVector(x, xid)
-    u_ = ComponentVector(;
-        b=c.soc,
+    #c. in all
+    @unpack c_ocv, c_r0, c_soc = c
+    u_ = (;
+        b=c_soc,
         i=u.i
     )
 
-    c.ocv .= ocv.dynamics(c.ocv, u_, ocv.p, t)
-    c.r0 .= r0.dynamics(c.r0, u_, r0.p, t)
-    c.soc .= soc.dynamics(c.soc, u_, soc.p, t)
+    c_ocv .= ocv.dynamics(c_ocv, u_, ocv.p, t)
+    c_r0 .= r0.dynamics(c_r0, u_, r0.p, t)
+    c_soc .= soc.dynamics(c_soc, u_, soc.p, t)
 
     return c
 end
 
 function measurement_r0_ocv(x, u, p, t)
-    (; xid, ocv, σ_soc) = p
+    (; xid, ocv, r0, cache) = p
     c = ComponentVector(x, xid)
-    u_ = ComponentVector(;
-        b=c.soc,
+    @unpack c_ocv, c_r0, c_soc = c
+    u_ = (;
+        b=c_soc,
         i=u.i
     )
-    v_ocv = ocv.measurement(c.ocv, u_, ocv.p, t)
-    v_r0 = r0.measurement(c.r0, u_, r0.p, t)
+
+    v_ocv = ocv.measurement(c_ocv, u_, ocv.p, t)
+    v_r0 = r0.measurement(c_r0, u_, r0.p, t)
     v = v_ocv + v_r0
 
     return v
@@ -160,15 +169,17 @@ end
 
 
 
-function Q(; q0, σ1=0.01, Σ_q=0.1)
+function Q(; q0, σ1=0.01, Σ_q=0.1, ts=1)
     R1 = Diagonal(fill(σ1, 1))
     R2(x, u, p, t) = nothing
-    nx = length(b0)
-    ny = 1
+
     x0 = [q0]
     Σ0 = [Σ_q]
 
-    p = generate_p_soc(Q)
+    nx = length(x0)
+    ny = 1
+
+    p = generate_p_q(ts)
 
     d0 = MvNormal(x0, Σ0)
 
@@ -186,39 +197,11 @@ function Q(; q0, σ1=0.01, Σ_q=0.1)
     )
 
     return q
-
-    R1 = Diagonal(fill(σ1, 1))
-    R2(x, u, p, t) = Diagonal(fill(σ2 .^ 2, 1))
-    nx = length(b0)
-    ny = 1
-    x0 = [soc0]
-    Σ0 = [Σ_soc]
-
-    p = generate_p_soc(Q)
-
-    d0 = MvNormal(x0, Σ0)
-
-    nx = length(x0)
-    ny = 1
-    soc = (;
-        dynamics=dynamics_soc,
-        measurement=measurement_soc,
-        R1=R1,
-        R2=R2,
-        d0=d0,
-        nx=nx,
-        ny=ny,
-        p=p
-    )
-
-    return soc
-
 end
 
-function generate_p_q(Q)
+function generate_p_q(ts)
 
-    p = (;
-        ts=1.0
+    p = (; ts=ts
     )
     return p
 end
@@ -232,7 +215,7 @@ function measurement_q(x, u, p, t)
     return x
 end
 
-function OCV(gp, b0; σ=1e-5, tr=1)
+function OCV(gp, b0; σ2=1e-5, tr=ZScoreTransform(1, 1, [0.0], [1.0]), tr_b=ZScoreTransform(1, 1, [0.0], [1.0]))
     """
     Main function and only functions user need to know
     """
@@ -240,13 +223,12 @@ function OCV(gp, b0; σ=1e-5, tr=1)
     nx = length(b0)
     ny = 1
 
-
-    p = generate_p_ocv(gp, b0, σ, tr)
-
     x0 = mean(gp, b0)
     Σ0 = cov(gp, b0) + 1e-6I
-
     d0 = MvNormal(x0, Σ0)
+
+    p = generate_p_ocv(gp, d0, b0, σ2, tr, tr_b)
+
 
     ocv = (;
         dynamics=dynamics_ocv,
@@ -262,8 +244,8 @@ function OCV(gp, b0; σ=1e-5, tr=1)
     return ocv
 end
 
-function generate_p_ocv(gp, b0, σ, tr)
-    return generate_p_gp(gp, b0, σ, tr)
+function generate_p_ocv(gp, d0, b0, σ2, tr, tr_b)
+    return generate_p_gp(gp, d0, b0, σ2, tr, tr_b)
 end
 
 
@@ -281,7 +263,7 @@ end
 
 
 
-function R0(gp, b0; σ=1e-5, tr=1)
+function R0(gp, b0; σ2=1e-5, tr=ZScoreTransform(1, 1, [0.0], [1.0]), tr_b=ZScoreTransform(1, 1, [0.0], [1.0]))
     """
     Main function and only functions user need to know
     """
@@ -290,12 +272,13 @@ function R0(gp, b0; σ=1e-5, tr=1)
     ny = 1
 
 
-    p = generate_p_r0(gp, b0, σ, tr)
 
     x0 = mean(gp, b0)
     Σ0 = cov(gp, b0) + 1e-6I
 
     d0 = MvNormal(x0, Σ0)
+    p = generate_p_r0(gp, d0, b0, σ2, tr, tr_b)
+
 
     r0 = (;
         dynamics=dynamics_r0,
@@ -311,14 +294,12 @@ function R0(gp, b0; σ=1e-5, tr=1)
     return r0
 end
 
-function generate_p_r0(gp, b0, σ, tr)
-    return generate_p_gp(gp, b0, σ, tr)
+function generate_p_r0(gp, d0, b0, σ2, tr, tr_b)
+    return generate_p_gp(gp, d0, b0, σ2, tr, tr_b)
 end
 
-
 function R2fun_r0(x, u, p, t)
-    i = u.i[1]
-    return i^2 * R2fun_gp(x, u, p, t)
+    return u.i .^ 2 .* R2fun_gp(x, u, p, t)
 end
 
 function dynamics_r0(x, u, p, t)
@@ -326,6 +307,5 @@ function dynamics_r0(x, u, p, t)
 end
 
 function measurement_r0(x, u, p, t)
-    i = u.i[1]
-    return i * measurement_gp(x, u, p, t)
+    return u.i .* measurement_gp(x, u, p, t)
 end
