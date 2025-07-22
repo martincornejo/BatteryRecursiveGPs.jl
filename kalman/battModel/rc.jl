@@ -59,13 +59,12 @@ function dynamics_rc(x, u, p, t)
     i = u.i[1]
 
     c.Vrc = exp(-ts / c.τ) * c.Vrc + i * c.R * (1 - exp(-ts / c.τ))
-    x = c
+    x .= c
     return x
 end
 
 function measurement_rc(x, u, p, t)
     (; xid) = p
     c = ComponentVector(x, xid)
-    Vrc = c.Vrc
-    return [Vrc]
+    return [c.Vrc]
 end
