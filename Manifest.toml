@@ -1,6 +1,6 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.3"
+julia_version = "1.11.5"
 manifest_format = "2.0"
 project_hash = "0e44ce392ac72922ca44a18e98c1c50e3b5d3070"
 
@@ -1837,7 +1837,7 @@ version = "3.2.4+0"
 [[deps.OpenLibm_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "05823500-19ac-5b8b-9628-191a04bc5112"
-version = "0.8.1+2"
+version = "0.8.5+0"
 
 [[deps.OpenSSL_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -2687,11 +2687,7 @@ version = "7.7.0+0"
 deps = ["Accessors", "ArrayInterface", "PrettyTables", "RuntimeGeneratedFunctions", "StaticArraysCore"]
 git-tree-sha1 = "59ca6eddaaa9849e7de9fd1153b6faf0b1db7b80"
 uuid = "2efcf032-c050-4f8e-a9bb-153293bab1f5"
-<<<<<<< HEAD
 version = "0.3.42"
-=======
-version = "0.3.41"
->>>>>>> 3f1b42f3360bb69b9bf63d8224906b341c1d8506
 
 [[deps.TOML]]
 deps = ["Dates"]
@@ -3017,8 +3013,4 @@ version = "10164.0.1+0"
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "e7b67590c14d487e734dcb925924c5dc43ec85f3"
 uuid = "dfaa095f-4041-5dcd-9319-2fabd8486b76"
-<<<<<<< HEAD
 version = "4.1.0+0"
-=======
-version = "3.6.0+0"
->>>>>>> 3f1b42f3360bb69b9bf63d8224906b341c1d8506
