@@ -1,90 +1,81 @@
-module RecursiveGPs
-using LinearAlgebra
-using ComponentArrays
-using KernelFunctions
+# Extends AbstractGPs to evaluate `mean` and `cov` of a GP to single values (instead of `Vector`s only)
+mean_value(m::ZeroMean, x::Real) = zero(x)
+mean_value(m::ConstMean, x::Real) = m.c
+mean_value(m::CustomMean, x::Real) = m.f(x)
 
-export RGPModel, learn!, predict
+Statistics.mean(gp::GP, x::Real) = mean_value(gp.mean, x)
 
-mutable struct RGPModel
-    kernel::Kernel
-    σ::Float64
-    X_basis::Vector{Float64}
-    μ::Vector{Float64}
-    Σ::Matrix{Float64}
-    prior_μ::Vector{Float64}
-    inv_cov::Matrix{Float64}
-    mean_function::Function
+Statistics.cov(gp::GP, x::AbstractVector, y::Real) = gp.kernel.(x, y)
+Statistics.cov(gp::GP, x::Real, y::AbstractVector) = gp.kernel.(x, y)'
 
-    function RGPModel(kernel, σ, X_basis; mean_function::Function=x -> 0.0)
-        μ = mean_function.(X_basis)
-        Σ = kernelmatrix(kernel, X_basis)
-        prior_μ = mean_function.(X_basis)
-        inv_cov = inv(Σ)
-        ## params, kernelc = Flux.destructure(kernel) For future with parameter hypertuning
-        new(kernel, σ, X_basis, μ, Σ, prior_μ, inv_cov, mean_function)
-    end
+function cov!(c::AbstractVector, gp::GP, x::AbstractVector, y::Real)
+    @. c = gp.kernel(x, y)
 end
 
-function inference_step(rgp::RGPModel, H, X_batch)
-    """
-    Inference step at batch points
-    """
-    μ_predict = rgp.mean_function.(X_batch) + H * (rgp.μ - rgp.prior_μ) #eq.6 
+struct RGP{bT,BT,cT}
+    gp::GP
+    b0::bT
+    μ0::bT
+    Σ0::BT
+    Σ0⁻¹::BT
+    cache::cT
+end
 
-    R = kernelmatrix(rgp.kernel, X_batch) - H * kernelmatrix(rgp.kernel, rgp.X_basis, X_batch) #eq.7 
-    Σ_predict = R + H * rgp.Σ * H' #eq.9
 
-    return (
-        μ=μ_predict,
-        Σ=Σ_predict
+function RGP(gp::GP, b0::T) where T<:AbstractArray
+    nb = length(b0) # 1-dim basis vector (for now)
+
+    μ0 = mean(gp, b0) |> T
+    # μ0 = SVector{nb}(mean(gp, b0))
+    Σ0 = cov(gp, b0) + 1e-6I
+    Σ0⁻¹ = inv(Σ0)
+
+    cache = (;
+        k=similar(b0),
+        k´=similar(b0),
+        H=similar(b0'),
+        # Δg=similar(b0), # <- use DiffCache
     )
+
+    RGP(gp, b0, μ0, Σ0, Σ0⁻¹, cache)
 end
 
-function update_step!(rgp::RGPModel, predict_batch, H, Y_batch)
-    """
-    Update rgp parameters
-    """
-    Gk = rgp.Σ * H' * inv(predict_batch.Σ + rgp.σ^2 * I(size(Y_batch, 1))) #eq.12
 
-    new_μ = rgp.μ + Gk * (Y_batch - predict_batch.μ) #eq.10
-    new_Σ = rgp.Σ - Gk * H * rgp.Σ #eq.11
-
-    rgp.μ = new_μ
-    rgp.Σ = new_Σ
-
-    return
+function RGP(kernel::Kernel, b0::AbstractArray)
+    gp = GP(kernel)
+    RGP(gp, b0)
 end
 
-function learn!(rgp::RGPModel, X_batch, Y_batch)
-    """ 
-    Performs RGP learning
-    Inputs:
-        - rgp model 
-        - dataLoader: Data already structured so is fast to iterate
-
-    Note:
-        - Inference and update steps separable at the moment for future when switch between Hyp or non-Hyp
-    """
-
-    ## Observation matrix
-    H = kernelmatrix(rgp.kernel, X_batch, rgp.X_basis) * rgp.inv_cov
-
-    ## Predict value
-    predict_batch = inference_step(rgp, H, X_batch)
-
-    ## Update model by predicted value error
-    update_step!(rgp, predict_batch, H, Y_batch)
-
+function RGP(mean, kernel::Kernel, b0::AbstractArray)
+    gp = GP(mean, kernel)
+    RGP(gp, b0)
 end
 
-function predict(rgp, X_predict)
-    """
-    Does a prediction using a posterior at X_predict
-    """
-    H = kernelmatrix(rgp.kernel, X_predict, rgp.X_basis) * rgp.inv_cov
-    predict_batch = inference_step(rgp, H, X_predict)
-    return predict_batch
+
+# dynamics(x, u, p, t) = x
+function measurement_gp(rgp::RGP, g, b)
+    (; gp, b0, μ0, Σ0⁻¹, cache) = rgp
+    # (; k, H, Δg) = cache
+    (; k, H) = cache
+
+    # (cov(gp, b, b0) * Σ0⁻¹) * (g - μ0) + mean(gp, b)
+    #        c1                    c3
+    #                c2
+    cov!(k, gp, b0, b) # k = cov(gp, b, b0)
+    mul!(H, k', Σ0⁻¹) # H = k' * Σ0⁻¹
+    Δg = g - μ0
+    # Δg .= g .- μ0
+    muladd(H, Δg, mean(gp, b)) # H * (g - μ0) + m
 end
 
+function uncertainty_gp(rgp::RGP, b)
+    (; gp, b0, Σ0⁻¹, cache) = rgp
+    (; k, H, k´) = cache
+    cov!(k, gp, b0, b)
+    mul!(H, k', Σ0⁻¹) # H
+    @. k´ = -k
+    muladd(H, k´, gp.kernel(b, b))
 end
+
+
 

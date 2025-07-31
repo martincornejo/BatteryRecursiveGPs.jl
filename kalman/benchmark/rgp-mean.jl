@@ -77,7 +77,7 @@ end
 
 R1 = Diagonal(zero(b0))
 
-kf = UnscentedKalmanFilter(dynamics, measurement, R1, R2fun, d0; nx=length(b0), ny=1, nu=1, p)
+kf = ExtendedKalmanFilter(dynamics, measurement, R1, R2fun, d0; nx=length(b0), ny=1, nu=1, p)
 
 
 ys = [[y] for y in df.y]
