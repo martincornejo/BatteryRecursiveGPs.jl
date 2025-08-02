@@ -12,12 +12,13 @@ function cov!(c::AbstractVector, gp::GP, x::AbstractVector, y::Real)
     @. c = gp.kernel(x, y)
 end
 
-struct RGP{bT,BT,cT}
+struct RGP{bT,BT,RT,cT}
     gp::GP
     b0::bT
     μ0::bT
     Σ0::BT
     Σ0⁻¹::BT
+    R1::RT
     cache::cT
 end
 
@@ -30,14 +31,16 @@ function RGP(gp::GP, b0::T) where T<:AbstractArray
     Σ0 = cov(gp, b0) + 1e-6I
     Σ0⁻¹ = inv(Σ0)
 
+    R1 = zeros(nb, nb)
+
     cache = (;
         k=similar(b0),
-        k´=similar(b0),
+        k⁻=similar(b0),
         H=similar(b0'),
         # Δg=similar(b0), # <- use DiffCache
     )
 
-    RGP(gp, b0, μ0, Σ0, Σ0⁻¹, cache)
+    RGP(gp, b0, μ0, Σ0, Σ0⁻¹, R1, cache)
 end
 
 
@@ -53,14 +56,14 @@ end
 
 
 # dynamics(x, u, p, t) = x
-function measurement_gp(rgp::RGP, g, b)
+function measurement_gp(rgp::RGP, g::AbstractArray, b::Real)
     (; gp, b0, μ0, Σ0⁻¹, cache) = rgp
-    # (; k, H, Δg) = cache
     (; k, H) = cache
+    # Δg = get_tmp(cache.Δg, g)
 
     # (cov(gp, b, b0) * Σ0⁻¹) * (g - μ0) + mean(gp, b)
-    #        c1                    c3
-    #                c2
+    #        k                    Δg
+    #                H
     cov!(k, gp, b0, b) # k = cov(gp, b, b0)
     mul!(H, k', Σ0⁻¹) # H = k' * Σ0⁻¹
     Δg = g - μ0
@@ -68,14 +71,12 @@ function measurement_gp(rgp::RGP, g, b)
     muladd(H, Δg, mean(gp, b)) # H * (g - μ0) + m
 end
 
-function uncertainty_gp(rgp::RGP, b)
+function uncertainty_gp(rgp::RGP, b::Real)
     (; gp, b0, Σ0⁻¹, cache) = rgp
-    (; k, H, k´) = cache
+    (; k, H, k⁻) = cache
     cov!(k, gp, b0, b)
     mul!(H, k', Σ0⁻¹) # H
-    @. k´ = -k
-    muladd(H, k´, gp.kernel(b, b))
+    @. k⁻ = -k
+    muladd(H, k⁻, gp.kernel(b, b))
 end
-
-
 
