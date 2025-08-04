@@ -15,32 +15,35 @@ using CairoMakie
         Q = 4.8
         R1 = 15e-3
         τ1 = 60.0
-        R2 = 15e-3
-        τ2 = 600.0
+        # R2 = 15e-3
+        # τ2 = 600.0
     end
     @structural_parameters begin
         focv
+        fR0
         fi
     end
     @variables begin
         i(t), [input = true]
-        w(t), [input = true]
         v(t), [output = true]
         vr(t)
         v1(t) = 0.0
-        v2(t) = 0.0
+        # v2(t) = 0.0
         ocv(t)
+        R0(t)
         soc(t)
-
     end
     @equations begin
-        D(soc) ~ i / (Q * 3600.0) + w
-        D(v1) ~ -v1 / τ1 + i * (R1 / τ1)
-        D(v2) ~ -v2 / τ2 + i * (R2 / τ2)
-        R0(soc) ~ 0.005 + 0.004 * soc^2 - 0.006 * soc
+        # param and profile lookups
         vr ~ i * R0
         ocv ~ focv(soc)
+        R0 ~ fR0(soc)
         i ~ fi(t)
+
+        # system
+        D(soc) ~ i / (Q * 3600.0)
+        D(v1) ~ -v1 / τ1 + i * (R1 / τ1)
+        # D(v2) ~ -v2 / τ2 + i * (R2 / τ2)
         v ~ ocv + vr + v1
     end
 end
@@ -51,21 +54,19 @@ begin # read OCV look-up-table and current profile
 
     df = CSV.File("data/profile.csv") |> DataFrame
     fi = ConstantInterpolation(df.i, df.t)
+
+    fR0(s) = 0.01 + 0.005 * s + 0.005 * sinpi(-0.2 + s * 1.5)
 end
 
 begin # create model
-    @mtkbuild ecm = ECM(; focv, fi)
+    @mtkbuild ecm = ECM(; focv, fi, fR0)
     tspan = (0, 24 * 3600) # one day
-    ode = ODEProblem{false}(ecm, [ecm.soc => 0.5], tspan, [])
+    ode = ODEProblem{false}(ecm, [ecm.soc => 0.5], tspan)
 end
 
 begin # create synthetic data
     Ts = 1.0 # time sampling
-    w_fun(t) = 1e-3 * randn()
-    sol = solve(ode, Tsit5();
-        saveat=Ts,
-        inputs=Dict(ecm.w => w_fun)
-    )
+    sol = solve(ode, Tsit5(); saveat=Ts)
 
     v = sol[ecm.v]
     s = sol[ecm.soc]
@@ -78,12 +79,17 @@ end
 
 begin # save data to CSV
     df_out = DataFrame(
-        time_s=sol.t,
-        voltage_V=sol[ecm.v],
-        soc=sol[ecm.soc],
+        t=sol.t,
+        v=sol[ecm.v],
+        s=sol[ecm.soc],
+        i=sol[ecm.i],
     )
+    zt = fit_zscore(df_out)
+    dfn = normalize_data(df_out, zt)
 
-    CSV.write("output/simulated_data.csv", df_out)
+    ys = [SA[y] for y in dfn.v]
+    us = [(; s=x.s, i=x.i) for x in eachrow(dfn)]
+    # CSV.write("output/simulated_data.csv", df_out)
 end
 
 
