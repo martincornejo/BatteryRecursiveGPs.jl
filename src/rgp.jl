@@ -34,9 +34,9 @@ function RGP(gp::GP, b0::T) where T<:AbstractArray
     R1 = zeros(nb, nb)
 
     cache = (;
-        k=similar(b0),
-        k⁻=similar(b0),
-        H=similar(b0'),
+        k=DiffCache(similar(b0)),
+        k⁻=DiffCache(similar(b0)),
+        H=DiffCache(similar(b0')),
         # Δg=similar(b0), # <- use DiffCache
     )
 
@@ -58,8 +58,10 @@ end
 # dynamics(x, u, p, t) = x
 function measurement_gp(rgp::RGP, g::AbstractArray, b::Real)
     (; gp, b0, μ0, Σ0⁻¹, cache) = rgp
-    (; k, H) = cache
+    # (; k, H) = cache
     # Δg = get_tmp(cache.Δg, g)
+    k = get_tmp(cache.k, b)
+    H = get_tmp(cache.H, b)
 
     # (cov(gp, b, b0) * Σ0⁻¹) * (g - μ0) + mean(gp, b)
     #        k                    Δg
@@ -73,7 +75,9 @@ end
 
 function uncertainty_gp(rgp::RGP, b::Real)
     (; gp, b0, Σ0⁻¹, cache) = rgp
-    (; k, H, k⁻) = cache
+    k = get_tmp(cache.k, b)
+    H = get_tmp(cache.H, b)
+    k⁻ = get_tmp(cache.k⁻, b)
     cov!(k, gp, b0, b)
     mul!(H, k', Σ0⁻¹) # H
     @. k⁻ = -k
