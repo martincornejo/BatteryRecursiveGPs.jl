@@ -1,17 +1,3 @@
-using OrdinaryDiffEq
-using ModelingToolkit
-using ModelingToolkit: t_nounits as t, D_nounits as D
-
-using DataFrames
-using CSV
-using DataInterpolations
-
-using StatsBase
-using StaticArrays
-
-using LinearAlgebra
-
-using CairoMakie
 
 function fit_zscore(df)
     v = StatsBase.fit(ZScoreTransform, df.v)
@@ -25,108 +11,70 @@ end
 function normalize_data(df, zt)
     v = StatsBase.transform(zt.v, df.v)
     i = StatsBase.transform(zt.i, df.i)
-    # s = StatsBase.transform(zt.s, df.s)
+    # s = StatsBase.transform(zt.s, df.s) # do not normalize soc
     return DataFrame(; df.t, v, i, df.s)
 end
 
-@mtkmodel ECM begin
-    @parameters begin
-        Q = 4.8
-        # R1 = 15e-3
-        # τ1 = 60.0
-        # R2 = 15e-3
-        # τ2 = 600.0
+@component function ECM(; name, fi, focv, fR0)
+    params = @parameters begin
+        Q = 4.8 # Ah
+        # R0 = 15e-3 # Ohm
     end
-    @structural_parameters begin
-        focv
-        fR0
-        fi
-    end
-    @variables begin
+    vars = @variables begin
         i(t), [input = true]
         v(t), [output = true]
-        vr(t)
-        # v1(t) = 0.0
-        # v2(t) = 0.0
+        vr0(t)
         ocv(t)
         R0(t)
         soc(t)
     end
-    @equations begin
+    eqs = [
         # param and profile lookups
-        ocv ~ focv(soc)
-        R0 ~ fR0(soc)
-        i ~ fi(t)
+        ocv ~ focv(soc),
+        R0 ~ fR0(soc),
+        i ~ fi(t),
 
         # system
-        D(soc) ~ i / (Q * 3600.0)
-        # D(v1) ~ -v1 / τ1 + i * (R1 / τ1)
-        # D(v2) ~ -v2 / τ2 + i * (R2 / τ2)
-        vr ~ i * R0
-        v ~ ocv + vr # + v1
-    end
+        D(soc) ~ i / (Q * 3600.0),
+        vr0 ~ i * R0,
+        # D(vrc1) ~ -vrc1 / τ1 + i * (R1 / τ1)
+        v ~ ocv + vr0,
+    ]
+
+    System(eqs, t, vars, params; name)
 end
 
-begin # read OCV look-up-table and current profile
-    df_ocv = CSV.File("data/ocv.csv") |> DataFrame
-    focv = LinearInterpolation(df_ocv.ocv, df_ocv.soc, extrapolation=ExtrapolationType.Constant)
-
-    df = CSV.File("data/profile.csv") |> DataFrame
-    fi = ConstantInterpolation(df.i, df.t)
-
-    fR0(s) = 0.01 + 0.005 * s + 0.005 * sinpi(-0.2 + s * 1.5)
-end
-
-begin # create model
-    @mtkbuild ecm = ECM(; focv, fi, fR0)
-    tspan = (0, 24 * 3600) # one day
+function generate_timeseries(; tspan, focv, fi, fR0, Ts=1.0)
+    @mtkcompile ecm = ECM(; focv, fi, fR0)
     ode = ODEProblem{false}(ecm, [ecm.soc => 0.5], tspan)
-end
-
-let # create synthetic data
-    Ts = 1.0 # time sampling
     sol = solve(ode, Tsit5(); saveat=Ts)
 
-    v = sol[ecm.v]
-    s = sol[ecm.soc]
-    i = sol[ecm.i]
-
-    # plot
-    color = Makie.wong_colors()
-    fig = Figure()
-    ax = [Axis(fig[i, 1]) for i in 1:3]
-    lines!(ax[1], sol.t / 3600, i, color=color[1])
-    lines!(ax[2], sol.t / 3600, s, color=color[2])
-    lines!(ax[3], sol.t / 3600, v, color=color[3])
-
-    # ax[1].ylabel = "i"
-    # ax[2].ylabel = "s"
-    # ax[3].ylabel = "v"
-
-    fig
-end
-
-
-begin
-    Ts = 1.0 # time sampling
-    sol = solve(ode, Tsit5(); saveat=Ts)
-
-    v = sol[ecm.v]
-    s = sol[ecm.soc]
-    i = sol[ecm.i]
-
-    df = DataFrame(
+    DataFrame(
         t=sol.t,
         v=sol[ecm.v],
         s=sol[ecm.soc],
         i=sol[ecm.i],
     )
-    zt = fit_zscore(df)
-    dfn = normalize_data(df, zt)
-
-    ys = [SA[y] for y in dfn.v]
-    us = [(; s=x.s, i=x.i) for x in eachrow(dfn)]
-    # CSV.write("output/simulated_data.csv", df_out)
 end
 
+function plot_timeseries(df)
+    fig = Figure()
+    color = Makie.wong_colors()
+    ax = [Axis(fig[i, 1]) for i in 1:3]
+    lines!(ax[1], df.t / 3600, df.i, color=color[1])
+    lines!(ax[2], df.t / 3600, df.s, color=color[2])
+    lines!(ax[3], df.t / 3600, df.v, color=color[3])
 
+    ax[1].ylabel = "Current / A"
+    ax[2].ylabel = "SOC / p.u."
+    ax[3].ylabel = "Voltage / V"
+    ax[3].xlabel = "Time / h"
+
+    hidexdecorations!(ax[1]; ticks=false, grid=false)
+    hidexdecorations!(ax[2]; ticks=false, grid=false)
+    xlims!(ax[1], df[begin, :t] / 3600, df[end, :t] / 3600)
+    xlims!(ax[2], df[begin, :t] / 3600, df[end, :t] / 3600)
+    xlims!(ax[3], df[begin, :t] / 3600, df[end, :t] / 3600)
+    linkxaxes!(ax...)
+    fig
+end
