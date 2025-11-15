@@ -41,23 +41,32 @@ begin
     focv = LinearInterpolation(df_ocv.ocv, df_ocv.soc, extrapolation=ExtrapolationType.Constant)
 
     df = CSV.File("data/profile.csv") |> DataFrame
-    fi = ConstantInterpolation(df.i, df.t)
+    # fi = ConstantInterpolation(df.i * 1.5, df.t)
+    fi = ConstantInterpolation(df.i * -1.5, df.t)
 
     fR0(s) = 0.01 + 0.005 * s + 0.005 * sinpi(-0.2 + s * 1.5)
 
     # simulate battery operation
-    tspan = (0, 24 * 3600) # one day
+    ttest = 2.5 * 24 * 3600
+    ttrain = 2 * 24 * 3600
+    tspan = (0, ttest) # one day
     Ts = 1.0 # # time sampling
 
-    df = generate_timeseries(; Ts, tspan, fi, focv, fR0)
+    df = generate_timeseries(; Ts, tspan, fi, focv, fR0, soc0=0.65)
     plot_timeseries(df) |> display
 
     # create input / output data 
     zt = fit_zscore(df)
     dfn = normalize_data(df, zt)
 
-    us = [(; i, î) for (i, î) in zip(df.i, dfn.i)]
-    ys = [SA[y] for y in dfn.v]
+    df_train = subset(df, :t => ByRow(<=(ttrain)))
+    df_train_n = subset(dfn, :t => ByRow(<=(ttrain)))
+    df_test = subset(df, :t => ByRow(>(ttrain)))
+    df_test_n = subset(dfn, :t => ByRow(>(ttrain)))
+
+    us = [(; i, î) for (i, î) in zip(df_train.i, df_train_n.i)]
+    ut = [(; i, î) for (i, î) in zip(df_test.i, df_test_n.i)]
+    ys = [SA[y] for y in df_train_n.v]
 end
 
 # === model
@@ -69,20 +78,79 @@ focv´ = let # focv prior
     focv´ = LinearInterpolation(ocv´, soc´; extrapolation=ExtrapolationType.Constant)
 end
 
+focv⁻¹ = let
+    df_ocv = CSV.File("data/ocv.csv") |> DataFrame
+    LinearInterpolation(df_ocv.soc, df_ocv.ocv)
+end
+
+focv2´ = let
+    df_ocv = CSV.File("data/ocv-2.csv") |> DataFrame
+    focv = LinearInterpolation(df_ocv.ocv, df_ocv.soc)
+    soc´ = 0.0:0.05:1.0
+    ocv´ = StatsBase.transform(zt.v, focv(soc´))
+    focv´ = LinearInterpolation(ocv´, soc´; extrapolation=ExtrapolationType.Constant)
+end
+
+focv2⁻¹ = let
+    df_ocv = CSV.File("data/ocv-2.csv") |> DataFrame
+    LinearInterpolation(df_ocv.soc, df_ocv.ocv)
+end
+
+focv3´ = let
+    df_ocv = CSV.File("data/ocv-3.csv") |> DataFrame
+    focv = LinearInterpolation(df_ocv.ocv, df_ocv.soc)
+    soc´ = 0.0:0.05:1.0
+    ocv´ = StatsBase.transform(zt.v, focv(soc´))
+    focv´ = LinearInterpolation(ocv´, soc´; extrapolation=ExtrapolationType.Constant)
+end
+
+focv3⁻¹ = let
+    df_ocv = CSV.File("data/ocv-3.csv") |> DataFrame
+    LinearInterpolation(df_ocv.soc, df_ocv.ocv)
+end
+
+# ==== 
+# perfect input
 θ = (; # hyperparams
-    ocv=(; σ=0.1, ℓ=0.05),
+    ocv=(; σ=0.1, ℓ=0.1),
     r0=(; σ=0.001, ℓ=0.5),
-    soc=(; σ2=1e-7),
+    soc=(; σ1=0.01, σ2=1e-7, soc0=0.65),
 )
 
-kf = build_kf(θ, focv´, zt)
+kf = build_kf(θ, focv´, zt; n=21)
 
-# for (u, y) in zip(us, ys)
-#     LLPF.update!(kf, u, y)
-# end
+plot_ecm(kf, df, zt, focv, fR0; closeup=true)
 
-sol = forward_trajectory(kf, us, ys)
+sol = run_sim!(kf, us, ys, ut)
 
-plot_soc_estimation(sol, df)
+plot_ecm(kf, df, zt, focv, fR0; closeup=true)
 
-plot_ecm(kf, df, zt, focv, fR0)
+calc_ocv_mae(kf, df_train, zt, focv)
+
+plot_sim(sol, df, ttrain)
+
+# ===
+# wrong initial OCV
+soc0 = df_train[begin, :s]
+soc0´ = 0.7 # focv2⁻¹(df_train[begin, :v])
+θ = (; # hyperparams
+    ocv=(; σ=0.1, ℓ=0.1),
+    r0=(; σ=0.001, ℓ=0.5),
+    soc=(; σ1=0.05, σ2=1e-7, soc0=soc0´),
+)
+kf2 = build_kf(θ, focv2´, zt; n=21)
+
+plot_ecm(kf2, df, zt, focv, fR0; focv_prior=focv2´)
+
+sol2 = run_sim!(kf2, us, ys, ut)
+
+Δs = soc0 - focv2⁻¹(focv(soc0))
+plot_ecm(kf2, df, zt, focv, fR0; focv_prior=focv2´, soc_shift=0.0, closeup=true)
+plot_ecm(kf2, df, zt, focv, fR0; focv_prior=focv2´, soc_shift=Δs, closeup=true)
+
+calc_ocv_mae(kf2, df_train, zt, focv; soc_shift=0.0)
+calc_ocv_mae(kf2, df_train, zt, focv; soc_shift=Δs)
+
+plot_sim(sol2, df, ttrain; soc_shift=0.0)
+plot_sim(sol2, df, ttrain; soc_shift=Δs)
+
