@@ -44,10 +44,10 @@ end
     System(eqs, t, vars, params; name)
 end
 
-function generate_timeseries(; tspan, focv, fi, fR0, Ts=1.0)
+function generate_timeseries(; tspan, focv, fi, fR0, soc0=0.5, Ts=1.0)
     @mtkcompile ecm = ECM(; focv, fi, fR0)
-    ode = ODEProblem{false}(ecm, [ecm.soc => 0.5], tspan)
-    sol = solve(ode, Tsit5(); saveat=Ts)
+    ode = ODEProblem{false}(ecm, [ecm.soc => soc0], tspan)
+    sol = solve(ode, Vern7(); saveat=Ts, reltol=1e-10)
 
     DataFrame(
         t=sol.t,
@@ -76,5 +76,15 @@ function plot_timeseries(df)
     xlims!(ax[2], df[begin, :t] / 3600, df[end, :t] / 3600)
     xlims!(ax[3], df[begin, :t] / 3600, df[end, :t] / 3600)
     linkxaxes!(ax...)
+    fig
+end
+
+function plot_couloumb_error(df)
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+    s´ = cumsum(df.i) / (3600 * 4.8) .+ df[begin, :s]
+    lines!(ax[1], df.t / 3600, df.s)
+    lines!(ax[1], df.t / 3600, s´)
+    lines!(ax[2], df.t / 3600, s´ - df.s)
     fig
 end
