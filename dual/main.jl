@@ -51,6 +51,7 @@ include("plot.jl")
 begin # read OCV look-up-table and current profile
     df_ocv = CSV.File("data/ocv.csv") |> DataFrame
     focv = LinearInterpolation(df_ocv.ocv, df_ocv.soc, extrapolation=ExtrapolationType.Constant)
+    f´ocv = LinearInterpolation(df_ocv.soc, df_ocv.ocv)
 
     soc_prior = 0.0:0.05:1.0
     # ocv_prior = StatsBase.transform(zt.v, focv(soc_prior) .+ 0.02)
@@ -64,11 +65,18 @@ end
 begin
     kf1 = build_kf_params(focv_prior)
 
-    soc0 = 0.5
-    kf2 = build_kf_state(kf1)
+    soc0 = f´ocv(df[begin, :v])
+    kf2 = build_kf_state(kf1, soc0)
 end
 
 plot_ecm(kf1, zt, focv, fR0; closeup=false)
+
+for (u, v) in zip(us, ys)
+    i = u.i
+    LLPF.update!(kf2, (; i), v)
+    s = kf2.x[1]
+    LLPF.update!(kf1, (; i, s), v)
+end
 
 # smoothsol = smooth(kf2, us, ys)
 # plot_soc_estimation(smoothsol, df)

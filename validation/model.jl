@@ -57,7 +57,7 @@ end
 #     (; μ, σ)
 # end
 
-function build_kf(θ, focv_prior, zt; n=21)
+function build_kf(θ, ϑ, focv_prior, zt; n=21)
     b0 = collect(range(0, 1, n)) # basis vector
     # priors
     r0 = StatsBase.transform(zt.r, [15e-3]) |> first
@@ -80,8 +80,8 @@ function build_kf(θ, focv_prior, zt; n=21)
             A=I(nx),
             C=zeros(1, nx),
         ),
-        Ts=1.0,
-        q=4.8,
+        Ts=ϑ.Ts,
+        q=ϑ.q,
         vσ=StatsBase.transform(zt.σ, [0.001^2]) |> first,
     )
     rgps = (; soc, ocv=rgp1, r0=rgp2)
@@ -110,7 +110,7 @@ function run_sim!(kf, us, ys, ut)
         push!(vμ, vμᵢ)
         push!(vσ, vσᵢ)
         push!(sμ, kf.x[1])
-        push!(sσ, kf.R[1, 1]) # TODO: sqrt
+        push!(sσ, sqrt(kf.R[1, 1]))
         LLPF.update!(kf, u, y)
     end
 
@@ -119,7 +119,7 @@ function run_sim!(kf, us, ys, ut)
         push!(vμ, vμᵢ)
         push!(vσ, vσᵢ)
         push!(sμ, kf.x[1])
-        push!(sσ, kf.R[1, 1]) # TODO: sqrt
+        push!(sσ, sqrt(kf.R[1, 1]))
         LLPF.predict!(kf, u)
     end
 

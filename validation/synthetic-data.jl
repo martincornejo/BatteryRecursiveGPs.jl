@@ -79,12 +79,26 @@ function plot_timeseries(df)
     fig
 end
 
-function plot_couloumb_error(df)
+function plot_coulomb_error_solver(df; Ts=1.0, q=1.0)
     fig = Figure()
     ax = [Axis(fig[i, 1]) for i in 1:2]
-    s´ = cumsum(df.i) / (3600 * 4.8) .+ df[begin, :s]
+    s´ = cumsum(df.i) * Ts / (3600 * q) .+ df[begin, :s]
     lines!(ax[1], df.t / 3600, df.s)
     lines!(ax[1], df.t / 3600, s´)
     lines!(ax[2], df.t / 3600, s´ - df.s)
+    fig
+end
+
+function plot_coulomb_error_noise(df; q=1.0)
+    fig = Figure()
+    ax = [Axis(fig[i, j]) for i in 1:2, j in 1:2]
+    s = cumsum(df.i) / (3600 * q)
+    sϵ = cumsum(df.iϵ) / (3600 * q)
+    lines!(ax[1, 1], df.t / 3600, df.i)
+    lines!(ax[1, 1], df.t / 3600, df.iϵ)
+    lines!(ax[2, 1], df.t / 3600, df.iϵ - df.i)
+    lines!(ax[1, 2], df.t / 3600, s)
+    lines!(ax[1, 2], df.t / 3600, sϵ)
+    lines!(ax[2, 2], df.t / 3600, sϵ - s)
     fig
 end
