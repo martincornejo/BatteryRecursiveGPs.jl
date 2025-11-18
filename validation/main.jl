@@ -116,8 +116,8 @@ end
     r0=(; σ=0.001, ℓ=0.5),
     soc=(; σ1=0.01, σ2=1e-8, soc0=0.65),
 )
-
-kf = build_kf(θ, focv´, zt; n=21)
+ϑ = (; Ts=10.0, q=4.8)
+kf = build_kf(θ, ϑ, focv´, zt; n=21)
 
 plot_ecm(kf, df, zt, focv, fR0; closeup=true)
 
@@ -138,7 +138,8 @@ soc0´ = 0.7 # focv2⁻¹(df_train[begin, :v])
     r0=(; σ=0.001, ℓ=0.5),
     soc=(; σ1=0.05, σ2=1e-7, soc0=soc0´),
 )
-kf2 = build_kf(θ, focv2´, zt; n=21)
+ϑ = (; Ts=10.0, q=4.8)
+kf2 = build_kf(θ, ϑ, focv2´, zt; n=21)
 
 plot_ecm(kf2, df, zt, focv, fR0; focv_prior=focv2´)
 
