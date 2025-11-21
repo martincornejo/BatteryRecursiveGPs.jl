@@ -57,6 +57,52 @@ function generate_timeseries(; tspan, focv, fi, fR0, soc0=0.5, Ts=1.0)
     )
 end
 
+
+@component function ECM_RC(; name, fi, focv, fR0)
+    params = @parameters begin
+        Q = 4.8 # Ah
+        R1 = 15e-3
+        τ1 = 600
+        # R0 = 15e-3 # Ohm
+    end
+    vars = @variables begin
+        i(t), [input = true]
+        v(t), [output = true]
+        vr0(t)
+        vrc1(t)
+        ocv(t)
+        R0(t)
+        soc(t)
+    end
+    eqs = [
+        # param and profile lookups
+        ocv ~ focv(soc),
+        R0 ~ fR0(soc),
+        i ~ fi(t),
+
+        # system
+        D(soc) ~ i / (Q * 3600.0),
+        vr0 ~ i * R0,
+        D(vrc1) ~ -vrc1 / τ1 + i * (R1 / τ1),
+        v ~ ocv + vr0 + vrc1,
+    ]
+
+    System(eqs, t, vars, params; name)
+end
+
+function generate_timeseries_rc(; tspan, focv, fi, fR0, soc0=0.5, Ts=1.0)
+    @mtkcompile ecm = ECM_RC(; focv, fi, fR0)
+    ode = ODEProblem{false}(ecm, [ecm.soc => soc0, ecm.vrc1 => 0.0], tspan)
+    sol = solve(ode, Vern7(); saveat=Ts, reltol=1e-10)
+
+    DataFrame(
+        t=sol.t,
+        v=sol[ecm.v],
+        s=sol[ecm.soc],
+        i=sol[ecm.i],
+    )
+end
+
 function plot_timeseries(df)
     fig = Figure()
     color = Makie.wong_colors()
