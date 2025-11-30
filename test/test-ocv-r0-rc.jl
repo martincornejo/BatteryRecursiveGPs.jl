@@ -66,13 +66,14 @@ include("ecm-mtk.jl")
 # end
 
 ## == RC
+"""
 function dynamics_rc(vrc, i, p)
     (; ts, R, τ) = p
 
     exp(-ts / τ) * vrc + i * R * (1 - exp(-ts / τ))
 end
 
-function RC(μ0::Real, Σ0::Real, σ1::Real, σ2::Real, p)
+function RC(μ0, Σ0, σ1, σ2::Real, p)
     (; ts, τ) = p
     A = exp(-ts / τ)
 
@@ -84,6 +85,24 @@ function RC(μ0::Real, Σ0::Real, σ1::Real, σ2::Real, p)
         A,
         p,
     )
+end
+"""
+
+function RC(μ0, Σ0, σ1, σ2::Real, p)  
+    rc = (;
+        μ0,
+        Σ0,
+        R1=Diagonal(σ1 .^ 2),
+        R2=σ2.^2,
+        p,
+    )
+    return rc
+end
+
+function dynamics_rc(x, i, p)
+    (; ts) = p
+    x[1] = exp(-ts / x[2]) * x[1] + i * x[3] * (1 - exp(-ts / x[2]))
+    return c
 end
 
 function predict_rc()
@@ -108,7 +127,7 @@ function measurement_combined(x, u, p, t)
 
     ocv = measurement_gp(p.ocv, xc.ocv, u.s)
     r0 = measurement_gp(p.r0, xc.r0, u.s)
-    vrc = xc.rc # measurement rc
+    vrc = xc.rc[1] # measurement rc
     ocv + u.i * r0 + vrc |> SVector{1}
 end
 
@@ -118,7 +137,7 @@ function R2combined(x, u, p, t)
     vrc = p.rc.R2
     ocv + u.i^2 * r0 + vrc |> SMatrix{1,1}
 end
-
+"""
 function Cjac(x, u, p, t)
     (; C) = p.cache
     ForwardDiff.jacobian!(C, x -> measurement_combined(x, u, p, t), x)
@@ -129,6 +148,7 @@ function Ajac(x, u, p, t)
     return A
 end
 
+
 function predict(kf, df)
     dfn = normalize_data(df)
     ocv = predict_gp(kf, dfn.s, :ocv)
@@ -137,6 +157,7 @@ function predict(kf, df)
     σ = @. ocv.σ + u.i^2 * r0.σ
     (; μ, σ)
 end
+"""
 
 ##
 function build_kf(n=21)
@@ -152,20 +173,31 @@ function build_kf(n=21)
     rgp2 = RGP(r0, kernel2, b0n)
 
     R = StatsBase.transform(zt.r, [15e-3]) |> first
+
     Σ = StatsBase.transform(zt.r, [0.015]) |> first
-    σ1 = StatsBase.transform(zt.r, [1e-3]) |> first
-    σ2 = StatsBase.transform(zt.r, [sqrt(1e-3)]) |> first
-    rc = RC(0.0, Σ, σ1^2, σ2, (; ts=1.0, R, τ=60))
+    Σ = zeros(nx,nx)
+
+    Σ[1,1] = 1.0e-6 .^2
+    Σ[2,2] = (τ0 - 60.0) .^2 
+    Σ[3,3] = (R0 - 15e-3) .^2
+
+    σ1=[1e-2, 2e-6, 3e-11], #StatsBase.transform(zt.r, [1e-3]) |> first
+    σ2=sqrt(1e-3)
+
+    rc = RC(0.0, Σ, σ1, σ2, (; ts=1.0))
 
     nx = (length(rc.μ0) + length(rgp1.μ0) + (length(rgp2.μ0)))
+    """
     p = (; cache=(;
         A=1.0I(nx),
         C=zeros(1, nx),
     ))
-    p.cache.A[end, end] = rc.A # 
-    rgps = (; ocv=rgp1, r0=rgp2, rc)
+    """
+    #p.cache.A[end, end] = rc.A # 
+    rgps = (; ocv=rgp1, r0=rgp2, rc = rc)
 
-    make_ekf(rgps, dynamics_combined, measurement_combined, R2combined; Ajac, Cjac, p)
+    #make_ekf(rgps, dynamics_combined, measurement_combined, R2combined; Ajac, Cjac, p)
+    make_ekf(rgps, dynamics_combined, measurement_combined, R2combined;p)
 end
 
 kf = build_kf()
