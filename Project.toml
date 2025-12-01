@@ -18,6 +18,7 @@ GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LowLevelParticleFilters = "d9d29d28-c116-5dba-9239-57a5fe23875b"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
+ModelingToolkitStandardLibrary = "16a59e39-deab-5bd0-87e4-056b12336739"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 PreallocationTools = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
@@ -27,6 +28,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 [compat]
 GLMakie = "0.13.6"
 ModelingToolkit = "10.14.0"
+ModelingToolkitStandardLibrary = "2.25.0"
 
 [extras]
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
