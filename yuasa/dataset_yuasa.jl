@@ -81,7 +81,7 @@ function simulate_module(params, tspan; Ts=1.0)
 
     # simulate
     prob = ODEProblem(pack, u0, tspan)
-    sol = solve(prob, Tsit5(); saveat=Ts)
+    sol = solve(prob, Vern7(); saveat=Ts, reltol=1e-10)
 
     return DataFrame(
         "t" => sol.t,
@@ -95,7 +95,7 @@ end
 
 function select_cell_dataset(df, i)
     v_cell = Symbol("v_cell_$i")
-    s_cell = Symbol("v_cell_$i")
+    s_cell = Symbol("soc_cell_$i")
     select(df, :t, :i, :q, v_cell => :v, s_cell => :s)
 end
 
