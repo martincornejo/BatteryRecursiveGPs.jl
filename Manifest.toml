@@ -2,7 +2,7 @@
 
 julia_version = "1.12.2"
 manifest_format = "2.0"
-project_hash = "f72e0f9712c2dcb58a9d09a4bde04aca9f6b9154"
+project_hash = "0a6a318f82eaf1c8973a1e7e48e04d2926323a86"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "8b2b045b22740e4be20654175cc38291d48539db"
@@ -272,6 +272,12 @@ deps = ["Artifacts", "Bzip2_jll", "CompilerSupportLibraries_jll", "Fontconfig_jl
 git-tree-sha1 = "fde3bf89aead2e723284a8ff9cdf5b551ed700e8"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
 version = "1.18.5+0"
+
+[[deps.Calculus]]
+deps = ["LinearAlgebra"]
+git-tree-sha1 = "9cb23bbb1127eefb022b022481466c0f1127d430"
+uuid = "49dc2e85-a5d0-5ad3-a950-438e2897f1b9"
+version = "0.5.2"
 
 [[deps.ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra"]
@@ -1708,6 +1714,28 @@ weakdeps = ["SparseArrays"]
     [deps.MaybeInplace.extensions]
     MaybeInplaceSparseArraysExt = "SparseArrays"
 
+[[deps.Measurements]]
+deps = ["Calculus", "LinearAlgebra", "Printf"]
+git-tree-sha1 = "cb47f69a1cab9dcec7ff4a5d6e163410d6905866"
+uuid = "eff96d63-e80a-5855-80a2-b1b0885c5ab7"
+version = "2.14.1"
+
+    [deps.Measurements.extensions]
+    MeasurementsBaseTypeExt = "BaseType"
+    MeasurementsJunoExt = "Juno"
+    MeasurementsMakieExt = "Makie"
+    MeasurementsRecipesBaseExt = "RecipesBase"
+    MeasurementsSpecialFunctionsExt = "SpecialFunctions"
+    MeasurementsUnitfulExt = "Unitful"
+
+    [deps.Measurements.weakdeps]
+    BaseType = "7fbed51b-1ef5-4d67-9085-a4a9b26f478c"
+    Juno = "e5e0dc1b-0480-54bc-9374-aad01c23163d"
+    Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+    RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+    SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
+    Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
 [[deps.MeshIO]]
 deps = ["ColorTypes", "FileIO", "GeometryBasics", "Printf"]
 git-tree-sha1 = "c009236e222df68e554c7ce5c720e4a33cc0c23f"
@@ -2452,7 +2480,7 @@ version = "3.39.0"
     Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [[deps.RecursiveGPs]]
-deps = ["AbstractGPs", "BenchmarkTools", "CSV", "CairoMakie", "ColorSchemes", "ComponentArrays", "DataFrames", "DataInterpolations", "Distributions", "ForwardDiff", "GLMakie", "LinearAlgebra", "LowLevelParticleFilters", "ModelingToolkit", "OrdinaryDiffEq", "PreallocationTools", "StaticArrays", "Statistics", "StatsBase"]
+deps = ["AbstractGPs", "BenchmarkTools", "CSV", "CairoMakie", "ColorSchemes", "ComponentArrays", "DataFrames", "DataInterpolations", "Distributions", "ForwardDiff", "GLMakie", "LinearAlgebra", "LowLevelParticleFilters", "ModelingToolkit", "ModelingToolkitStandardLibrary", "OrdinaryDiffEq", "PreallocationTools", "StaticArrays", "Statistics", "StatsBase"]
 path = "."
 uuid = "823db892-9aed-49f1-a895-816506ef09ff"
 version = "0.1.0"
@@ -2847,14 +2875,11 @@ deps = ["Dates", "UUIDs"]
 git-tree-sha1 = "79529b493a44927dd5b13dde1c7ce957c2d049e4"
 uuid = "ec057cc2-7a8d-4b58-b3b3-92acb9f63b42"
 version = "2.6.0"
+weakdeps = ["Measurements", "Tables"]
 
     [deps.StructUtils.extensions]
     StructUtilsMeasurementsExt = ["Measurements"]
     StructUtilsTablesExt = ["Tables"]
-
-    [deps.StructUtils.weakdeps]
-    Measurements = "eff96d63-e80a-5855-80a2-b1b0885c5ab7"
-    Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [[deps.StyledStrings]]
 uuid = "f489334b-da3d-4c2e-b8f0-e476e12c162b"

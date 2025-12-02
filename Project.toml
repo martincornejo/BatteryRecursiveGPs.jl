@@ -17,6 +17,7 @@ ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LowLevelParticleFilters = "d9d29d28-c116-5dba-9239-57a5fe23875b"
+Measurements = "eff96d63-e80a-5855-80a2-b1b0885c5ab7"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 ModelingToolkitStandardLibrary = "16a59e39-deab-5bd0-87e4-056b12336739"
 OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
@@ -27,6 +28,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
 GLMakie = "0.13.6"
+Measurements = "2.14.1"
 ModelingToolkit = "10.14.0"
 ModelingToolkitStandardLibrary = "2.25.0"
 
