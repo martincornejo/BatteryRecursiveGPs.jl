@@ -90,3 +90,46 @@ function build_kf(θ, ϑ, df, zt; n=21)
     make_ekf(rgps, dynamics!, measurement, R2; p)
 end
 
+function model_predict(kf, u)
+    (; xid, vσ²) = kf.p
+    xc = ComponentVector(kf.x, xid)
+    vrc = xc.rc.v
+
+    ocv = predict_gp(kf, [u.q], :ocv)
+    r0 = predict_gp(kf, [u.q], :r0)
+    μ = ocv.μ[1] + u.i * r0.μ[1] + vrc
+    σ = sqrt(ocv.σ[1]^2 + u.i^2 * r0.σ[1]^2 + vσ²) # TODO: vσ
+    # μ = StatsBase.reconstruct(zt.v, [μ̂]) |> first
+    # σ = StatsBase.reconstruct(zt.σ, [σ̂]) |> first
+    (; μ, σ)
+end
+
+function run_sim!(kf, us, ys, ut)
+    vμ = Float64[]
+    vσ = Float64[]
+    # sμ = Float64[]
+    # sσ = Float64[]
+    for (u, y) in zip(us, ys)
+        (vμᵢ, vσᵢ) = model_predict(kf, u)
+        push!(vμ, vμᵢ)
+        push!(vσ, vσᵢ)
+        # push!(sμ, kf.x[1])
+        # push!(sσ, sqrt(kf.R[1, 1]))
+        LLPF.update!(kf, u, y)
+    end
+
+    for u in ut
+        vμᵢ, vσᵢ = model_predict(kf, u)
+        push!(vμ, vμᵢ)
+        push!(vσ, vσᵢ)
+        # push!(sμ, kf.x[1])
+        # push!(sσ, sqrt(kf.R[1, 1]))
+        LLPF.predict!(kf, u)
+    end
+
+    vμ = StatsBase.reconstruct(zt.v, vμ)
+    vσ = StatsBase.reconstruct(zt.σ, vσ)
+
+    # return (; vμ, vσ, sμ, sσ)
+    return (; vμ, vσ)
+end
