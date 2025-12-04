@@ -63,3 +63,41 @@ function plot_ecm(kf, df, zt; focv=nothing, fR0=nothing, Q)
     fig
 end
 
+function plot_simulation(vμ, vσ, df)
+    colors = Makie.wong_colors()
+
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+
+    lines!(ax[1], df.t / 3600, df.v, color=colors[1])
+    lines!(ax[1], df.t / 3600, vμ, color=colors[2])
+    band!(ax[1], df.t / 3600, vμ - 2vσ, vμ + 2vσ, color=(colors[2], 0.5))
+
+    Δv = vμ - df.v
+    lines!(ax[2], df.t / 3600, Δv * 1e3, color=colors[3])
+    band!(ax[2], df.t / 3600, (Δv - 2vσ) * 1e3, (Δv + 2vσ) * 1e3, color=(colors[3], 0.5))
+
+    ylims!(ax[2], -30, 30)
+
+    ax[1].ylabel = "Voltage / V"
+    ax[2].ylabel = "Error / mV"
+
+    fig
+end
+
+function plot_soc_estimation(sol, time, s)
+    μ = sol.xt .|> first
+    σ = sol.Rt .|> first .|> sqrt
+
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+    lines!(ax[1], time / 3600, μ)
+    band!(ax[1], time / 3600, μ - 2σ, μ + 2σ, alpha=0.5)
+    lines!(ax[1], time / 3600, s)
+
+    Δs = μ - s
+    lines!(ax[2], time / 3600, Δs)
+    band!(ax[2], time / 3600, Δs - 2σ, Δs + 2σ, alpha=0.5)
+
+    fig
+end
