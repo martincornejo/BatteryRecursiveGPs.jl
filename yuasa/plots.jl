@@ -101,3 +101,27 @@ function plot_soc_estimation(sol, time, s)
 
     fig
 end
+
+
+function plot_q_estimation(evo, df_cell,zt)
+    q_evoμ = [μ.q[1] for μ in evo.μs]
+    q_evoσ = [sqrt.(Σ[:q, :q][1,1]) for Σ in evo.Σs]
+
+    q_evo =(;
+        μ = StatsBase.reconstruct(zt.q, q_evoμ),
+        σ = zt.q.scale .* q_evoσ
+    )
+    
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+    lines!(ax[1], df_cell.t / 3600,q_evo.μ, color=:blue)
+    band!(ax[1], df_cell.t / 3600, q_evo.μ - 2q_evo.σ, q_evo.μ + 2q_evo.σ, color=(:blue, 0.5))
+    lines!(ax[1], df_cell.t / 3600, df_cell.q, color=:orange)
+
+    ax[1].ylabel = "Evolution"
+
+    error = abs.(df_cell.q - q_evo.μ)
+    lines!(ax[2], df_cell.t / 3600, error, color=:red)
+    ax[1].ylabel = "Difference with original"
+    fig
+end
