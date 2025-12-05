@@ -84,8 +84,47 @@ function calc_soc0(kf, df, zt, fsoc; v=(3.85, 4.0), n=1)
 end
 
 
+function calc_Q_pack(params)
+    Qdch = map(collect(keys(params))) do cell_id
+        cell = params[cell_id]
+        Qdch = cell[:soc] * cell[:Q]
+    end |> minimum
 
-function calc_module_soc(df)
+    Qch = map(collect(keys(params))) do cell_id
+        cell = params[cell_id]
+        Qch = (1 - cell[:soc]) * cell[:Q]
+    end |> minimum
+
+    Qch + Qdch
+end
+
+function calc_soh_pack(params, Q; delta_soc=true)
+    if delta_soc
+        # Qloss due to degradation + Δsoc
+        Q_pack = calc_Q_pack(params)
+    else
+        # Qloss only from degradation
+        Q_pack = minimum(params[cell_id][:Q] for cell_id in keys(params))
+    end
+
+    Q_pack / Q
+end
+
+function calc_Q_utilization(params; delta_soc=true)
+    n_cells = length(params)
+    Q_cells_total = sum(params[cell_id][:Q] for cell_id in keys(params))
+
+    if delta_soc
+        # Qloss due to degradation + Δsoc
+        Q_pack = calc_Q_pack(params)
+    else
+        # Qloss only from degradation
+        Q_pack = minimum(params[cell_id][:Q] for cell_id in keys(params))
+    end
+    (Q_pack * n_cells) / Q_cells_total
+end
+
+function calc_module_soc(df, params)
     # TODO: improve
 
     df2 = DataFrame(
@@ -101,7 +140,7 @@ function calc_module_soc(df)
     Q_pack_dch ./ Q_pack
 end
 
-function plot_module_soc(df)
+function plot_module_soc(df, params)
     # TODO: improve
 
     fig = Figure()
@@ -111,7 +150,7 @@ function plot_module_soc(df)
         lines!(ax, df.t / 3600, df[:, "soc_cell_$i"], color=(:blue, 0.2))
     end
 
-    S_pack = calc_module_soc(df)
+    S_pack = calc_module_soc(df, params)
     lines!(ax, df.t / 3600, S_pack, color=:black)
     fig
 end
