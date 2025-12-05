@@ -21,6 +21,7 @@ function dynamics_rc(x, i, p)
     (; Ts) = p
     (; v, r, τ) = x
     exp(-Ts / τ) * v + i * r * (1 - exp(-Ts / τ))
+
 end
 
 # === model
@@ -90,11 +91,30 @@ function build_kf(θ, ϑ, df, zt; n=21)
     make_ekf(rgps, dynamics!, measurement, R2; p)
 end
 
+
+function save_train_kf(kf, us, ys; step_size=1000)
+    μs = []
+    Σs = []
+    n = 1
+    (; xid, Σid) = kf.p
+    for (u, y) in zip(us, ys)
+        kf(u, y)
+        if n % step_size == 0
+            push!(μs, copy(ComponentVector(kf.x, xid)))
+            push!(Σs, copy(ComponentMatrix(kf.R, Σid)))
+        end
+        n += 1
+    end
+    evo = (; μs, Σs)
+    return evo
+end
+
+
 function model_predict(kf, u)
     (; xid, vσ²) = kf.p
     xc = ComponentVector(kf.x, xid)
-    vrc = xc.rc.v
 
+    vrc = xc.rc.v
     ocv = predict_gp(kf, [u.q], :ocv)
     r0 = predict_gp(kf, [u.q], :r0)
     μ = ocv.μ[1] + u.i * r0.μ[1] + vrc

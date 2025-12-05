@@ -25,6 +25,7 @@ include("model_yuasa.jl")
 include("analysis.jl")
 include("plots.jl")
 
+include("model_yuasa_q.jl")
 include("soc_estimation.jl")
 
 ## dataset
@@ -93,6 +94,8 @@ let cell_id = 1
     )
 
     kf = build_kf(θ, ϑ, df_cell, zt)
+
+
     v_sim = run_sim!(kf, us, ys, [])
 
     vμ = StatsBase.reconstruct(zt.v, v_sim.vμ)
@@ -100,6 +103,7 @@ let cell_id = 1
 
     plot_simulation(vμ, vσ, df_cell) |> display
     plot_ecm(kf, df_cell, zt, Q=0) |> display
+
 
     Q´ = calc_Q(kf, df_cell, zt, focv⁻¹) |> Measurements.value
     s´ = calc_soc0(kf, df_cell, zt, focv⁻¹) |> Measurements.value
@@ -115,12 +119,57 @@ let cell_id = 1
 
     plot_soc_estimation(sol, df_cell.t, df_cell.s) |> display
 
+
 end
 
 
+## cell 1
+let cell_id = 1
+    df_cell = select_cell_dataset(df, cell_id)
+    zt = fit_zscore(df_cell)
+    dfn = normalize_data(zt, df_cell)
+
+    us = [(; i, q) for (i, q) in zip(dfn.i, dfn.q)]
+    ys = [SA[y] for y in dfn.v]
+
+    θ = (; # tunable (hyper)params
+        ocv=(; σ=0.5, ℓ=0.5),
+        r0=(; σ=0.001, ℓ=1.5),
+        rc=(;
+            σ0_v=1e-3, σ1_v=1.0e-4,
+            σ0_r=50e-3, σ1_r=3e-6,
+            σ0_τ=50, σ1_τ=2e-6,
+        ),
+        q =(; q0 = dfn.q[1],
+            σ1=1e-4,
+
+        ),
+        vσ=3e-3,
+    )
+    ϑ = (; # non-tunable params
+        Ts=10.0,
+        r0=(; r0=1.0e-3),
+        rc=(; v0=0.0, r0=0.8e-3, τ0=60.0,)
+    )
+
+    kf = build_kf_q(θ, ϑ, df_cell, zt)
+
+    if false
+        v_sim = run_sim!(kf, us, ys, [])
+        vμ = StatsBase.reconstruct(zt.v, v_sim.vμ)
+        vσ = StatsBase.reconstruct(zt.σ, v_sim.vσ)
+
+        plot_simulation(vμ, vσ, df_cell) |> display
+        plot_ecm(kf, df_cell, zt, Q=0) |> display
+    else
+        evo = save_train_kf(kf, us, ys; step_size=1)
+        plot_q_estimation(evo, df_cell,zt) |> display
+    end
+end
+
 
 ## module
-let
+let cell_id = 1
     zt = fit_zscore(df)
     dfn = normalize_data(zt, df)
 
@@ -135,6 +184,10 @@ let
             σ0_r=50e-3, σ1_r=3e-6,
             σ0_τ=50, σ1_τ=2e-6,
         ),
+        q = (;
+            q0 = dfn.q[1],
+            σ1=1e-4,
+        ),
         vσ=3e-3,
     )
     ϑ = (; # non-tunable params
@@ -145,7 +198,6 @@ let
 
     kf = build_kf(θ, ϑ, df, zt)
 
-    kf = build_kf(θ, ϑ, df, zt)
     v_sim = run_sim!(kf, us, ys, [])
 
     vμ = StatsBase.reconstruct(zt.v, v_sim.vμ)

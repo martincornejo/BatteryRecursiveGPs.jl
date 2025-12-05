@@ -5,7 +5,9 @@
 
 function dynamics_state(x, u, p, t)
     # (; Ts, R1, τ1, xid) = p
-    (; Ts, q) = p
+    (; kf, Ts, q) = p
+    kfx = ComponentVector(kf.x, kf.p.xid)
+    kfx.rc.v = dynamics_rc(kfx.rc, u.i, (; Ts))
     soc = x[1]
     i = u.î # control
 
@@ -13,23 +15,25 @@ function dynamics_state(x, u, p, t)
     # dx[2] = v1 * exp(-Ts / τ1) + i * R1 * (1 - exp(-Ts / τ1))
     soc⁺ = soc + i * Ts / (q * 3600)
     SA[soc⁺]
+
 end
 
 function measurement_state(x, u, p, t)
     (; kf, Δsoc, q) = p
-    (; xid, ocv, r0) = kf.p
+    (; xid, ocv, r0, rc) = kf.p
     soc = x[1]
     soc´ = (soc + Δsoc) * q
     kfx = ComponentVector(kf.x, xid)
     ocv = measurement_gp(ocv, kfx.ocv, soc´)
     r0 = measurement_gp(r0, kfx.r0, soc´)
-    v = ocv + u.i * r0 |> SVector{1}
+    v = ocv + u.i * r0  + kfx.rc.v|> SVector{1}
+    v
     # StatsBase.reconstruct(zt.v, v) |> SVector{1}
 end
 
 function R2_state(x, u, p, t)
     (; kf) = p
-    (; xid, ocv, r0) = kf.p
+    (; xid, ocv, r0, rc) = kf.p
     soc = x[1]
     # kfx = ComponentVector(kf.x, xid)
     ocv = uncertainty_gp(ocv, soc)
