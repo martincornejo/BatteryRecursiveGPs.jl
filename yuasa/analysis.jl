@@ -147,10 +147,17 @@ function plot_module_soc(df, params)
     ax = Axis(fig[1, 1])
 
     for i in 1:12
-        lines!(ax, df.t / 3600, df[:, "soc_cell_$i"], color=(:blue, 0.2))
+        lines!(ax, df.t / 3600, df[:, "soc_cell_$i"], color=(:blue, 0.2), label="Cell")
     end
 
     S_pack = calc_module_soc(df, params)
-    lines!(ax, df.t / 3600, S_pack, color=:black)
+    lines!(ax, df.t / 3600, S_pack, color=:black, label="Module")
+
+
+    axislegend(ax, position=:lb, merge=true)
+    xlims!(ax, df[begin, :t] / 3600, df[end, :t] / 3600)
+    ax.ylabel = "SOC / p.u."
+    ax.xlabel = "Time / h"
+
     fig
 end

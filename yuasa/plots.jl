@@ -8,11 +8,25 @@ function plot_dataset(df)
     lines!(ax[2], df.t / 3600, df.v, color=colors[1])
     lines!(ax[3], df.t / 3600, df.i, color=colors[2])
     lines!(ax[4], df.t / 3600, df.q, color=colors[3])
+
+    for i in 1:4
+        xlims!(ax[i], df[begin, :t] / 3600, df[end, :t] / 3600)
+    end
+    for i in 1:3
+        hidexdecorations!(ax[i], ticks=false, grid=false)
+    end
+
+    ax[1].ylabel = "Cell / V"
+    ax[2].ylabel = "Module / V"
+    ax[3].ylabel = "Current / A"
+    ax[4].ylabel = "Coloumb / Ah"
+    ax[4].xlabel = "Time / h"
+
     fig
 end
 
 
-function plot_ecm(kf, df, zt; focv=nothing, fR0=nothing, Q)
+function plot_ecm(kf, df, zt; focv=nothing, fR0=nothing, Q, external_cc=true)
     fig = Figure(size=(600, 600))
     ax = [Makie.Axis(fig[i, 1]) for i in 1:2]
     ax[1].ylabel = "OCV / V"
@@ -22,9 +36,15 @@ function plot_ecm(kf, df, zt; focv=nothing, fR0=nothing, Q)
     hidexdecorations!(ax[1], ticks=false, grid=false)
 
     # soc = 0:0.01:1
-    qmin, qmax = extrema(df.q)
-    q = qmin:0.01:qmax
-    q̂ = StatsBase.transform(zt.q, q)
+    if external_cc
+        qmin, qmax = extrema(df.q)
+        q = qmin:0.01:qmax
+        q̂ = StatsBase.transform(zt.q, q)
+    else
+        qmin, qmax = extrema(cumsum(df.i) * kf.p.Ts / 3600)
+        q = qmin:0.01:qmax
+        q̂ = StatsBase.transform(zt.i, q)
+    end
 
     # OCV 
     ocv = predict_gp(kf, q̂, :ocv)
@@ -69,58 +89,74 @@ function plot_simulation(vμ, vσ, df)
     fig = Figure()
     ax = [Axis(fig[i, 1]) for i in 1:2]
 
-    lines!(ax[1], df.t / 3600, df.v, color=colors[1])
-    lines!(ax[1], df.t / 3600, vμ, color=colors[2])
-    band!(ax[1], df.t / 3600, vμ - 2vσ, vμ + 2vσ, color=(colors[2], 0.5))
+    lines!(ax[1], df.t / 3600, vμ, color=colors[1], label="Model")
+    band!(ax[1], df.t / 3600, vμ - 2vσ, vμ + 2vσ, color=(colors[1], 0.5), label="Model")
+    lines!(ax[1], df.t / 3600, df.v, color=colors[2], label="Real")
 
     Δv = vμ - df.v
-    lines!(ax[2], df.t / 3600, Δv * 1e3, color=colors[3])
-    band!(ax[2], df.t / 3600, (Δv - 2vσ) * 1e3, (Δv + 2vσ) * 1e3, color=(colors[3], 0.5))
+    lines!(ax[2], df.t / 3600, Δv * 1e3, color=colors[1])
+    band!(ax[2], df.t / 3600, (Δv - 2vσ) * 1e3, (Δv + 2vσ) * 1e3, color=(colors[1], 0.5))
 
-    ylims!(ax[2], -30, 30)
+    hidexdecorations!(ax[1], ticks=false, grid=false)
+    xlims!(ax[1], df[begin, :t] / 3600, df[end, :t] / 3600)
+    xlims!(ax[2], df[begin, :t] / 3600, df[end, :t] / 3600)
+    # ylims!(ax[2], -30, 30)
+    ylims!(ax[2], -20, 20)
 
     ax[1].ylabel = "Voltage / V"
     ax[2].ylabel = "Error / mV"
 
+    Legend(fig[3, 1], ax[1], merge=true, orientation=:horizontal)
+
     fig
 end
 
-function plot_soc_estimation(sol, time, s)
-    μ = sol.xt .|> first
-    σ = sol.Rt .|> first .|> sqrt
+function plot_soc_estimation(time, μ, σ, s, s´=nothing)
+    colors = Makie.wong_colors()
 
     fig = Figure()
     ax = [Axis(fig[i, 1]) for i in 1:2]
-    lines!(ax[1], time / 3600, μ)
-    band!(ax[1], time / 3600, μ - 2σ, μ + 2σ, alpha=0.5)
-    lines!(ax[1], time / 3600, s)
+    lines!(ax[1], time / 3600, μ; label="Model")
+    band!(ax[1], time / 3600, μ - 2σ, μ + 2σ, alpha=0.5; label="Model")
+    lines!(ax[1], time / 3600, s; label="Real")
+
+    if s´ !== nothing
+        lines!(ax[1], time / 3600, s´; color=:gray, linestyle=:dash, label="Coloumb")
+    end
 
     Δs = μ - s
-    lines!(ax[2], time / 3600, Δs)
-    band!(ax[2], time / 3600, Δs - 2σ, Δs + 2σ, alpha=0.5)
+    lines!(ax[2], time / 3600, Δs; color=colors[1])
+    band!(ax[2], time / 3600, Δs - 2σ, Δs + 2σ; color=(colors[1], 0.5))
+
+    hidexdecorations!(ax[1], ticks=false, grid=false)
+    ax[1].ylabel = "SOC / p.u."
+    ax[2].ylabel = "Error / p.u."
+    ax[2].xlabel = "Time / h"
+
+    xlims!(ax[1], time[begin] / 3600, time[end] / 3600)
+    xlims!(ax[2], time[begin] / 3600, time[end] / 3600)
+    ylims!(ax[2], -0.025, 0.025)
+
+    # axislegend(ax[1], position=:lb, merge=true)
+    Legend(fig[3, 1], ax[1], merge=true, orientation=:horizontal)
 
     fig
 end
 
 
-function plot_q_estimation(evo, df_cell,zt)
-    q_evoμ = [μ.q[1] for μ in evo.μs]
-    q_evoσ = [sqrt.(Σ[:q, :q][1,1]) for Σ in evo.Σs]
+function plot_q_estimation(evo, df_cell, zt)
+    qμ = StatsBase.reconstruct(zt.i, [μ.cc.q for μ in evo.μs])
+    qσ = StatsBase.reconstruct(zt.i, [sqrt.(Σ[:cc, :cc][:q, :q]) for Σ in evo.Σs])
 
-    q_evo =(;
-        μ = StatsBase.reconstruct(zt.q, q_evoμ),
-        σ = zt.q.scale .* q_evoσ
-    )
-    
     fig = Figure()
     ax = [Axis(fig[i, 1]) for i in 1:2]
-    lines!(ax[1], df_cell.t / 3600,q_evo.μ, color=:blue)
-    band!(ax[1], df_cell.t / 3600, q_evo.μ - 2q_evo.σ, q_evo.μ + 2q_evo.σ, color=(:blue, 0.5))
+    lines!(ax[1], df_cell.t / 3600, qμ, color=:blue)
+    band!(ax[1], df_cell.t / 3600, qμ - 2qσ, qμ + 2qσ, color=(:blue, 0.5))
     lines!(ax[1], df_cell.t / 3600, df_cell.q, color=:orange)
 
     ax[1].ylabel = "Evolution"
 
-    error = abs.(df_cell.q - q_evo.μ)
+    error = qμ - df_cell.q
     lines!(ax[2], df_cell.t / 3600, error, color=:red)
     ax[1].ylabel = "Difference with original"
     fig
