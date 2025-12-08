@@ -25,6 +25,27 @@ function plot_dataset(df)
     fig
 end
 
+function plot_cell_states(params)
+    fig = Figure(size=(500, 500))
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+    colors = Makie.wong_colors()
+
+    Q = [params[Symbol("cell_$i")][:Q] for i in 1:12]
+    barplot!(ax[1], 1:12, Q)
+    ylims!(ax[1], 55, 70)
+    ax[1].xticks = 1:12
+    ax[1].ylabel = "Capacity / Ah"
+    ax[1].xlabel = "Cell ID"
+
+    s = [params[Symbol("cell_$i")][:soc] for i in 1:12]
+    barplot!(ax[2], 1:12, s; color=colors[3])
+    ylims!(ax[2], 0.45, 0.60)
+    ax[2].xticks = 1:12
+    ax[2].ylabel = "Initial SOC / p.u."
+    ax[2].xlabel = "Cell ID"
+
+    fig
+end
 
 function plot_ecm(kf, df, zt; focv=nothing, fR0=nothing, Q, external_cc=true)
     fig = Figure(size=(600, 600))
@@ -160,4 +181,36 @@ function plot_q_estimation(evo, df_cell, zt)
     lines!(ax[2], df_cell.t / 3600, error, color=:red)
     ax[1].ylabel = "Difference with original"
     fig
+end
+
+
+
+function plot_simulation_cell(df, res)
+    v = zero.(res[:cell_1][:v])
+    for i in 1:12
+        v .+= res[Symbol("cell_$i")][:v]
+    end
+
+    vμ = Measurements.value.(v)
+    vσ = Measurements.uncertainty.(v)
+
+    plot_simulation(vμ, vσ, df)
+end
+
+function plot_soc_estimation_cell(df, res, params)
+    dfs = DataFrame(
+        :t => df.t,
+        [Symbol("soc_$i") => res[i][:s] for i in collect(keys(res))]...
+    )
+    s´ = calc_module_soc(dfs, res)
+
+    sμ = Measurements.value.(s´)
+    sσ = Measurements.uncertainty.(s´)
+
+    Q´ = calc_Q_pack(res)
+
+    ŝ = sμ[begin] .+ cumsum(df.i .+ 0.5) * Ts / (Q´ * 3600)
+
+    soc_module = calc_module_soc(df, params)
+    plot_soc_estimation(df.t, sμ, sσ, soc_module, ŝ)
 end

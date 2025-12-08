@@ -98,7 +98,7 @@ function save_train_kf(kf, us, ys; step_size=1000)
     n = 1
     (; xid, Σid) = kf.p
     for (u, y) in zip(us, ys)
-        kf(u, y)
+        LLPF.update!(kf, u, y)
         if n % step_size == 0
             push!(μs, copy(ComponentVector(kf.x, xid)))
             push!(Σs, copy(ComponentMatrix(kf.R, Σid)))
