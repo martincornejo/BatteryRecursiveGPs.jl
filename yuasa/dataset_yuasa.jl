@@ -5,9 +5,9 @@
 
     params = @parameters begin
         Q
-        R0
         R1
         τ1
+        fR0(::Real)::Real
         focv(::Real)::Real
     end
 
@@ -16,15 +16,17 @@
         i(t)
         v1(t) = 0
         vr(t)
+        r0(t)
         ocv(t)
         soc(t)
     end
 
     eqs = [
         ocv ~ focv(soc)
+        r0 ~ fR0(soc)
         D(soc) ~ i / (Q * 3600.0)
         D(v1) ~ -v1 / τ1 + i * (R1 / τ1)
-        vr ~ i * R0
+        vr ~ i * r0
         v ~ ocv + vr + v1
     ]
 
