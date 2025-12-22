@@ -2,14 +2,13 @@ function make_ekf(components, dynamics, measurement::Function, R2::Function; Aja
     ids = keys(components)
     x0 = ComponentVector(; (id => components[id].μ0 for id in ids)...)
 
-    Σ0 = false .* x0 * x0'
+    Σ0 =false .* x0 * x0'
     R1 = false .* x0 * x0'
     for id in ids
         component = components[id]
         Σ0[id, id] = component.Σ0
         R1[id, id] = component.R1
     end
-
     d0 = LLPF.SimpleMvNormal(x0, Σ0)
     xid = getaxes(x0)
     Σid = getaxes(Σ0)
@@ -25,7 +24,7 @@ function make_ekf(components, dynamics, measurement::Function, R2::Function; Aja
         p...
     )
 
-    ExtendedKalmanFilter(dynamics, measurement, R1, R2, d0; Ajac, Cjac, nx, nu, ny, p) # , Ajac=fAjac, Cjac=fCjac)
+    ExtendedKalmanFilter(dynamics, measurement, R1, R2, d0; Ajac, Cjac, nx, nu, ny, p)
 end
 
 
@@ -51,7 +50,7 @@ function predict_gp(kf, b, id::Symbol)
 
     R2 = cov(gp, b) - H * cov(gp, b0, b) #eq.7 
     Σ = R2 + H * R * H' #eq.9
-    σ = sqrt.(diag(Σ))
+    σ = sqrt.(abs.(diag(Σ)))
     (; μ, σ)
 end
 

@@ -4,7 +4,7 @@ function dynamics_state(x, u, p, t)
     soc = x[1]
     vrc = x[2]
 
-    vrc⁺ = vrc * exp(-Ts / τ1) + u.i * R1 * (1 - exp(-Ts / τ1))
+    vrc⁺ = vrc * exp(-Ts / exp(τ1)) + u.i * exp(R1) * (1 - exp(-Ts / exp(τ1)))
     soc⁺ = soc + u.î * Ts / (q * 3600)
     SA[soc⁺, vrc⁺]
 end

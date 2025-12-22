@@ -64,19 +64,20 @@ end
 
 # dynamics(x, u, p, t) = x
 function measurement_gp(rgp::RGP, g::AbstractArray, b::Real)
+    # TODO: Do type for Hyp tunning, selcet between g,b mu0
     (; gp, b0, μ0, Σ0⁻¹, cache) = rgp
     k = get_tmp(cache.k, g)
     H = get_tmp(cache.H, g)
-    Δg = get_tmp(cache.Δg, g)
-
+    #Δg = get_tmp(cache.Δg, b)
     cov!(k, gp, b0, b) # k .= cov(gp,b0, b)
     mul!(H, k', Σ0⁻¹) # H = k' * Σ0⁻¹
-    Δg .= g - μ0
+    Δg = g - μ0
     muladd(H, Δg, mean(gp, b)) # H * (g - μ0) + m
 end
 
-function uncertainty_gp(rgp::RGP, g::AbstractArray, b::Real)
-    (; gp, b0, Σ0⁻¹, cache) = rgp
+function uncertainty_gp(rgp::RGP,g::AbstractArray, b::Real)
+    # TODO: Do type with mu0
+    (; gp, b0, Σ0⁻¹, cache, μ0) = rgp
     k = get_tmp(cache.k, g)
     H = get_tmp(cache.H, g)
     k⁻ = get_tmp(cache.k⁻, g)

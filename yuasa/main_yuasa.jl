@@ -3,6 +3,7 @@ using ModelingToolkit: t_nounits as t, D_nounits as D
 using ModelingToolkitStandardLibrary.Electrical
 using ModelingToolkitStandardLibrary.Blocks
 using OrdinaryDiffEq
+using NonlinearSolve
 
 using Random
 using StatsBase
@@ -25,7 +26,7 @@ include("dataset_yuasa.jl")
 include("model_yuasa.jl")
 include("analysis.jl")
 include("plots.jl")
-
+include("utils.jl")
 include("model_yuasa_q.jl")
 include("soc_estimation.jl")
 
@@ -41,7 +42,6 @@ begin
     # fR0(s) = 0.001 + 0.0002 * sinpi(-0.2 + s * 1.5)
     # fR0(s, T) = (0.001 + 0.0002 * sinpi(-0.2 + s * 1.5)) * exp(kT * (1 / T - 1 / T0))
 end
-
 begin # read current profile
     df = CSV.File("data/yuasa-p1-m1.csv") |> DataFrame
     select!(df, :time => :t, :module_current => :i, :module_temperature => :T)
@@ -82,33 +82,37 @@ res = let
         us = [(; i, q) for (i, q) in zip(dfn.i, dfn.q)]
         ys = [SA[y] for y in dfn.v]
 
-        θ = (; # tunable (hyper)params
-            ocv=(; σ=0.5, ℓ=0.5),
-            r0=(; σ=0.001, ℓ=1.5),
-            rc=(;
+        θ = ComponentVector(; # tunable (hyper)params
+            ocv=ComponentVector(; σ=0.5, ℓ=0.5),
+            r0=ComponentVector(; σ=0.001, ℓ=1.5),
+            rc=ComponentVector(;
                 σ0_v=1e-3, σ1_v=1.0e-4,
                 σ0_r=50e-3, σ1_r=3e-6,
                 σ0_τ=50, σ1_τ=2e-6,
             ),
+            q = ComponentVector(
+            σ1 = 1e-5,
+            ),
             vσ=3e-3,
         )
-        ϑ = (; # non-tunable params
+        ϑ = ComponentVector(; # non-tunable params
             Ts=10.0,
             r0=(; r0=1.0e-3),
-            rc=(; v0=0.0, r0=0.8e-3, τ0=60.0,)
+            rc=(; v0=0.0, r0=0.2e-3, τ0=40.0,)
         )
+
 
         kf = build_kf(θ, ϑ, df_cell, zt)
 
 
-        v_sim = run_sim!(kf, us, ys, [])
+        (;v_sim) = run_sim!(kf, us, ys, [])
 
         vμ = StatsBase.reconstruct(zt.v, v_sim.vμ)
         vσ = StatsBase.reconstruct(zt.σ, v_sim.vσ)
 
         plot_simulation(vμ, vσ, df_cell) |> display
-        plot_ecm(kf, df_cell, zt; focv, Q=params[Symbol("cell_$cell_id")][:Q]) |> display
-
+        plot_ecm(kf, df_cell, zt; focv,fR0, Q=params[Symbol("cell_$cell_id")][:Q]) |> display
+        #plot_rc(kf, df_cell, zt) |> display
 
         Q = params[Symbol("cell_$cell_id")][:Q]
         Q´ = calc_Q(kf, df_cell, zt, focv⁻¹) |> Measurements.value
@@ -160,24 +164,24 @@ let
         r0=(; σ=0.001, ℓ=1.5),
         rc=(;
             σ0_v=1e-3, σ1_v=1.0e-4,
-            σ0_r=50e-3, σ1_r=3e-6,
-            σ0_τ=50, σ1_τ=2e-6,
+            σ0_r=10e-3, σ1_r=3e-6,
+            σ0_τ=100, σ1_τ=2e-6,
         ),
         q=(;
             q0=0.0,
             σ1=0.0,
-        ),
+        ), ## Does it affect?
         vσ=3e-3,
     )
     ϑ = (; # non-tunable params
         Ts=10.0,
         r0=(; r0=12 * 1.0e-3),
-        rc=(; v0=0.0, r0=12 * 0.8e-3, τ0=60.0,)
+        rc=(; v0=0.0, r0=12 * 0.2e-3, τ0=120.0,)
     )
 
     kf = build_kf(θ, ϑ, df, zt)
 
-    v_sim = run_sim!(kf, us, ys, [])
+    (;v_sim) = run_sim!(kf, us, ys, [])
 
     vμ = StatsBase.reconstruct(zt.v, v_sim.vμ)
     vσ = StatsBase.reconstruct(zt.σ, v_sim.vσ)
@@ -237,73 +241,67 @@ end
 # r1 = StatsBase.reconstruct(zt.r, [getindex(getindex(ComponentVector(kf.x, xid), :rc), :r)]) |> first
 
 ## cell 1
-# simulataneous parameter and state estimation
-begin
+# simulataneous parameter and state estimationç
 
+begin
     cell_id = 1
     df_cell = select_cell_dataset(df, cell_id)
     zt = fit_zscore(df_cell)
     dfn = normalize_data(zt, df_cell)
 
     Random.seed!(42)
-    us = [(; i) for i in dfn.i]
-    # us = [(; i=i + 0.01, q) for (i, q) in zip(dfn.i, dfn.q)]
+    us = [(; i = [i], q = [q]) for (i, q) in zip(dfn.i, dfn.q)]
+    #us = [(; i) for i in dfn.i]
+    #us = [(; i=i + 0.01) for i in dfn.i]
     ys = [SA[y] for y in dfn.v]
 
-    θ = (; # tunable (hyper)params
-        ocv=(; σ=1.2, ℓ=0.8),
-        r0=(; σ=0.8, ℓ=0.8),
-        # ocv=(; σ=0.5, ℓ=0.5),
-        # r0=(; σ=0.001, ℓ=1.5),
-        rc=(;
-            σ0_v=1e-3, σ1_v=1.0e-4,
-            σ0_r=50e-3, σ1_r=3e-6,
-            σ0_τ=50, σ1_τ=2e-6,
+    θ = ComponentVector(
+        ocv = ComponentVector(
+            σ = 0.2,
+            ℓ = 0.8,
         ),
-        # q=(; σ1=5e-6,),
-        # q=(; σ1=1e-4),
-        q=(; σ1=0.0),
-        vσ=3e-3,
+        r0 = ComponentVector(
+            σ = 0.2,
+            ℓ = 0.8,
+        ),
+        q = ComponentVector(
+            σ1 = 1e-5,
+        ),
+        vσ = 3e-3,
     )
-    ϑ = (; # non-tunable params
-        Ts=10.0,
-        r0=(; r0=1.0e-1),
-        rc=(; v0=0.0, r0=0.8e-3, τ0=60.0,)
+
+    ## Non-tunable
+    ϑ = ComponentVector(
+        Ts = 10.0,
+        r0 = ComponentVector(
+            r0 = 1.0e-1
+        ),
+        rc = ComponentVector(
+            σ0_v = 1e-3,
+            σ1_v = 1.0e-4,
+            σ0_r = log(0.8 * 1e-3) - log(1.4e-3),
+            σ1_r = 3e-6,
+            σ0_τ = log(60) - log(120),
+            σ1_τ = 2e-6,
+            v0 = 0.0,
+            r0 = 1.4e-3,
+            τ0 = 120.0,
+        )
     )
 
-    kf = build_kf_q(θ, ϑ, df_cell, zt)
+    kf = build_kf(θ, ϑ, df_cell, zt)
 
-    # plot_ecm(kf, df_cell, zt; focv, Q=params[:cell_1][:Q], external_cc=false) |> display
-
-    if false
-        v_sim = run_sim!(kf, us, ys, [])
-        vμ = StatsBase.reconstruct(zt.v, v_sim.vμ)
-        vσ = StatsBase.reconstruct(zt.σ, v_sim.vσ)
-
-        plot_simulation(vμ, vσ, df_cell) |> display
-        plot_ecm(kf, df_cell, zt, Q=0) |> display
-    else
-        evo = save_train_kf(kf, us, ys; step_size=1)
-
-        # plot_q_estimation(evo, df_cell, zt) |> display
-        plot_ecm(kf, df_cell, zt; focv, Q=params[:cell_1][:Q], external_cc=false) |> display
-    end
-
-    # begin
-    #     fig = Figure()
-    #     ax = [Axis(fig[i, 1]) for i in 1:2]
-    #     î = StatsBase.reconstruct(zt.i, [u.i for u in us])
-    #     q̂ = cumsum(î) * Ts / 3600
-    #     lines!(ax[1], df_cell.t / 3600, q̂)
-    #     lines!(ax[1], df_cell.t / 3600, df_cell.q)
-    #     lines!(ax[2], df_cell.t / 3600, q̂ - df_cell.q; color=:red)
-    #     fig
-    # end |> display
-
+    (;evo, v_sim) = run_sim!(kf, us, ys, [])
+    vμ = StatsBase.reconstruct(zt.v, v_sim.vμ)
+    vσ = StatsBase.reconstruct(zt.σ, v_sim.vσ)
+    
+    plot_simulation(vμ, vσ, df_cell) |> display
+    #plot_q_estimation(evo.evoμ, evo.evoΣ, df_cell, zt) |> display
+    plot_ecm(kf, df_cell, zt; focv,fR0, Q=params[:cell_1][:Q], external_cc=true) |> display
+    plot_rc_evo(kf,evo.evoμ,evo.evoΣ,zt) |> display
 
     Q´ = calc_Q(kf, df_cell, zt, focv⁻¹) |> Measurements.value
     s´ = calc_soc0(kf, df_cell, zt, focv⁻¹) |> Measurements.value
 
     @info "cell $cell_id:" Q´ s´
 end
-#

@@ -43,41 +43,42 @@ function R2_2(x, u, p, t)
     xc = ComponentVector(x, xid)
     (; q) = xc.cc
 
-    ocv = uncertainty_gp(p.ocv, q)
-    r0 = uncertainty_gp(p.r0, q)
+    ocv = uncertainty_gp(p.ocv,xc.ocv, q)
+    r0 = uncertainty_gp(p.r0,xc.r0, q)
     ocv + u.i^2 * r0 + vσ² |> SMatrix{1,1}
 end
 
 ##
 function build_kf_q(θ, ϑ, df, zt; n=21)
+    θ´ = merge_componentvectors(θ, ϑ)
     # basis vectors
     dfn = normalize_data(zt, df)
     # qmin, qmax = extrema(dfn.q)
-    Ts = ϑ.Ts
+    Ts = θ´.Ts
     qmin, qmax = extrema(cumsum(dfn.i) * Ts / 3600)
     Δq = qmax - qmin
     b0 = range(qmin + 0.1Δq, qmax + 0.1Δq, n) |> collect
 
     # OCV GP
-    kernel1 = θ.ocv.σ * with_lengthscale(SEKernel(), θ.ocv.ℓ) # + LinearKernel()
+    kernel1 = θ´.ocv.σ * with_lengthscale(SEKernel(), θ´.ocv.ℓ) #+ LinearKernel()
     ocv = RGP(kernel1, b0)
 
     # R0 GP
-    kernel2 = θ.r0.σ * with_lengthscale(SEKernel(), θ.r0.ℓ)
-    r0μ = StatsBase.transform(zt.r, [ϑ.r0.r0]) |> first
+    kernel2 = θ´.r0.σ * with_lengthscale(SEKernel(), θ´.r0.ℓ)
+    r0μ = StatsBase.transform(zt.r, [θ´.r0.r0]) |> first
     r0 = RGP(r0μ, kernel2, b0)
 
     # RC
-    r1 = StatsBase.transform(zt.r, [ϑ.rc.r0]) |> first
-    rc = RC(; r0=r1, τ0=ϑ.rc.τ0, v0=ϑ.rc.v0, θ.rc...)
+    r1 = StatsBase.transform(zt.r, [θ´.rc.r0]) |> first
+    rc = RC(; r0=r1, τ0=θ´.rc.τ0, v0=θ´.rc.v0, θ´.rc...)
 
-    cc = ColoumbCounting(σ1=θ.q.σ1)
+    cc = ColoumbCounting(σ1=θ´.q.σ1)
 
     # measurement / model noise
-    vσ² = StatsBase.transform(zt.σ, [θ.vσ^2]) |> first
+    vσ² = StatsBase.transform(zt.σ, [θ´.vσ^2]) |> first
 
     p = (;
-        Ts=ϑ.Ts,
+        Ts=θ´.Ts,
         vσ²,
     )
     rgps = (; ocv, r0, rc, cc)
@@ -85,3 +86,16 @@ function build_kf_q(θ, ϑ, df, zt; n=21)
     make_ekf(rgps, dynamics_2!, measurement_2, R2_2; p)
 end
 
+function model_predict_q(kf, u)
+    (; xid, vσ²) = kf.p
+    xc = ComponentVector(kf.x, xid)
+    q = xc.cc.q
+    vrc = xc.rc.v
+    ocv = predict_gp(kf, [q], :ocv)
+    r0 = predict_gp(kf, [q], :r0)
+    μ = ocv.μ[1] + u.i * r0.μ[1] + vrc
+    σ = sqrt(ocv.σ[1]^2 + u.i^2 * r0.σ[1]^2 + vσ²) # TODO: vσ
+    # μ = StatsBase.reconstruct(zt.v, [μ̂]) |> first
+    # σ = StatsBase.reconstruct(zt.σ, [σ̂]) |> first
+    (; μ, σ)
+end
