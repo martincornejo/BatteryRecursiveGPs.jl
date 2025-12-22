@@ -55,8 +55,11 @@ end
 
 ##
 function build_kf(θ, ϑ, df, zt; n=21)
+    ## TODO: 
+    ## merge_componentvectors used due instantiation of Σ0 in model.jl is made:
+    ## false .* x0 * x0' -> TypeError if cov of RC, OCV, R0 not same type type error
     θ´ = merge_componentvectors(θ, ϑ)
-    # basis vectorsç
+    # basis vectors
     dfn = normalize_data(zt, df)
     qmin, qmax = extrema(dfn.q)
     b0 = range(qmin, qmax, n) |> collect
