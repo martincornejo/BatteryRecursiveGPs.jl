@@ -31,8 +31,11 @@ end
 
 ##
 function build_kf_dual(kf_ecm, θ, ϑ, zt; n=21)
-    θ´ = merge_componentvectors(θ, ϑ)
-    Ts = θ´.Ts
+
+    T = promote_type(eltype(θ), eltype(ϑ))
+    θ´ = ComponentVector{T}(θ)
+    ϑ´ =  ComponentVector{T}(ϑ)
+    Ts = ϑ´.Ts
     cc = ColoumbCounting(σ1=θ´.q.σ1)
     kf_ecm.x
     # measurement / model noise
@@ -45,18 +48,20 @@ function build_kf_dual(kf_ecm, θ, ϑ, zt; n=21)
 end
 
 
-function model_predict_q(kf, u)
+function model_predict_dual(kf, u)
     kf = kf.p.kf_ecm
     (; xid, vσ²) = kf.p
     xc = ComponentVector(kf.x, xid)
+    
+    kfx.rc.v = dynamics_rc(kfx.rc, u.i, kf_ecm.p)
+    xc⁺.cc.q = dynamics_cc(xc⁻.cc, u.i, p, t)
 
     vrc = xc.rc.v
-    ocv = predict_gp(kf, [u.q], :ocv)
-    r0 = predict_gp(kf, [u.q], :r0)
+    ocv = predict_gp(kf, [xc.q], :ocv)
+    r0 = predict_gp(kf, [xc.q], :r0)
     μ = ocv.μ[1] + u.i * r0.μ[1] + vrc
     σ = sqrt(ocv.σ[1]^2 + u.i^2 * r0.σ[1]^2 + vσ²) # TODO: vσ
-    # μ = StatsBase.reconstruct(zt.v, [μ̂]) |> first
-    # σ = StatsBase.reconstruct(zt.σ, [σ̂]) |> first
+
     (; μ, σ)
 
 end

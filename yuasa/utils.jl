@@ -36,6 +36,8 @@ function run_sim!(kf, us, ys, ut;predict_fun = model_predict, step_size = 1)
     (; v_sim, evo)
 end
 
+
+
 function predict_kf(kf::LowLevelParticleFilters.AbstractExtendedKalmanFilter{IPD}, u, p=LowLevelParticleFilters.parameters(kf), t::Real=index(kf) * kf.Ts; R1=LowLevelParticleFilters.get_mat(kf.R1, kf.x, u, p, t), α=kf.α) where IPD
     ## TODO: Del
     (; x, R) = kf
@@ -58,7 +60,7 @@ function measurement_kf(kf::LowLevelParticleFilters.AbstractExtendedKalmanFilter
     ## TODO: Del
     (; Cjac, measurement) = kf.measurement_model
     ny = kf.kf.ny
-    if false
+    if false ### False for now, IPD not working well here
         μ = zeros(ny)
         measurement(μ, x⁻, u, p, t)
     else
@@ -74,8 +76,8 @@ end
 function model_predict_2(
     kf,
     u,
-)   
-    ## TODO: Make as deep copy
+)   ##### TODO: Re-factor so uses deepcopy of kf or more easy implementation
+
     x⁻, Σ⁻ = predict_kf(kf, u)
     μ, S = measurement_kf(kf, x⁻, Σ⁻, u)
     σ = sqrt.(S)
@@ -93,38 +95,6 @@ end
 function pick(θ, ϑ, field)
     ### Assumes the field exits, if the field does not exist in neither it returns error
     out = haskey(θ, field) ? θ[field] : ϑ[field]
-    out
-end
-
-function merge_componentvectors(θ0, ϑ)
-    out = ComponentVector(
-        ocv = ComponentVector(
-            σ = pick(θ0, ϑ, :ocv, :σ),
-            ℓ = pick(θ0, ϑ, :ocv, :ℓ),
-        ),
-        r0 = ComponentVector(
-            σ = pick(θ0, ϑ, :r0, :σ),
-            ℓ = pick(θ0, ϑ, :r0, :ℓ),
-            r0 = pick(θ0, ϑ, :r0, :r0),
-        ),
-        q = ComponentVector(
-            σ1 = pick(θ0, ϑ, :q, :σ1),
-        ),
-        vσ = pick(θ0, ϑ, :vσ),
-        Ts = pick(θ0, ϑ, :Ts),
-        rc = ComponentVector(
-            σ0_v = pick(θ0, ϑ, :rc, :σ0_v),
-            σ1_v = pick(θ0, ϑ, :rc, :σ1_v),
-            σ0_r = pick(θ0, ϑ, :rc, :σ0_r),
-            σ1_r = pick(θ0, ϑ, :rc, :σ1_r),
-            σ0_τ = pick(θ0, ϑ, :rc, :σ0_τ),
-            σ1_τ = pick(θ0, ϑ, :rc, :σ1_τ),
-            v0 = pick(θ0, ϑ, :rc, :v0),
-            r0 = pick(θ0, ϑ, :rc, :r0),
-            τ0 = pick(θ0, ϑ, :rc, :τ0),
-        )
-    )
-
     out
 end
 

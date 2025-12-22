@@ -85,11 +85,7 @@ res = let
         θ = ComponentVector(; # tunable (hyper)params
             ocv=ComponentVector(; σ=0.5, ℓ=0.5),
             r0=ComponentVector(; σ=0.001, ℓ=1.5),
-            rc=ComponentVector(;
-                σ0_v=1e-3, σ1_v=1.0e-4,
-                σ0_r=50e-3, σ1_r=3e-6,
-                σ0_τ=50, σ1_τ=2e-6,
-            ),
+
             q = ComponentVector(
             σ1 = 1e-5,
             ),
@@ -97,8 +93,18 @@ res = let
         )
         ϑ = ComponentVector(; # non-tunable params
             Ts=10.0,
-            r0=(; r0=1.0e-3),
-            rc=(; v0=0.0, r0=0.2e-3, τ0=40.0,)
+            r0=ComponentVector(; r0=1.0e-3),
+            rc = ComponentVector(
+            σ0_v = 1e-3,
+            σ1_v = 1.0e-4,
+            σ0_r = log(0.8 * 1e-3) - log(1.4e-3),
+            σ1_r = 3e-6,
+            σ0_τ = log(60) - log(120),
+            σ1_τ = 2e-6,
+            v0 = 0.0,
+            r0 = 1.4e-3,
+            τ0 = 120.0,
+        )
         )
 
 

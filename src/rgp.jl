@@ -61,29 +61,31 @@ function RGP(mean, kernel::Kernel, b0::AbstractArray)
     RGP(gp, b0)
 end
 
-
 # dynamics(x, u, p, t) = x
 function measurement_gp(rgp::RGP, g::AbstractArray, b::Real)
-    # TODO: Do type for Hyp tunning, selcet between g,b mu0
     (; gp, b0, μ0, Σ0⁻¹, cache) = rgp
-    k = get_tmp(cache.k, g)
-    H = get_tmp(cache.H, g)
-    #Δg = get_tmp(cache.Δg, b)
+
+    u = zero(eltype(Σ0⁻¹))
+    k = get_tmp(cache.k, u)
+    H = get_tmp(cache.H, u)
+    Δg = get_tmp(cache.Δg, g)
+
     cov!(k, gp, b0, b) # k .= cov(gp,b0, b)
     mul!(H, k', Σ0⁻¹) # H = k' * Σ0⁻¹
-    Δg = g - μ0
+    Δg .= g - μ0
     muladd(H, Δg, mean(gp, b)) # H * (g - μ0) + m
 end
 
-function uncertainty_gp(rgp::RGP,g::AbstractArray, b::Real)
-    # TODO: Do type with mu0
-    (; gp, b0, Σ0⁻¹, cache, μ0) = rgp
-    k = get_tmp(cache.k, g)
-    H = get_tmp(cache.H, g)
-    k⁻ = get_tmp(cache.k⁻, g)
+function uncertainty_gp(rgp::RGP, b::Real)
+    (; gp, b0, Σ0⁻¹, cache) = rgp
+    
+    u = zero(eltype(Σ0⁻¹))
+    k = get_tmp(cache.k, u)
+    H = get_tmp(cache.H, u)
+    k⁻ = get_tmp(cache.k⁻, u)
+
     cov!(k, gp, b0, b) # k .= cov(gp,b0, b)
     mul!(H, k', Σ0⁻¹)  # H = k' * Σ0⁻¹
     @. k⁻ = -k
     muladd(H, k⁻, gp.kernel(b, b)) # H*k⁻ + gp.kernel(b, b)
 end
-

@@ -4,7 +4,6 @@ using ModelingToolkitStandardLibrary.Electrical
 using ModelingToolkitStandardLibrary.Blocks
 using OrdinaryDiffEq
 using NonlinearSolve
-
 using Random
 using StatsBase
 using CSV, DataFrames, DataInterpolations
@@ -139,8 +138,11 @@ end
 begin
     p = (;ϑ, df, zt, us,ys)
     u0  = inv_softplus.(θ0)
-    adtype = AutoForwardDiff()
     loss_function(u0,p)
+end
+
+begin
+    adtype = AutoForwardDiff()
     f = OptimizationFunction(loss_function, adtype)
     prob = OptimizationProblem(f, u0, p)
     
@@ -169,7 +171,7 @@ begin
     plot_simulation(vμ, vσ, df_cell, title = title_sim) |> display
     
     #plot_q_estimation(evo.evoμ, evo.evoΣ, df_cell, zt, title = title_q) |> display
-    plot_ecm(kf, df_cell, zt; focv,fR0, Q=params[:cell_1][:Q], external_cc=false, title = title_ecm) |> display
+    plot_ecm(kf, df_cell, zt; focv,fR0, Q=params[:cell_1][:Q], external_cc=true, title = title_ecm) |> display
 
     plot_rc_evo(kf,evo.evoμ,evo.evoΣ,zt, title = title_sim) |> display
 
@@ -178,4 +180,3 @@ begin
 
     @info "cell $cell_id:" Q´ s´
 end
-

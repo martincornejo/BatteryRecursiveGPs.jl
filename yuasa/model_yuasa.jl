@@ -47,19 +47,17 @@ end
 function R2(x, u, p, t)
     (; vσ², xid) = p
     xc = ComponentVector(x, xid)
-    ocv = uncertainty_gp(p.ocv,xc.ocv, u.q)
-    r0 = uncertainty_gp(p.r0,xc.r0, u.q)
+    ocv = uncertainty_gp(p.ocv, u.q)
+    r0 = uncertainty_gp(p.r0, u.q)
     ocv .+ u.i[1]^2 .* r0 .+ vσ² |> SMatrix{1,1}
 end
 
-
-##
 function build_kf(θ, ϑ, df, zt; n=21)
-    ## TODO: 
-    ## merge_componentvectors used due instantiation of Σ0 in model.jl is made:
-    ## false .* x0 * x0' -> TypeError if cov of RC, OCV, R0 not same type type error
-    θ´ = merge_componentvectors(θ, ϑ)
-    # basis vectors
+
+    T = promote_type(eltype(θ), eltype(ϑ))
+    θ´ = ComponentVector{T}(θ)
+    ϑ´ =  ComponentVector{T}(ϑ)  
+
     dfn = normalize_data(zt, df)
     qmin, qmax = extrema(dfn.q)
     b0 = range(qmin, qmax, n) |> collect
@@ -69,13 +67,13 @@ function build_kf(θ, ϑ, df, zt; n=21)
     rgp1 = RGP(kernel1, b0)
 
     # R0 GP
-    r0 = StatsBase.transform(zt.r, [ϑ.r0.r0]) |> first
+    r0 = StatsBase.transform(zt.r, [ϑ´.r0.r0]) |> first
     kernel2 = θ´.r0.σ * with_lengthscale(SEKernel(), θ´.r0.ℓ)
     rgp2 = RGP(r0, kernel2, b0)
 
     # RC
-    r1 = StatsBase.transform(zt.r, [θ´.rc.r0]) |> first
-    rc = RC(; r0=r1, τ0=θ´.rc.τ0, v0=θ´.rc.v0, θ´.rc...)
+    r1 = StatsBase.transform(zt.r, [ϑ´.rc.r0]) |> first
+    rc = RC(; r0=r1, τ0=ϑ´.rc.τ0, v0=ϑ´.rc.v0, ϑ´.rc...)
 
     # measurement / model noise
     vσ² = StatsBase.transform(zt.σ, [θ´.vσ^2]) |> first
@@ -83,7 +81,7 @@ function build_kf(θ, ϑ, df, zt; n=21)
     # model
     nx = (length(rc.μ0) + length(rgp1.μ0) + (length(rgp2.μ0)))
     p = (;
-        Ts=θ´.Ts,
+        Ts=ϑ´.Ts,
         vσ²,
     )
     rgps = (; ocv=rgp1, r0=rgp2, rc=rc)

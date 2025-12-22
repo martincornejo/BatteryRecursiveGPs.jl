@@ -2,7 +2,7 @@ function make_ekf(components, dynamics, measurement::Function, R2::Function; Aja
     ids = keys(components)
     x0 = ComponentVector(; (id => components[id].μ0 for id in ids)...)
 
-    Σ0 =false .* x0 * x0'
+    Σ0 = false .* x0 * x0'
     R1 = false .* x0 * x0'
     for id in ids
         component = components[id]

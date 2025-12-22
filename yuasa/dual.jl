@@ -137,7 +137,7 @@ begin
     kf_ecm = build_kf(θ,ϑ,df,zt)
 
     ## Training kf_ecm
-    (;evo, v_sim) = run_sim!(kf_ecm, us, ys, [], predict_fun = model_predict_2)
+    (;evo, v_sim) = run_sim!(kf_ecm, us, ys, [], predict_fun = model_predict)
 
     ### Restarting rc value to starting points, 43 is hard coded value
     kfx = ComponentVector(kf_ecm.x, kf_ecm.p.xid)
@@ -174,7 +174,7 @@ begin
         kf_dual(u, y)
         
         u = (;i = u.i, q = kf_dual.x[1]) ## Updating u.i so is the q value
-        (vμᵢ_ecm, vσᵢ_ecm) = model_predict_2(kf_ecm, u)
+        (vμᵢ_ecm, vσᵢ_ecm) = model_predict(kf_ecm, u)
         push!(vμ_ecm, vμᵢ_ecm)
         push!(vσ_ecm, vσᵢ_ecm)
         kf_ecm(u, y)
@@ -194,8 +194,6 @@ begin
     evo_ecm = (; evoμ_ecm, evoΣ_ecm)
     nothing
 end
-
-
 
 ### Plooting ecm outputs
 begin
