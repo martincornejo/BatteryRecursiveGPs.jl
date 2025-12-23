@@ -93,7 +93,7 @@ res = let
         )
         ϑ = ComponentVector(; # non-tunable params
             Ts=10.0,
-            r0=ComponentVector(; r0=1.0e-3),
+            μr0=1.0e-3,
             rc = ComponentVector(
             σ0_v = 1e-3,
             σ1_v = 1.0e-4,
@@ -261,15 +261,15 @@ begin
     ys = [SA[y] for y in dfn.v]
 
     θ = ComponentVector(
-        ocv = ComponentVector(
+        ocv = (
             σ = 0.2,
             ℓ = 0.8,
         ),
-        r0 = ComponentVector(
+        r0 = (
             σ = 0.2,
             ℓ = 0.8,
         ),
-        q = ComponentVector(
+        q = (
             σ1 = 1e-5,
         ),
         vσ = 3e-3,
@@ -278,10 +278,8 @@ begin
     ## Non-tunable
     ϑ = ComponentVector(
         Ts = 10.0,
-        r0 = ComponentVector(;
-            r0 = 1.0e-1
-        ),
-        rc = ComponentVector(
+        μr0 =  1.0e-1,
+        rc =(
             σ0_v = 1e-3,
             σ1_v = 1.0e-4,
             σ0_r = log(0.8 * 1e-3) - log(1.4e-3),

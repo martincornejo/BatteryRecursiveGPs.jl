@@ -39,7 +39,6 @@ end
 
 
 function predict_kf(kf::LowLevelParticleFilters.AbstractExtendedKalmanFilter{IPD}, u, p=LowLevelParticleFilters.parameters(kf), t::Real=index(kf) * kf.Ts; R1=LowLevelParticleFilters.get_mat(kf.R1, kf.x, u, p, t), α=kf.α) where IPD
-    ## TODO: Del
     (; x, R) = kf
     A = kf.Ajac(x, u, p, t)
     if IPD
@@ -57,7 +56,6 @@ function predict_kf(kf::LowLevelParticleFilters.AbstractExtendedKalmanFilter{IPD
 end
 
 function measurement_kf(kf::LowLevelParticleFilters.AbstractExtendedKalmanFilter{IPD}, x⁻, Σ⁻, u, p=LowLevelParticleFilters.parameters(kf), t::Real=index(kf); R2=LowLevelParticleFilters.get_mat(kf.measurement_model.R2, x⁻, u, p, t)) where IPD
-    ## TODO: Del
     (; Cjac, measurement) = kf.measurement_model
     ny = kf.kf.ny
     if false ### False for now, IPD not working well here
@@ -74,29 +72,27 @@ end
 
 
 function model_predict_2(
-    kf,
+    kf_copy,
     u,
-)   ##### TODO: Re-factor so uses deepcopy of kf or more easy implementation
+)  
 
-    x⁻, Σ⁻ = predict_kf(kf, u)
-    μ, S = measurement_kf(kf, x⁻, Σ⁻, u)
+    x⁻, Σ⁻ = predict_kf(kf_copy, u)
+    kf_copy.x = x⁻
+    kf_copy.R = Σ⁻
+    μ, S = measurement_kf(kf_copy, x⁻, Σ⁻, u)
     σ = sqrt.(S)
+
     (; μ = μ[1] , σ = σ[1])
 end
 
-function pick(θ, ϑ, field, nested_field)
-    ### Assumes the field exits, if the field does not exist in neither it returns error
-    guess = haskey(θ, field) ? θ[field] : ϑ[field]
-    un_guess = haskey(θ, field) ? ϑ : θ
-    out = haskey(guess, nested_field) ? guess[nested_field] : un_guess[field][nested_field]
-    out
+function merge(a::ComponentVector, b::ComponentVector)
+    ComponentVector(Base.merge(NamedTuple(a), NamedTuple(b)))
 end
-
-function pick(θ, ϑ, field)
-    ### Assumes the field exits, if the field does not exist in neither it returns error
-    out = haskey(θ, field) ? θ[field] : ϑ[field]
-    out
+function merge(a::ComponentVector, b::NamedTuple) 
+    ComponentVector(Base.merge(NamedTuple(a), b))
 end
-
+function merge(a::NamedTuple, b::ComponentVector) 
+    ComponentVector(Base.merge(a, NamedTuple(b)))
+end
 
 

@@ -54,9 +54,10 @@ end
 
 function build_kf(θ, ϑ, df, zt; n=21)
 
-    T = promote_type(eltype(θ), eltype(ϑ))
-    θ´ = ComponentVector{T}(θ)
-    ϑ´ =  ComponentVector{T}(ϑ)  
+    # T = promote_type(eltype(θ), eltype(ϑ))
+    # θ´ = ComponentVector{T}(θ)
+    # ϑ´ =  ComponentVector{T}(ϑ)  
+    θ´ = merge(θ, ϑ)
 
     dfn = normalize_data(zt, df)
     qmin, qmax = extrema(dfn.q)
@@ -67,13 +68,13 @@ function build_kf(θ, ϑ, df, zt; n=21)
     rgp1 = RGP(kernel1, b0)
 
     # R0 GP
-    r0 = StatsBase.transform(zt.r, [ϑ´.r0.r0]) |> first
+    r0 = StatsBase.transform(zt.r, [θ´.μr0]) |> first
     kernel2 = θ´.r0.σ * with_lengthscale(SEKernel(), θ´.r0.ℓ)
     rgp2 = RGP(r0, kernel2, b0)
 
     # RC
-    r1 = StatsBase.transform(zt.r, [ϑ´.rc.r0]) |> first
-    rc = RC(; r0=r1, τ0=ϑ´.rc.τ0, v0=ϑ´.rc.v0, ϑ´.rc...)
+    r1 = StatsBase.transform(zt.r, [θ´.rc.r0]) |> first
+    rc = RC(; r0=r1, τ0=θ´.rc.τ0, v0=θ´.rc.v0, θ´.rc...)
 
     # measurement / model noise
     vσ² = StatsBase.transform(zt.σ, [θ´.vσ^2]) |> first
@@ -81,7 +82,7 @@ function build_kf(θ, ϑ, df, zt; n=21)
     # model
     nx = (length(rc.μ0) + length(rgp1.μ0) + (length(rgp2.μ0)))
     p = (;
-        Ts=ϑ´.Ts,
+        Ts=θ´.Ts,
         vσ²,
     )
     rgps = (; ocv=rgp1, r0=rgp2, rc=rc)

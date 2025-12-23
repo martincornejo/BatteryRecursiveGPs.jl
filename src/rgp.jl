@@ -68,8 +68,8 @@ function measurement_gp(rgp::RGP, g::AbstractArray, b::Real)
     T = promote_type(eltype(Σ0⁻¹), eltype(b))
     u = zero(eltype(T))
     
-    k = get_tmp(cache.k, u)
-    H = get_tmp(cache.H, u)
+    k = get_tmp(cache.k, T)
+    H = get_tmp(cache.H, T)
     Δg = get_tmp(cache.Δg, g)
 
     cov!(k, gp, b0, b) # k .= cov(gp,b0, b)
@@ -84,8 +84,8 @@ function uncertainty_gp(rgp::RGP, b::Real)
     T = promote_type(eltype(Σ0⁻¹), eltype(b))
     u = zero(eltype(T))
 
-    k = get_tmp(cache.k, u)
-    H = get_tmp(cache.H, u)
+    k = get_tmp(cache.k, T)
+    H = get_tmp(cache.H, T)
     k⁻ = get_tmp(cache.k⁻, u)
 
     cov!(k, gp, b0, b) # k .= cov(gp,b0, b)

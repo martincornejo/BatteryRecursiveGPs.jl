@@ -32,9 +32,10 @@ end
 ##
 function build_kf_dual(kf_ecm, θ, ϑ, zt; n=21)
 
-    T = promote_type(eltype(θ), eltype(ϑ))
-    θ´ = ComponentVector{T}(θ)
-    ϑ´ =  ComponentVector{T}(ϑ)
+    # T = promote_type(eltype(θ), eltype(ϑ))
+    # θ´ = ComponentVector{T}(θ)
+    # ϑ´ =  ComponentVector{T}(ϑ)
+    θ´ = merge(θ, ϑ)
     Ts = ϑ´.Ts
     cc = ColoumbCounting(σ1=θ´.q.σ1)
     kf_ecm.x

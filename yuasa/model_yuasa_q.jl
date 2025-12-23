@@ -50,7 +50,7 @@ end
 
 ##
 function build_kf_q(θ, ϑ, df, zt; n=21)
-    θ´ = merge_componentvectors(θ, ϑ)
+    θ´ = merge(θ, ϑ)
     # basis vectors
     dfn = normalize_data(zt, df)
     # qmin, qmax = extrema(dfn.q)
@@ -65,7 +65,7 @@ function build_kf_q(θ, ϑ, df, zt; n=21)
 
     # R0 GP
     kernel2 = θ´.r0.σ * with_lengthscale(SEKernel(), θ´.r0.ℓ)
-    r0μ = StatsBase.transform(zt.r, [θ´.r0.r0]) |> first
+    r0μ = StatsBase.transform(zt.r, [θ´.μr0]) |> first
     r0 = RGP(r0μ, kernel2, b0)
 
     # RC

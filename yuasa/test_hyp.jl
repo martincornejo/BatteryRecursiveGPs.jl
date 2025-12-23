@@ -86,6 +86,44 @@ function loss_function(u,p)
  
 end
 
+function cross_val(
+    u,
+    p;
+    folds::Int = 5,
+    predict_fun = model_predict_2,
+)
+    (; ϑ, df, zt, us, ys) = p
+
+    θ = softplus.(u)
+    N = length(us)
+    fold_size = div(N, folds)
+
+    total_cost = 0.0
+
+    for k in 1:folds
+        val_start = (k - 1) * fold_size + 1
+        val_end   = k == folds ? N : k * fold_size
+
+        kf = build_kf(θ, ϑ, df, zt)
+
+        ## Train
+        for i in 1:val_start-1
+            correct!(kf, us[i], ys[i], kf.p, i)
+            predict!(kf, us[i])
+        end
+        kf_copy = deepcopy(kf)
+        ## Predict / validate
+        for i in val_start:val_end
+            ŷ, _ = predict_fun(kf_copy, us[i])
+            e = ys[i] .- ŷ
+            total_cost += dot(e, e)
+        end
+    end
+
+    return total_cost / folds
+end
+
+
 begin
     cell_id = 1
     df_cell = select_cell_dataset(df, cell_id)
@@ -117,9 +155,7 @@ begin
     ## Non-tunable
     ϑ = ComponentVector(
         Ts = 10.0,
-        r0 = ComponentVector(
-            r0 = 1.0e-1
-        ),
+        μr0 =  1.0e-1,
         rc = ComponentVector(
             σ0_v = 1e-3,
             σ1_v = 1.0e-4,
@@ -135,10 +171,11 @@ begin
 
 end
 
+
 begin
     p = (;ϑ, df, zt, us,ys)
     u0  = inv_softplus.(θ0)
-    loss_function(u0,p)
+    cross_val(u0,p)
 end
 
 begin

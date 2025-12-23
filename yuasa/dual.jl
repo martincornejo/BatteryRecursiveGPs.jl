@@ -93,15 +93,15 @@ begin
     
     ## Tunable
     θ = ComponentVector(
-        ocv =ComponentVector(
+        ocv =(
             σ = 0.52,
             ℓ = 0.5,
         ),
-        r0 = ComponentVector(
+        r0 = (
             σ = 0.8,
             ℓ = 0.8,
         ),
-        q = ComponentVector(
+        q = (
             σ1 = 1e-5,
         ),
         vσ = 3e-3,
@@ -110,10 +110,8 @@ begin
     ## Non-tunable
     ϑ = ComponentVector(
         Ts = 10.0,
-        r0 = ComponentVector(
-            r0 = 1.0e-1
-        ),
-        rc = ComponentVector(
+        μr0 =  1.0e-1,
+        rc =(
             σ0_v = 1e-3,
             σ1_v = 1.0e-4,
             σ0_r = log(0.8 * 1e-3) - log(1.4e-3),
@@ -168,18 +166,19 @@ begin
 
     n = 1
     for (u, y) in zip(us, ys)
-        (vμᵢ_dual, vσᵢ_dual) = model_predict_2(kf_ecm, u)
+        kf_dual_copy = deepcopy(kf_dual)
+        kf_ecm_copy = deepcopy(kf_ecm)
+        (vμᵢ_dual, vσᵢ_dual) = model_predict_2(kf_dual_copy, u)
         push!(vμ_dual, vμᵢ_dual)
         push!(vσ_dual, vσᵢ_dual)
         kf_dual(u, y)
         
         u = (;i = u.i, q = kf_dual.x[1]) ## Updating u.i so is the q value
-        (vμᵢ_ecm, vσᵢ_ecm) = model_predict(kf_ecm, u)
+        (vμᵢ_ecm, vσᵢ_ecm) = model_predict(kf_ecm_copy, u)
         push!(vμ_ecm, vμᵢ_ecm)
         push!(vσ_ecm, vσᵢ_ecm)
         kf_ecm(u, y)
 
-      
         push!(evoμ_dual, copy(ComponentVector(kf_dual.x, xid_dual)))
         push!(evoΣ_dual, copy(ComponentMatrix(kf_dual.R, Σid_dual)))
         push!(evoμ_ecm, copy(ComponentVector(kf_ecm.x, xid_ecm)))
