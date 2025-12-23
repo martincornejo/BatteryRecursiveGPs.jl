@@ -45,8 +45,8 @@ end
 begin # read current profile
     df = CSV.File("data/yuasa-p1-m1.csv") |> DataFrame
     select!(df, :time => :t, :module_current => :i, :module_temperature => :T)
-    # fi = ConstantInterpolation(-df.i, df.t)
-    fi = ConstantInterpolation(-df.i * 0.6, df.t)
+    fi = ConstantInterpolation(-df.i, df.t)
+    #fi = ConstantInterpolation(-df.i * 0.6, df.t)
 end
 
 params = Dict(
@@ -167,12 +167,7 @@ let
 
     θ = (; # tunable (hyper)params
         ocv=(; σ=0.5, ℓ=0.5),
-        r0=(; σ=0.001, ℓ=1.5),
-        rc=(;
-            σ0_v=1e-3, σ1_v=1.0e-4,
-            σ0_r=10e-3, σ1_r=3e-6,
-            σ0_τ=100, σ1_τ=2e-6,
-        ),
+        r0=(; σ=0.8, ℓ=1.5),
         q=(;
             q0=0.0,
             σ1=0.0,
@@ -182,7 +177,11 @@ let
     ϑ = (; # non-tunable params
         Ts=10.0,
         r0=(; r0=12 * 1.0e-3),
-        rc=(; v0=0.0, r0=12 * 0.2e-3, τ0=120.0,)
+        rc=(; 
+            v0=0.0, r0=12 * 0.2e-3, τ0=120.0,            
+            σ0_v=1e-3, σ1_v=1.0e-4,
+            σ0_r=10e-3, σ1_r=3e-6,
+            σ0_τ=100, σ1_τ=2e-6,)
     )
 
     kf = build_kf(θ, ϑ, df, zt)
@@ -193,7 +192,7 @@ let
     vσ = StatsBase.reconstruct(zt.σ, v_sim.vσ)
 
     plot_simulation(vμ, vσ, df) |> display
-    plot_ecm(kf, df, zt, Q=0) |> display
+    plot_ecm(kf, df, zt, Q=0, external_cc = false) |> display
 
     Q´ = calc_Q(kf, df, zt, focv⁻¹; n=12) |> Measurements.value
     s´ = calc_soc0(kf, df, zt, focv⁻¹; n=12) |> Measurements.value
@@ -256,7 +255,7 @@ begin
     dfn = normalize_data(zt, df_cell)
 
     Random.seed!(42)
-    us = [(; i = [i], q = [q]) for (i, q) in zip(dfn.i, dfn.q)]
+    us = [(; i = i, q = q) for (i, q) in zip(dfn.i, dfn.q)]
     #us = [(; i) for i in dfn.i]
     #us = [(; i=i + 0.01) for i in dfn.i]
     ys = [SA[y] for y in dfn.v]
@@ -279,7 +278,7 @@ begin
     ## Non-tunable
     ϑ = ComponentVector(
         Ts = 10.0,
-        r0 = ComponentVector(
+        r0 = ComponentVector(;
             r0 = 1.0e-1
         ),
         rc = ComponentVector(

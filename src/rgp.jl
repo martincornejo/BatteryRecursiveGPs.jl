@@ -64,8 +64,10 @@ end
 # dynamics(x, u, p, t) = x
 function measurement_gp(rgp::RGP, g::AbstractArray, b::Real)
     (; gp, b0, μ0, Σ0⁻¹, cache) = rgp
-
-    u = zero(eltype(Σ0⁻¹))
+    
+    T = promote_type(eltype(Σ0⁻¹), eltype(b))
+    u = zero(eltype(T))
+    
     k = get_tmp(cache.k, u)
     H = get_tmp(cache.H, u)
     Δg = get_tmp(cache.Δg, g)
@@ -79,7 +81,9 @@ end
 function uncertainty_gp(rgp::RGP, b::Real)
     (; gp, b0, Σ0⁻¹, cache) = rgp
     
-    u = zero(eltype(Σ0⁻¹))
+    T = promote_type(eltype(Σ0⁻¹), eltype(b))
+    u = zero(eltype(T))
+
     k = get_tmp(cache.k, u)
     H = get_tmp(cache.H, u)
     k⁻ = get_tmp(cache.k⁻, u)
