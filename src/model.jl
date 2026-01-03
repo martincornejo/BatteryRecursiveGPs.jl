@@ -55,3 +55,23 @@ function predict_gp(kf, b, id::Symbol)
     (; μ, σ)
 end
 
+function predict_gp(kf, b, x, R, id::Symbol)
+    (; xid, Σid) = kf.p
+    (; gp, b0, μ0, Σ0⁻¹) = kf.p[id]
+
+    cx = ComponentVector(x, xid)
+    x´ = cx[id]
+
+    cR = ComponentMatrix(R, Σid)
+    R´ = cR[id, id]
+
+    H = cov(gp, b, b0) * Σ0⁻¹
+    m = mean(gp, b)
+    μ = H * (x´ - μ0) + m
+
+    R2 = cov(gp, b) - H * cov(gp, b0, b) #eq.7 
+    Σ = R2 + H * R´ * H' #eq.9
+    σ = sqrt.(diag(Σ))
+    (; μ, σ)
+end
+

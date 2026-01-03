@@ -12,10 +12,10 @@ function cov!(c::AbstractVector, gp::GP, x::AbstractVector, y::Real)
     @. c = gp.kernel(x, y)
 end
 
-struct RGP{bT,BT,RT,cT}
+struct RGP{bT,mT,BT,RT,cT}
     gp::GP
     b0::bT
-    μ0::bT
+    μ0::mT
     Σ0::BT
     Σ0⁻¹::BT
     R1::RT
@@ -26,7 +26,7 @@ end
 function RGP(gp::GP, b0::T) where T<:AbstractArray
     nb = length(b0) # 1-dim basis vector (for now)
 
-    μ0 = mean(gp, b0) |> T
+    μ0 = mean(gp, b0) #|> T
     # μ0 = SVector{nb}(mean(gp, b0))
     Σ0 = cov(gp, b0) + 1e-6I
     Σ0⁻¹ = inv(Σ0)
@@ -60,8 +60,9 @@ function measurement_gp(rgp::RGP, g::AbstractArray, b::Real)
     (; gp, b0, μ0, Σ0⁻¹, cache) = rgp
     # (; k, H) = cache
     # Δg = get_tmp(cache.Δg, g)
-    k = get_tmp(cache.k, b)
-    H = get_tmp(cache.H, b)
+    T = eltype(Σ0⁻¹) <: ForwardDiff.Dual ? ForwardDiff.Dual : typeof(b)
+    k = get_tmp(cache.k, T)
+    H = get_tmp(cache.H, T)
 
     # (cov(gp, b, b0) * Σ0⁻¹) * (g - μ0) + mean(gp, b)
     #        k                    Δg
@@ -75,12 +76,14 @@ end
 
 function uncertainty_gp(rgp::RGP, b::Real)
     (; gp, b0, Σ0⁻¹, cache) = rgp
-    k = get_tmp(cache.k, b)
-    H = get_tmp(cache.H, b)
-    k⁻ = get_tmp(cache.k⁻, b)
-    cov!(k, gp, b0, b)
-    mul!(H, k', Σ0⁻¹) # H
+    T = eltype(Σ0⁻¹) <: ForwardDiff.Dual ? ForwardDiff.Dual : typeof(b)
+    k = get_tmp(cache.k, T)
+    H = get_tmp(cache.H, T)
+    k⁻ = get_tmp(cache.k⁻, T)
+
+    cov!(k, gp, b0, b) # k = cov(gp, b, b0)
+    mul!(H, k', Σ0⁻¹) # H = k' * Σ0⁻¹
     @. k⁻ = -k
-    muladd(H, k⁻, gp.kernel(b, b))
+    muladd(H, k⁻, gp.kernel(b, b)) # kb - H * k
 end
 
