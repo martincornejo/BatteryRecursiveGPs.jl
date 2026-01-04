@@ -87,6 +87,7 @@ end
 
 function measurement(x, u, p, t)
     (; xid) = p
+    (; i, T) = u
     xc = ComponentVector(x, xid)
     (; q) = xc.cc
 
@@ -97,11 +98,12 @@ function measurement(x, u, p, t)
     ocv = measurement_gp(p.ocv, xc.ocv, q)
     r0 = measurement_gp(p.r0, xc.r0, q) * kT
     vrc = xc.rc.v # measurement rc
-    ocv + u.i * r0 + vrc |> SVector{1}
+    ocv + i * r0 + vrc |> SVector{1}
 end
 
 function R2(x, u, p, t)
     (; vσ², xid) = p
+    (; i, T) = u
     xc = ComponentVector(x, xid)
     (; q) = xc.cc
     kT = arrhenius_factor(xc.arr, T, p.arr)
@@ -109,7 +111,7 @@ function R2(x, u, p, t)
     # r0 = uncertainty_gp(p.r0, u.q) * kT
     ocv = uncertainty_gp(p.ocv, q)
     r0 = uncertainty_gp(p.r0, q) * kT
-    ocv + u.i^2 * r0 + vσ² |> SMatrix{1,1}
+    ocv + i^2 * r0 + vσ² |> SMatrix{1,1}
 end
 
 
