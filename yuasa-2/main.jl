@@ -79,15 +79,16 @@ begin
     θ = ComponentVector(; θ0..., ϑ...)
 
     # u, y = cell_dataset(data, ti, 1, 1, 1)
-    # u, y = cell_dataset(data, ti, 3, 2, 1)
-    u, y = cell_dataset(data, ti, 3, 5, 12)
+    u, y = cell_dataset(data, ti, 3, 2, 1)
+    # u, y = cell_dataset(data, ti, 3, 5, 12)
     zt = fit_zscore()
     kf = build_kf(θ, u, zt; n=21)
     sol = run_kf!(kf, u, y)
     # sol2 = run_kf!(kf, u, y; tt=27000)
 
     mae = mean(abs, StatsBase.reconstruct(zt.σ, sol.et)) .* 1e3
-    @info ":" mae # ℓocv ℓr0
+    rmse = sqrt(mean(abs2, StatsBase.reconstruct(zt.σ, sol.et))) .* 1e3
+    @info ":" mae rmse # ℓocv ℓr0
 
     # plot_rc_param_trajectory(kf, sol)
     plot_ecm(kf) |> display
@@ -97,27 +98,52 @@ begin
     # plot_sim(kf, sol2) |> display
 end
 
+function fit_models(data, ti, zt, ids, kfs=Dict(), sols=Dict())
+    # kfs = Dict()
+    # sols = Dict()
 
-kfs, sols = let # p = 3# , m = 5
-
-    kfs = Dict()
-    sols = Dict()
-
-    for p in 1:3, m in 1:9, c in 1:12
+    for id in ids
+        (; p, m, c) = id
         u, y = cell_dataset(data, ti, p, m, c)
         kf = build_kf(θ, u, zt)
 
         try
-            sol = run_kf!(kf, u, y)
+            t = @timed sol = run_kf!(kf, u, y)
             kfs[(; p, m, c)] = kf
             sols[(; p, m, c)] = sol
-            @info "Cell p:$(p), m:$(m), c:$(c) complete"
+            @info "Cell p:$(p), m:$(m), c:$(c) completed in $(t.time), $(t.bytes), $(t.gctime)"
         catch e
             @warn "Cell p:$(p), m:$(m), c:$(c) failed"
         end
     end
 
-    kfs, sols
+    (; kfs, sols)
+end
+
+p = 2
+ids = [(; p, m, c) for m in 1:9, c in 1:12]
+(; kfs, sols) = fit_models(data, ti, zt, ids, kfs, sols)
+
+# kfs = Dict()
+# sols = Dict()
+# fit_models!(kfs, sols, 1, 1)
+# fit_models!(kfs, sols, 1, 2)
+# fit_models!(kfs, sols, 1, 3)
+# fit_models!(kfs, sols, 1, 4)
+# fit_models!(kfs, sols, 3, 3)
+
+
+# (t, sol) = let 
+begin
+    p = 1
+    m = 1
+    c = 1
+    u, y = cell_dataset(data, ti, p, m, c)
+    kf = build_kf(θ, u, zt)
+
+    # try
+    @profview_allocs run_kf!(kf, u, y)
+    nothing
 end
 
 

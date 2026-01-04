@@ -608,22 +608,6 @@ function animate_ecm_evolution(file, kf, sol)
 end
 
 
-fig, ax, l = lines(points, color=colors,
-    colormap=:inferno, transparency=true,
-    axis=(; type=Axis3, protrusions=(0, 0, 0, 0),
-        viewmode=:fit, limits=(-30, 30, -30, 30, 0, 50)))
-
-record(fig, "lorenz.mp4", 1:120) do frame
-    for i in 1:50
-        push!(points, step!(attractor))
-        push!(colors, frame)
-    end
-    ax.azimuth[] = 1.7pi + 0.3 * sin(2pi * frame / 120)
-    Makie.update!(l, arg1=points, color=colors) # Makie 0.24+
-    l.colorrange = (0, frame)
-end
-
-
 function extract_ocv(kf)
     q̂min, q̂max = extrema(kf.p.r0.b0)
     q̂ = q̂min:0.01:q̂max
@@ -642,3 +626,4 @@ function extract_ocv(kf)
 
     (; ocv=focv, ocv⁻¹=focv⁻¹)
 end
+
