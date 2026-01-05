@@ -1,13 +1,15 @@
 
 # TODO: rename functions
 
-function calc_deltaq(kf, df, zt; v=(3.85, 4.0), n=1)
+function calc_deltaq(kf; v=(3.85, 4.0), n=1)
     v1 = v[1] * n
     v2 = v[2] * n
 
-    qmin, qmax = extrema(df.q)
-    q = qmin:0.01:qmax
-    q̂ = StatsBase.transform(zt.q, q)
+    zt = kf.p.zt
+
+    q̂min, q̂max = extrema(kf.p.ocv.b0)
+    q̂ = q̂min:0.01:q̂max
+    q = StatsBase.reconstruct(zt.q, q̂)
 
     # OCV 
     ocv = predict_gp(kf, q̂, :ocv)
@@ -37,28 +39,29 @@ function calc_deltaq(kf, df, zt; v=(3.85, 4.0), n=1)
     q2 - q1
 end
 
-function calc_Q(kf, df, zt, fsoc; v=(3.85, 4.0), n=1)
+function calc_Q(kf, fsoc; v=(3.85, 4.0), n=1)
     v1, v2 = v
     # v1 = v[1] * n
     # v2 = v[2] * n
 
     Δsoc = fsoc(v2) - fsoc(v1)
-    Δq = calc_deltaq(kf, df, zt; v, n)
+    Δq = calc_deltaq(kf; v, n)
     Δq / (Δsoc)
 end
 
-function calc_soh(kf, df, zt, fsoc, Q; v=(3.85, 4.0), n=1)
-    Q´ = calc_Q(kf, df, zt, fsoc; v, n)
+function calc_soh(kf, fsoc, Q; v=(3.85, 4.0), n=1)
+    Q´ = calc_Q(kf, fsoc; v, n)
     return Q´ / Q
 end
 
-function calc_soc0(kf, df, zt, fsoc; v=(3.85, 4.0), n=1)
+function calc_soc0(kf, fsoc; v=(3.85, 4.0), n=1)
     v1 = v[1] * n
-    v2 = v[2] * n
 
-    qmin, qmax = extrema(df.q)
-    q = qmin:0.01:qmax
-    q̂ = StatsBase.transform(zt.q, q)
+    zt = kf.p.zt
+
+    q̂min, q̂max = extrema(kf.p.ocv.b0)
+    q̂ = q̂min:0.01:q̂max
+    q = StatsBase.reconstruct(zt.q, q̂)
 
     # OCV 
     ocv = predict_gp(kf, q̂, :ocv)
@@ -76,7 +79,7 @@ function calc_soc0(kf, df, zt, fsoc; v=(3.85, 4.0), n=1)
     # q1σ = q1μ - fσ⁺(v1)
     # q1 = q1μ ± q1σ
 
-    Q´ = calc_Q(kf, df, zt, fsoc; v, n)
+    Q´ = calc_Q(kf, fsoc; v, n)
     Δs = q1 / Q´
 
     s0 = fsoc(v1 / n)
