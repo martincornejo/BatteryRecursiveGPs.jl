@@ -33,10 +33,11 @@ function RGP(gp::GP, b0::T) where T<:AbstractArray
 
     R1 = zeros(nb, nb)
 
+    csize = ForwardDiff.pickchunksize(length(b0) + 2)
     cache = (;
-        k=DiffCache(similar(b0)),
-        k⁻=DiffCache(similar(b0)),
-        H=DiffCache(similar(b0')),
+        k=DiffCache(similar(b0), csize),
+        k⁻=DiffCache(similar(b0), csize),
+        H=DiffCache(similar(b0'), csize),
         # Δg=similar(b0), # <- use DiffCache
     )
 
