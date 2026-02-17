@@ -1,8 +1,3 @@
-name = "RecursiveGPs"
-uuid = "823db892-9aed-49f1-a895-816506ef09ff"
-version = "0.1.0"
-authors = ["Martin Cornejo <martin.cornejo@tum.de>"]
-
 [deps]
 AbstractGPs = "99985d1d-32ba-4be9-9821-2ec096f28918"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
@@ -21,31 +16,11 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
 LowLevelParticleFilters = "d9d29d28-c116-5dba-9239-57a5fe23875b"
 Measurements = "eff96d63-e80a-5855-80a2-b1b0885c5ab7"
-ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
-ModelingToolkitStandardLibrary = "16a59e39-deab-5bd0-87e4-056b12336739"
 NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
 OptimizationOptimJL = "36348300-93cb-4f02-beb5-3c3902f8871e"
-OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
 PreallocationTools = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
+RecursiveGPs = "d96faaa6-41d2-4991-8e2f-b0cd4a4b0e9a"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
-
-[compat]
-GLMakie = "0.13.6"
-Intervals = "1.11.0"
-LineSearches = "7.5.1"
-LogExpFunctions = "0.3.29"
-Measurements = "2.14.1"
-ModelingToolkit = "10.14.0"
-ModelingToolkitStandardLibrary = "2.25.0"
-NonlinearSolve = "4.12.0"
-Optimization = "5.2.0"
-OptimizationOptimJL = "0.4.8"
-
-[extras]
-ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
-
-[targets]
-test = ["ModelingToolkit"]
