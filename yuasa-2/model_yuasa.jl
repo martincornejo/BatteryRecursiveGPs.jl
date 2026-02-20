@@ -40,7 +40,7 @@ end
 function RC(; v0, r0, τ0, σ0_v, σ0_r, σ0_τ, σ1_v, σ1_r, σ1_τ)
     μ0 = ComponentVector(
         v=v0,
-        r=r0, #
+        r=r0,
         τ=τ0,
     )
     Σ0 = false .* μ0 * μ0'
@@ -49,18 +49,10 @@ function RC(; v0, r0, τ0, σ0_v, σ0_r, σ0_τ, σ1_v, σ1_r, σ1_τ)
     Σ0[:r, :r] = σ0_r^2
 
     R1 = diagm([σ1_v, σ1_r, σ1_τ]) .^ 2
-    # R2 = σ2 .^ 2, p # let's put all R2 together in a single param
 
     return (; μ0, Σ0, R1) # R2
 end
 
-# function dynamics_rc(x, i, p)
-#     (; Ts) = p
-#     (; v, r, τ) = x
-#     r = abs(x.r) # force positive values
-#     τ = abs(x.τ)
-#     exp(-Ts / τ) * v + i * r * (1 - exp(-Ts / τ))
-# end
 
 function dynamics_rc(x, u, p)
     (; Ts) = p
@@ -90,11 +82,10 @@ function measurement(x, u, p, t)
     (; i, T) = u
     xc = ComponentVector(x, xid)
     (; q) = xc.cc
+    # (; q) = u <- plain coulmb counting
 
     kT = arrhenius_factor(xc.arr, T, p.arr)
 
-    # ocv = measurement_gp(p.ocv, xc.ocv, u.q)
-    # r0 = measurement_gp(p.r0, xc.r0, u.q) * kT
     ocv = measurement_gp(p.ocv, xc.ocv, q)
     r0 = measurement_gp(p.r0, xc.r0, q) * kT
     vrc = xc.rc.v # measurement rc
@@ -106,16 +97,15 @@ function R2(x, u, p, t)
     (; i, T) = u
     xc = ComponentVector(x, xid)
     (; q) = xc.cc
+    # (; q) = u <- plain coulmb counting
     kT = arrhenius_factor(xc.arr, T, p.arr)
-    # ocv = uncertainty_gp(p.ocv, u.q)
-    # r0 = uncertainty_gp(p.r0, u.q) * kT
     ocv = uncertainty_gp(p.ocv, q)
     r0 = uncertainty_gp(p.r0, q) * kT
     ocv + i^2 * r0 + vσ² |> SMatrix{1,1}
 end
 
 
-##
+# === system
 function build_kf(θ, u, zt; n=21)
     # basis vectors
     qmin, qmax = extrema([x.q for x in u])
@@ -160,10 +150,6 @@ function build_kf(θ, u, zt; n=21)
     # model
     nx = (length(rc.μ0) + length(rgp1.μ0) + (length(rgp2.μ0)))
     p = (;
-        # cache=(;
-        #     A=I(nx),
-        #     C=zeros(1, nx),
-        # ),
         arr=arr.p,
         Ts=θ.Ts,
         vσ²,
@@ -173,27 +159,3 @@ function build_kf(θ, u, zt; n=21)
 
     make_ekf(rgps, dynamics!, measurement, R2; p)
 end
-
-
-function measure_kf(kf::LLPF.AbstractExtendedKalmanFilter, u, x=state(kf), R=covariance(kf), p=kf.p, t=index(kf))
-    measurement_model = kf.measurement_model
-    measure_kf(measurement_model, u, x, R, p, t)
-end
-
-function measure_kf(measurement_model::EKFMeasurementModel{IPM}, u, x, R, p, t) where IPM
-    (; measurement, Cjac, ny) = measurement_model
-    C = Cjac(x, u, p, t)
-    R2 = LLPF.get_mat(measurement_model.R2, x, u, p, t)
-
-    if IPM
-        μ = zeros(length(ny))
-        measurement(μ, x, u, p, t)
-    else
-        μ = measurement(x, u, p, t)
-    end
-
-    Σ = LLPF.symmetrize(C * R * C') + R2
-
-    (; μ, Σ)
-end
-

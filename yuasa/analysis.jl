@@ -14,7 +14,7 @@ function calc_deltaq(kf; v=(3.85, 4.0), n=1)
     # OCV 
     ocv = predict_gp(kf, q̂, :ocv)
     μ = StatsBase.reconstruct(zt.v, ocv.μ)
-    σ = StatsBase.reconstruct(zt.σ, ocv.σ)
+    σ = StatsBase.reconstruct(zt.σ, sqrt.(diag(ocv.Σ)))
 
     q1μ = q[findfirst(>=(v1), μ)]
     q1σ = q1μ - q[findfirst(>=(v1), μ + σ)]
@@ -66,7 +66,7 @@ function calc_soc0(kf, fsoc; v=(3.85, 4.0), n=1)
     # OCV 
     ocv = predict_gp(kf, q̂, :ocv)
     μ = StatsBase.reconstruct(zt.v, ocv.μ)
-    σ = StatsBase.reconstruct(zt.σ, ocv.σ)
+    σ = StatsBase.reconstruct(zt.σ, sqrt.(diag(ocv.Σ)))
 
     q1μ = q[findfirst(>=(v1), μ)]
     q1σ = q1μ - q[findfirst(>=(v1), μ + σ)]

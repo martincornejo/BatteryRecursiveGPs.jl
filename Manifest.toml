@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "f77472ebd02c7e59a203e12ff1950e535d3a0440"
+project_hash = "f1983ed81abc0e274f7397097f51901c5f98e8b4"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -1981,7 +1981,7 @@ version = "3.48.0"
 
 [[deps.RecursiveGPs]]
 deps = ["AbstractGPs", "ComponentArrays", "ForwardDiff", "LinearAlgebra", "LowLevelParticleFilters", "PreallocationTools", "StaticArrays", "Statistics"]
-git-tree-sha1 = "e8ed4d2bea66df6d6043a6d5caf2bd85127fff8f"
+git-tree-sha1 = "cc16d3426897a90fc479c03ebc522cd9edda0ac0"
 repo-rev = "main"
 repo-url = "https://github.com/martincornejo/RecursiveGPs.jl"
 uuid = "d96faaa6-41d2-4991-8e2f-b0cd4a4b0e9a"

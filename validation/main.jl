@@ -34,7 +34,7 @@ using CairoMakie
 include("synthetic-data.jl")
 include("model.jl")
 
-## === dataset
+# === dataset
 begin
     # read OCV look-up-table and current profile, define internal resistance function
     df_ocv = CSV.File("data/ocv.csv") |> DataFrame

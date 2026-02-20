@@ -35,32 +35,59 @@ for p in 1:3, m in 1:9
 end
 
 function plot_cell_voltage_system(data)
-    df = data[:cell_voltage]
-    fig = Figure(size=(1400, 800))
+    df = copy(data[:cell_voltage])
+    fig = Figure(size=(650, 600))
     ax = [Axis(fig[i, j]) for i in 1:9, j in 1:3]
 
+    t0 = first(df._time)
+    df[!, :t] = Dates.value.(df._time .- t0) * 1e-3 # seconds
     phases = 1:3
     modules = 1:9
 
     for p in phases, m in modules
 
         for i in 1:12
-            lines!(ax[m, p], df._time, df[:, "cell_voltage_$(p)_$(m)_1_$(i)"])
+            lines!(ax[m, p], df.t / 3600, df[:, "cell_voltage_$(p)_$(m)_1_$(i)"])
         end
         # ax[m, p].title = "Phase: $(p), Module: $(m)" #, Cell: $(i)"
     end
 
     for i in modules, j in phases[2:end]
-        hideydecorations!(ax[i, j], grid=false, ticks=false)
+        hideydecorations!(ax[i, j], ticks=false)
     end
     for i in modules[1:end-1], j in phases
-        hidexdecorations!(ax[i, j], grid=false, ticks=false)
+        hidexdecorations!(ax[i, j], ticks=false)
     end
 
     for i in modules, j in phases
-        ylims!(ax[i, j], 3.35, 4.1)
+        ylims!(ax[i, j], 3.35, 4.2)
+        xlims!(ax[i, j], first(df.t) / 3600, last(df.t) / 3600)
+        # ax[i, j].yticks = [3.4, 3.8, 4.2]
+        ax[i, j].yticks = [3.6, 4.0]
+        ax[i, j].xminorticks = IntervalsBetween(5)
+        ax[i, j].xminorticksvisible = true
+        ax[i, j].yminorticks = IntervalsBetween(2)
+        ax[i, j].yminorticksvisible = true
+        ax[i, j].xgridvisible = false
+        ax[i, j].ygridvisible = false
     end
-    fig |> display
+
+    for i in 1:9
+        Label(fig[i, 4], "Module $i", font=:bold, fontsize=11, rotation=pi / 2, tellheight=false)
+    end
+    for j in 1:3
+        Label(fig[0, j], "Phase $j", font=:bold, fontsize=11, tellwidth=false)
+        ax[end, j].xlabel = "Time (h)"
+    end
+    # Label(fig[:, 0], "Cell voltages", rotation=-pi / 2)
+
+    ax[5, 1].ylabel = "Cell voltages (V)"
+
+    Label(fig[-1, :], "Cell voltage data for all 27 modules", fontsize=18, font=:bold, tellwidth=false)
+
+    rowgap!(fig.layout, 2.5)
+    colgap!(fig.layout, 2.5)
+    fig
 end
 
 # let df = data[:module_current]
@@ -71,21 +98,21 @@ end
 #     end
 # end
 
-let df = data[:derating_current]
-    df = coalesce.(df, NaN)
-    # for p in 1:3, m in 1:9
-    p = 3
-    m = 5
-    fig = Figure()
-    ax = Axis(fig[1, 1])
-    # df_ch = dropmissing(df, "dr_ch_p$(p)_m$(m)")
-    # df_dc = dropmissing(df, "dr_ch_p$(p)_m$(m)")
-    lines!(ax, df._time, df[:, "dr_ch_p$(p)_m$(m)"])
-    lines!(ax, df._time, -df[:, "dr_dch_p$(p)_m$(m)"])
-    ax.title = "Phase: $(p), Module: $(m)"
-    fig |> display
-    # end
-end
+# let df = data[:derating_current]
+#     df = coalesce.(df, NaN)
+#     # for p in 1:3, m in 1:9
+#     p = 3
+#     m = 5
+#     fig = Figure()
+#     ax = Axis(fig[1, 1])
+#     # df_ch = dropmissing(df, "dr_ch_p$(p)_m$(m)")
+#     # df_dc = dropmissing(df, "dr_ch_p$(p)_m$(m)")
+#     lines!(ax, df._time, df[:, "dr_ch_p$(p)_m$(m)"])
+#     lines!(ax, df._time, -df[:, "dr_dch_p$(p)_m$(m)"])
+#     ax.title = "Phase: $(p), Module: $(m)"
+#     fig |> display
+#     # end
+# end
 
 function plot_derating_phase(data)
     # df = dropmissing(data[:derating_current])
@@ -323,40 +350,81 @@ end
 
 
 function plot_module_dataset(data, p, m)
-    fig = Figure()
+    fig = Figure(size=(550, 500))
     colors = Makie.wong_colors()
     ax = [Axis(fig[i, 1]) for i in 1:4]
 
-    df_v = data[:cell_voltage]
-    df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => ByRow(x -> -x) => "value")
-    df_V = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
-    df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
+    # cell voltage
+    df_v = copy(data[:cell_voltage])
+    t0 = first(df_v._time)
+    df_v[!, :t] = Dates.value.(df_v._time .- t0) * 1e-3 # time in seconds
 
+    # module voltage
+    df_V = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
+    df_V[!, :t] = Dates.value.(df_V.time .- t0) * 1e-3 # time in seconds
+
+    # current
+    df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => ByRow(x -> -x) => "value")
+    df_i[!, :t] = Dates.value.(df_i.time .- t0) * 1e-3 # time in seconds
+
+    # temperature
+    df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
+    df_T[!, :t] = Dates.value.(df_T.time .- t0) * 1e-3 # time in seconds
+
+    # charge throughput (coulomb counting)
     dt = [Dates.value.(diff(df_i.time)) * 1e-3; 0]
     q = cumsum(df_i.value .* dt) / 3600
 
-    for i in 1:12
-        lines!(ax[1], df_v._time, df_v[:, "cell_voltage_$(p)_$(m)_1_$(i)"])
-    end
-    lines!(ax[2], df_V.time, df_V.value, color=colors[1])
-    lines!(ax[3], df_i.time, df_i.value, color=colors[2])
-    lines!(ax[3], df_i.time, df_i.value, color=colors[2])
-    # lines!(ax[4], df_T.time, df_T.value, color=colors[3])
-    lines!(ax[4], df_i.time, q, color=colors[3])
+    N = 5
 
-    # for i in 1:4
-    #     xlims!(ax[i], df[begin, :t] / 3600, df[end, :t] / 3600)
-    # end
+    for i in 1:12
+        lines!(ax[1], df_v[:, :t] / 3600, df_v[:, "cell_voltage_$(p)_$(m)_1_$(i)"])
+    end
+    lines!(ax[2], df_V[1:N:end, :t] / 3600, df_V[1:N:end, :value], color=colors[3])
+    lines!(ax[3], df_i[1:N:end, :t] / 3600, df_i[1:N:end, :value], color=colors[2])
+    lines!(ax[4], df_T[1:N:end, :t] / 3600, df_T[1:N:end, :value], color=colors[4])
+    # lines!(ax[4], df_i.t / 3600, q, color=colors[3])
+
+    for i in 1:4
+        xlims!(ax[i], df_v[begin, :t] / 3600, df_v[end, :t] / 3600)
+    end
     for i in 1:3
         hidexdecorations!(ax[i], ticks=false, grid=false)
     end
 
-    ax[1].ylabel = "Cell / V"
-    ax[2].ylabel = "Module / V"
-    ax[3].ylabel = "Current / A"
-    # ax[4].ylabel = "Temperature / °C"
-    ax[4].ylabel = "Coloumb Counting / Ah"
-    ax[4].xlabel = "Time / h"
+    ylims!(ax[1], 3.4, 4.2)
+    ax[1].yticks = 3.4:0.4:4.2
+    ylims!(ax[2], 42, 50)
+    ax[2].yticks = 42:4:50
+    ylims!(ax[3], -50, 50)
+    ax[3].yticks = -50:50:50
+    ylims!(ax[4], 18, 33)
+    ax[4].yticks = 20:5:30
+    # ax[1].yticks = 3.4:0.2:4.2
+
+    ax[1].title = "Exemplary module dataset: Phase $p, Module $m"
+    ax[1].ylabel = "Cell\nvoltages (V)"
+    ax[2].ylabel = "Module\nvoltage (V)"
+    ax[3].ylabel = "Module\ncurrent (A)"
+    ax[4].ylabel = "Module\ntemperature (°C)"
+    # ax[4].ylabel = "Coloumb \n Counting / Ah"
+    ax[4].xlabel = "Time (h)"
+
+    for i in 1:4
+        ax[i].xgridvisible = false
+        ax[i].ygridvisible = false
+        ax[i].xminorticks = IntervalsBetween(5)
+        ax[i].xminorticksvisible = true
+        # ax[i].xminorgridvisible = true
+        ax[i].yminorticks = IntervalsBetween(2)
+        ax[i].yminorticksvisible = true
+        # ax[i].yminorgridvisible = true
+    end
+
+    # Label(fig[0, :], "Exemplary module dataset",
+    #     font=:bold, tellwidth=false,
+    # )
+    rowgap!(fig.layout, 10)
 
     fig
 end
@@ -365,3 +433,10 @@ for p in 1:3, m in 1:9
     plot_module_dataset(data, p, m) |> display
 end
 
+
+
+plot_ecms(Dict(id => kfs[id] for id in [(; p=3, m=5, c) for c in 1:12]))
+plot_ecm(kfs2[(; p=3, m=5)]; n=12)
+
+plot_ecms(kfs2; n=12)
+plot_ecms(kfs)
