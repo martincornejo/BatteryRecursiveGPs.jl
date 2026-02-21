@@ -6,34 +6,38 @@ using OrdinaryDiffEq
 
 using Dates
 using CSV, DataFrames, DataInterpolations
+using JSON
 
+"""
+First order equivalent circuit model (ECM) 
+"""
 @component function ECM(; name)
     @named oneport = OnePort()
 
     params = @parameters begin
-        Q
-        R1
-        τ1
-        fR0(::Real, ::Real)::Real
-        focv(::Real)::Real
+        Q, [description = "Cell capacity in Ah"]
+        R1, [description = "RC resistance in Ohm"]
+        tau1, [description = "RC time constant in s"]
+        fR0(::Real, ::Real)::Real, [description = "Internal resistance as a function of SOC and temperature in Ohm"]
+        focv(::Real)::Real, [description = "Open circuit voltage as a function of SOC in V"]
     end
 
     vars = @variables begin
-        v(t)
-        i(t)
-        v1(t) = 0
-        vr(t)
-        r0(t)
-        ocv(t)
-        soc(t)
-        T(t)
+        v(t), [description = "Terminal voltage in V"]
+        i(t), [description = "Current in A"]
+        v1(t) = 0, [description = "RC voltage in V"]
+        vr(t), [description = "Voltage drop across internal resistance in V"]
+        r0(t), [description = "Internal resistance in Ohm"]
+        ocv(t), [description = "Open circuit voltage in V"]
+        soc(t), [description = "State of charge in p.u."]
+        T(t), [description = "Temperature in °C"]
     end
 
     eqs = [
         ocv ~ focv(soc)
         r0 ~ fR0(soc, T)
         D(soc) ~ i / (Q * 3600.0)
-        D(v1) ~ -v1 / τ1 + i * (R1 / τ1)
+        D(v1) ~ -v1 / tau1 + i * (R1 / tau1)
         vr ~ i * r0
         v ~ ocv + vr + v1
     ]
@@ -41,6 +45,9 @@ using CSV, DataFrames, DataInterpolations
     extend(System(eqs, t, vars, params; name), oneport)
 end
 
+"""
+Battery module consisting of s cells in series
+"""
 @component function BatteryModule(s; name)
 
     # TODO: system derating
@@ -251,20 +258,21 @@ begin # function main()
     (; fi, fi_oscilloscope, fT, fv) = read_profiles("data/data-yuasa-cycles-2/")
 
     params = Dict(
-        # :cell_1 => Dict(:soc => 0.5, :Q => 38, :R0 => 1.5e-3, :R1 => 0.8e-3, :τ1 => 60, :focv => focv),
-        :cell_1 => Dict(:soc => 0.82, :Q => 89, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_2 => Dict(:soc => 0.80, :Q => 90, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_3 => Dict(:soc => 0.78, :Q => 91, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_4 => Dict(:soc => 0.87, :Q => 90, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_5 => Dict(:soc => 0.87, :Q => 92, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_6 => Dict(:soc => 0.86, :Q => 91, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_7 => Dict(:soc => 0.86, :Q => 91, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_8 => Dict(:soc => 0.86, :Q => 92, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_9 => Dict(:soc => 0.87, :Q => 90, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_10 => Dict(:soc => 0.87, :Q => 91, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_11 => Dict(:soc => 0.86, :Q => 92, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0),
-        :cell_12 => Dict(:soc => 0.86, :Q => 92, :R1 => 1.2e-3, :τ1 => 300, :focv => focv, :fR0 => fR0)
+        # :cell_1 => Dict(:soc => 0.5, :Q => 38, :R0 => 1.5e-3, :R1 => 0.8e-3, :tau1 => 60, :focv => focv),
+        :cell_1 => Dict(:soc => 0.82, :Q => 89, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_2 => Dict(:soc => 0.80, :Q => 90, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_3 => Dict(:soc => 0.78, :Q => 91, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_4 => Dict(:soc => 0.87, :Q => 90, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_5 => Dict(:soc => 0.87, :Q => 92, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_6 => Dict(:soc => 0.86, :Q => 91, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_7 => Dict(:soc => 0.86, :Q => 91, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_8 => Dict(:soc => 0.86, :Q => 92, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_9 => Dict(:soc => 0.87, :Q => 90, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_10 => Dict(:soc => 0.87, :Q => 91, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_11 => Dict(:soc => 0.86, :Q => 92, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0),
+        :cell_12 => Dict(:soc => 0.86, :Q => 92, :R1 => 1.2e-3, :tau1 => 300, :focv => focv, :fR0 => fR0)
     )
+
 
     # simulate
     tspan = (0, 12.5 * 3600)
@@ -279,6 +287,10 @@ begin # function main()
 
     # save data
     CSV.write("data/data-yuasa-synthetic/data-yuasa-synthetic.csv", df)
+    JSON.json("data/data-yuasa-synthetic/battery-params.json",
+        Dict(battery => Dict(key => val for (key, val) in batt_params if key != :focv && key != :fR0)
+             for (battery, batt_params) in params); pretty=true
+    )
 
     nothing
 end

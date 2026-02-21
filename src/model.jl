@@ -139,10 +139,10 @@ function build_kf(θ, u, zt; n=21)
     )
 
     # Arrhenius
-    arr = Arrhenius(; T0=25, k0=10, σ0_k=5, σ1_k=0.0)
+    arr = Arrhenius(; θ.arr...)
 
     # coloumb counting
-    cc = ColoumbCounting(σ1=1e-4)
+    cc = ColoumbCounting(σ1=θ.cc.σ1)
 
     # measurement / model noise
     vσ² = StatsBase.transform(zt.σ, [θ.vσ]) |> first |> abs2 # ^2

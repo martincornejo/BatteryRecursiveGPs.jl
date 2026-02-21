@@ -46,6 +46,8 @@ function plot_sim(kf, sol; Ts=1.0, plot_Δv=true)
         vlines!(ax[2], t[sol.tt]; color=:red)
     end
 
+    xlims!.(ax, t[begin], t[end])
+
     ax[1].ylabel = "Voltage / V"
     ax[2].ylabel = "Voltage error / mV"
     ax[2].xlabel = "Time / h"
@@ -151,7 +153,7 @@ function plot_ecms(kfs, sols=nothing; n=1)
 end
 
 
-function plot_ecms_norm(kfs, sols, fsoc, focv; vlim=(3.5, 3.95))
+function plot_ecms_norm(kfs, sols, fsoc, focv, fR0=nothing; vlim=(3.5, 3.95))
     fig = Figure(size=(600, 600))
     ax = [Makie.Axis(fig[i, 1]) for i in 1:2]
     ax[1].ylabel = "OCV / V"
@@ -162,17 +164,20 @@ function plot_ecms_norm(kfs, sols, fsoc, focv; vlim=(3.5, 3.95))
     s = 0.0:0.01:1.0
     # s = 0.15:0.01:0.9
     lines!(ax[1], s, focv(s); color=:black, linestyle=:dash)
+    if fR0 !== nothing
+        lines!(ax[2], s, fR0.(s) * 1e3; color=:black, linestyle=:dash)
+    end
 
     for (id, kf) in kfs
 
         zt = kf.p.zt
 
-        soc0 = calc_soc0(kf, fsoc; v=vlim) |> Measurements.value
-        Q = calc_Q(kf, fsoc; v=vlim) |> Measurements.value
+        soc0 = calc_soc0(kf, sols[id], fsoc; v=vlim) |> Measurements.value
+        Q = calc_Q(kf, sols[id], fsoc; v=vlim) |> Measurements.value
 
         # q̂min, q̂max = extrema(kf.p.r0.b0)
-        x = ComponentVector.(sols[id].xt, kf.p.xid)
-        q̂min, q̂max = extrema([_x.cc.q for _x in x])
+        xs = ComponentVector.(sols[id].xt, kf.p.xid)
+        q̂min, q̂max = extrema([x.cc.q for x in xs])
         q̂ = q̂min:0.01:q̂max
         q = StatsBase.reconstruct(zt.q, q̂)
 
@@ -435,7 +440,7 @@ function plot_module_inhomogenity(params)
 end
 
 
-function plot_rc_param_trajectory(kf, sol)
+function plot_rc_param_trajectory(kf, sol; r1=nothing, τ1=nothing)
     (; xid, Σid, zt) = kf.p
     xs = ComponentVector.(sol.xt, xid)
     Σs = [ComponentMatrix(R, Σid) for R in sol.Rt]
@@ -460,6 +465,13 @@ function plot_rc_param_trajectory(kf, sol)
     lines!(ax[3], t, vμ)
     band!(ax[3], t, vμ - 2vσ, vμ + 2vσ; alpha=0.5)
 
+    if r1 !== nothing
+        hlines!(ax[1], r1 * 1e3; color=:black, linestyle=:dash)
+    end
+    if τ1 !== nothing
+        hlines!(ax[2], τ1; color=:black, linestyle=:dash)
+    end
+
     ax[1].ylabel = "R / mΩ"
     ax[2].ylabel = "τ / s"
     ax[3].ylabel = "RC voltage / mV"
@@ -473,7 +485,7 @@ function plot_rc_param_trajectory(kf, sol)
     fig
 end
 
-function plot_q_estimation(kf, sol)
+function plot_q_estimation(kf, sol, df_real=nothing)
     (; xid, Σid, zt) = kf.p
     xs = ComponentVector.(sol.xt, xid)
     Σs = [ComponentMatrix(R, Σid) for R in sol.Rt]
@@ -486,11 +498,28 @@ function plot_q_estimation(kf, sol)
     qσ = StatsBase.reconstruct(zt.q, sqrt.([Σ[:cc, :cc][:q, :q] for Σ in Σs]))
 
     fig = Figure()
-    ax = Axis(fig[1, 1])
+    ax = [Axis(fig[i, 1]) for i in 1:2]
 
-    lines!(ax, q)
-    lines!(ax, t, qμ; color=Cycled(2))
-    band!(ax, t, qμ - 2qσ, qμ + 2qσ; color=Cycled(2))
+    lines!(ax[1], t / 3600, q; color=Cycled(1), label="Coulomb counting")
+    lines!(ax[1], t / 3600, qμ; color=Cycled(2), label="Estimated Q")
+    band!(ax[1], t / 3600, qμ - 2qσ, qμ + 2qσ; color=Cycled(2), alpha=0.5, label="Estimated Q")
+
+    lines!(ax[2], t / 3600, q - qμ; color=Cycled(2), label="Estimated Q")
+    band!(ax[2], t / 3600, (q - qμ) - 2qσ, (q - qμ) + 2qσ; color=Cycled(2), alpha=0.5, label="Estimated Q")
+
+    if df_real !== nothing
+        q_real = df_real.q
+        lines!(ax[1], df_real.t / 3600, q_real; color=:red, linestyle=:dash, label="Real Q")
+        lines!(ax[2], df_real.t / 3600, q_real - q; color=:red, linestyle=:dash, label="Real Q")
+    end
+
+    xlims!(ax[1], t[begin] / 3600, t[end] / 3600)
+
+    ax[1].ylabel = "Charge / Ah"
+    ax[2].ylabel = "Error / Ah"
+    ax[2].xlabel = "Time / h"
+
+    Legend(fig[3, 1], ax[1]; merge=true, orientation=:horizontal)
     fig
 end
 
