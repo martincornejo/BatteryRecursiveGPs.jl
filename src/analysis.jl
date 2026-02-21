@@ -127,7 +127,7 @@ function calc_Q_utilization(params; delta_soc=true)
     (Q_pack * n_cells) / Q_cells_total
 end
 
-function calc_module_soc(df, params)
+function calc_soc_pack(df, params)
     # TODO: improve
 
     df2 = DataFrame(
@@ -153,7 +153,7 @@ function plot_module_soc(df, params)
         lines!(ax, df.t / 3600, df[:, "soc_cell_$i"], color=(:blue, 0.2), label="Cell")
     end
 
-    S_pack = calc_module_soc(df, params)
+    S_pack = calc_soc_pack(df, params)
     lines!(ax, df.t / 3600, S_pack, color=:black, label="Module")
 
 

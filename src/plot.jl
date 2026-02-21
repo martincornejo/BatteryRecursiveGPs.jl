@@ -473,7 +473,7 @@ function plot_rc_param_trajectory(kf, sol)
     fig
 end
 
-function plot_q_filter(kf, sol)
+function plot_q_estimation(kf, sol)
     (; xid, Σid, zt) = kf.p
     xs = ComponentVector.(sol.xt, xid)
     Σs = [ComponentMatrix(R, Σid) for R in sol.Rt]
