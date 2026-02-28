@@ -485,7 +485,7 @@ function plot_rc_param_trajectory(kf, sol; r1=nothing, τ1=nothing)
     fig
 end
 
-function plot_q_estimation(kf, sol, df_real=nothing)
+function plot_q_trajectory(kf, sol)
     (; xid, Σid, zt) = kf.p
     xs = ComponentVector.(sol.xt, xid)
     Σs = [ComponentMatrix(R, Σid) for R in sol.Rt]
@@ -507,11 +507,43 @@ function plot_q_estimation(kf, sol, df_real=nothing)
     lines!(ax[2], t / 3600, q - qμ; color=Cycled(2), label="Estimated Q")
     band!(ax[2], t / 3600, (q - qμ) - 2qσ, (q - qμ) + 2qσ; color=Cycled(2), alpha=0.5, label="Estimated Q")
 
-    if df_real !== nothing
-        q_real = df_real.q
-        lines!(ax[1], df_real.t / 3600, q_real; color=:red, linestyle=:dash, label="Real Q")
-        lines!(ax[2], df_real.t / 3600, q_real - q; color=:red, linestyle=:dash, label="Real Q")
-    end
+    xlims!(ax[1], t[begin] / 3600, t[end] / 3600)
+
+    ax[1].ylabel = "Charge / Ah"
+    ax[2].ylabel = "Error / Ah"
+    ax[2].xlabel = "Time / h"
+
+    Legend(fig[3, 1], ax[1]; merge=true, orientation=:horizontal)
+    fig
+end
+
+
+function plot_q_estimation(data, sol, kf)
+    (; xid, Σid, zt) = kf.p
+    xs = ComponentVector.(sol.xt, xid)
+    Σs = [ComponentMatrix(R, Σid) for R in sol.Rt]
+
+
+    q = StatsBase.reconstruct(zt.q, [u.q for u in sol.ut])
+    t = 1:length(q)
+
+    qμ = StatsBase.reconstruct(zt.q, [x.cc.q for x in xs])
+    qσ = StatsBase.reconstruct(zt.q, sqrt.([Σ[:cc, :cc][:q, :q] for Σ in Σs]))
+
+    q_real = data.q
+    t_real = data.t
+
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+
+    lines!(ax[1], t_real / 3600, q_real; color=:black, label="Real Q")
+    lines!(ax[1], t / 3600, q; color=:red, linestyle=:dash, label="Coulomb counting")
+    lines!(ax[1], t / 3600, qμ; color=Cycled(2), label="Estimated Q")
+    band!(ax[1], t / 3600, qμ - 2qσ, qμ + 2qσ; color=Cycled(2), alpha=0.5, label="Estimated Q")
+
+    lines!(ax[2], t / 3600, qμ - q_real; color=Cycled(2), label="Estimated Q")
+    band!(ax[2], t / 3600, (qμ - q_real) - 2qσ, (qμ - q_real) + 2qσ; color=Cycled(2), alpha=0.5, label="Estimated Q")
+    lines!(ax[2], t_real / 3600, q - q_real; color=:red, linestyle=:dash, label="Coulomb counting")
 
     xlims!(ax[1], t[begin] / 3600, t[end] / 3600)
 

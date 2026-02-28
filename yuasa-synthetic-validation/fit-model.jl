@@ -23,25 +23,7 @@ function cell_dataset(data::DataFrame, cell_id::Int; Ts=1.0)
     (; u, y)
 end
 
-function fit_model(df::DataFrame, cell_id::Int)
-    θ0 = ComponentVector(; # tunable (hyper)params
-        ocv=(; σ=0.5, ℓ=0.5),
-        r0=(; σ=0.01, ℓ=2.0),
-        vσ=3e-3,
-    )
-    ϑ = ComponentVector(; # non-tunable params
-        Ts=1.0,
-        r0μ=1.5e-3,
-        rc=(;
-            v0=0.0, σ0_v=1.0e-5, σ1_v=5.0e-5,
-            r0=1.5e-3, σ0_r=5.0e-6, σ1_r=0.0,
-            τ0=250.0, σ0_τ=1.0, σ1_τ=0.0,
-        ),
-        cc=(; σ1=0.1e-5),
-        arr=(; T0=25, k0=20, σ0_k=0.0, σ1_k=0.0),
-    )
-    θ = ComponentVector(; θ0..., ϑ...)
-
+function fit_model(df::DataFrame, cell_id::Int, θ)
     u, y = cell_dataset(df, cell_id)
     zt = fit_zscore()
     kf = build_kf(θ, u, zt)
@@ -55,12 +37,12 @@ function fit_model(df::DataFrame, cell_id::Int)
     (; kf, sol)
 end
 
-function fit_models(data, ids)
+function fit_models(data, ids, θ)
     kfs = Dict()
     sols = Dict()
 
     for batch in Iterators.partition(ids, Threads.nthreads())
-        tasks = Dict(id => Threads.@spawn fit_model(data, id) for id in batch)
+        tasks = Dict(id => Threads.@spawn fit_model(data, id, θ) for id in batch)
 
         for (id, task) in tasks
             (; kf, sol) = fetch(task)
@@ -70,4 +52,33 @@ function fit_models(data, ids)
     end
 
     (; kfs, sols)
+end
+
+
+function plot_q_estimation_state(data, sol)
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+    zt = fit_zscore()
+    q̂ = first.(sol.xt)
+    R̂ = first.(sol.Rt)
+    t = sol.idx * 1.0
+    qμ = StatsBase.reconstruct(zt.q, q̂)
+    qσ = StatsBase.reconstruct(zt.q, sqrt.(R̂)) # use uncertainty as estimation?
+    lines!(ax[1], t, qμ, label="estimated")
+    band!(ax[1], t, qμ - qσ, qμ + qσ, alpha=0.5)
+    lines!(ax[1], t, data.q)
+
+    q2 = cumsum(data.î) * 1.0 / 3600
+
+    lines!(ax[2], t, qμ - data.q)
+    lines!(ax[2], t, q2 - data.q)
+
+    rmse1 = mean(abs2, qμ - data.q) |> sqrt
+    rmse2 = mean(abs2, q2 - data.q) |> sqrt
+    mae1 = mean(abs, qμ - data.q)
+    mae2 = mean(abs, q2 - data.q)
+    @info "RMSE" rmse1 rmse2
+    @info "MAE" mae1 mae2
+
+    fig
 end

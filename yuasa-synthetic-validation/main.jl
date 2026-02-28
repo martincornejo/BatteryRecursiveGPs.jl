@@ -8,6 +8,8 @@ using DataInterpolations
 using StaticArrays
 import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
 
+using CairoMakie
+
 include("fit-model.jl")
 
 # === load data
@@ -25,7 +27,20 @@ fR025(s) = fR0(s, 25) # reference R0 at 25°C
 
 
 # === fit models
-kfs, sols = fit_models(data, 1:12);
+θ = ComponentVector(;
+    ocv=(; σ=0.5, ℓ=0.3),
+    r0=(; σ=0.5, ℓ=2.0),
+    vσ=2e-3, Ts=1.0,
+    r0μ=1.5e-3,
+    rc=(;
+        v0=0.0, σ0_v=1.0e-5, σ1_v=5.0e-5,
+        r0=1.5e-3, σ0_r=5.0e-6, σ1_r=0.0,
+        τ0=250.0, σ0_τ=1.0, σ1_τ=0.0,
+    ),
+    cc=(; σ0=0.0, σ1=0.1e-5),
+    arr=(; T0=25, k0=20, σ0_k=σ1 = 0.2e-5, σ1_k=0.0),
+)
+kfs, sols = fit_models(data, 1:12, θ);
 
 # === analysis
 vlim = (3.7, 4.0)
@@ -37,7 +52,7 @@ let id = 1
     fig.content[1].title = "Cell $(id)"
     fig |> display
 end
-for id in 1:12
+let id = 1
     fig = plot_q_estimation(kfs[id], sols[id], data)
     fig.content[1].title = "Cell $(id)"
     fig |> display
@@ -80,3 +95,20 @@ end
 # TODO
 # - plot/validate soc estimation (cell, pack)
 # - plot/validate arrhenius (cell, pack)
+
+# state estimation with EKF
+let id = 1
+    fig = plot_q_estimation(data, sols[id], kfs[id])
+    fig.content[1].title = "Cell $(id)"
+    fig |> display
+end
+begin
+    θ_state = (; q=(; σ0=1e-3, σ1=0.5e-5), rc=(; σ0=1e-4, σ1=1e-4))
+    kf2 = build_kf_state(kfs[1]; q0=0.0, Ts=1.0, θ=θ_state)
+    u, y = cell_dataset(data, 1)
+
+    sol = run_kf!(kf2, u, y)
+
+    plot_q_estimation_state(data, sol) |> display
+end
+

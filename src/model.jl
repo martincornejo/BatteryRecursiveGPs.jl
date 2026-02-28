@@ -32,7 +32,7 @@ end
 
 function arrhenius_factor(x, T, p)
     (; T0) = p
-    (; k) = x
+    k = abs(x.k)
     exp(k * (1 / T - 1 / T0))
 end
 
@@ -142,13 +142,12 @@ function build_kf(θ, u, zt; n=21)
     arr = Arrhenius(; θ.arr...)
 
     # coloumb counting
-    cc = ColoumbCounting(σ1=θ.cc.σ1)
+    cc = ColoumbCounting(; θ.cc...)
 
     # measurement / model noise
     vσ² = StatsBase.transform(zt.σ, [θ.vσ]) |> first |> abs2 # ^2
 
     # model
-    nx = (length(rc.μ0) + length(rgp1.μ0) + (length(rgp2.μ0)))
     p = (;
         arr=arr.p,
         Ts=θ.Ts,
@@ -157,7 +156,7 @@ function build_kf(θ, u, zt; n=21)
     )
     rgps = (; ocv=rgp1, r0=rgp2, rc, arr, cc)
 
-    make_ekf(rgps, dynamics!, measurement, R2; p)
+    ExtendedKalmanFilter(rgps, dynamics!, measurement, R2; p)
 end
 
 
