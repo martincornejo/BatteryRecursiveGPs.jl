@@ -80,7 +80,7 @@ function plot_ecm(kf, sol=nothing; n=1)
     # OCV 
     ocv = predict_gp(kf, q̂, :ocv)
     ocvμ = StatsBase.reconstruct(zt.v, ocv.μ)
-    ocvσ = StatsBase.reconstruct(zt.σ, ocv.σ)
+    ocvσ = StatsBase.reconstruct(zt.σ, sqrt.(diag(ocv.Σ)))
 
     lines!(ax[1], q, ocvμ)
     band!(ax[1], q, ocvμ + 2ocvσ, ocvμ - 2ocvσ, alpha=0.8)
@@ -88,12 +88,12 @@ function plot_ecm(kf, sol=nothing; n=1)
     # R0
     r0 = predict_gp(kf, q̂, :r0)
     rμ = StatsBase.reconstruct(zt.r, r0.μ) * 1e3
-    rσ = StatsBase.reconstruct(zt.r, r0.σ) * 1e3
+    rσ = StatsBase.reconstruct(zt.r, sqrt.(diag(r0.Σ))) * 1e3
 
     lines!(ax[2], q, rμ)
     band!(ax[2], q, rμ + 2rσ, rμ - 2rσ, alpha=0.8)
 
-    ylims!(ax[1], 3.4 * n, 4.2 * n)
+    ylims!(ax[1], 3.2 * n, 4.2 * n)
     ylims!(ax[2], 0.0 * n, 3.0 * n)
 
     linkxaxes!(ax...)

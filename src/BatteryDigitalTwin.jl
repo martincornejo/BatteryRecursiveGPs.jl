@@ -30,6 +30,7 @@ export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery p
 
 # ploting
 export plot_sim # single cell
+export plot_ecm 
 export plot_rc_param_trajectory
 export plot_q_estimation, plot_q_estimation_state
 export plot_ecms, plot_ecms_norm # battery pack

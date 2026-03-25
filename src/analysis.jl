@@ -65,7 +65,7 @@ function calc_soc0(kf, sol, fsoc; v=(3.85, 4.0), n=1)
     xs = ComponentVector.(sol.xt, kf.p.xid)
     q̂min, q̂max = extrema([x.cc.q for x in xs])
     # q̂min, q̂max = extrema(kf.p.ocv.b0)
-    q̂ = range(q̂min, q̂max, 50) |> collect
+    q̂ = range(q̂min, q̂max, 200) |> collect
     q = StatsBase.reconstruct(zt.q, q̂)
 
     # OCV 
