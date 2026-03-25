@@ -429,14 +429,3 @@ function plot_module_dataset(data, p, m)
     fig
 end
 
-for p in 1:3, m in 1:9
-    plot_module_dataset(data, p, m) |> display
-end
-
-
-
-plot_ecms(Dict(id => kfs[id] for id in [(; p=3, m=5, c) for c in 1:12]))
-plot_ecm(kfs2[(; p=3, m=5)]; n=12)
-
-plot_ecms(kfs2; n=12)
-plot_ecms(kfs)

@@ -159,137 +159,115 @@ function fit_zscore(n=1)
 end
 
 
-function run_kf!(kf, u, y; tt=length(u))
-    # check if y and u have correct lengths
+function fit_model(data, ti, id)
+    θ0 = ComponentVector(; # tunable (hyper)params
+        ocv=(; σ=0.5, ℓ=0.5),
+        r0=(; σ=0.01, ℓ=2.0),
+        vσ=3e-3,
+    )
+    ϑ = ComponentVector(; # non-tunable params
+        Ts=1.0,
+        r0μ=1.5e-3,
+        rc=(;
+            v0=0.0, σ0_v=1.0e-5, σ1_v=5.0e-5,
+            r0=1.5e-3, σ0_r=5.0e-6, σ1_r=0.0,
+            τ0=250.0, σ0_τ=1.0, σ1_τ=0.0,
+        ),
+        cc=(; σ1=0.1e-5),
+        arr=(; T0=25, k0=20, σ0_k=0.0, σ1_k=0.0),
+    )
+    θ = ComponentVector(; θ0..., ϑ...)
 
-    # preallocate results
-    idx = map(y_ -> any(y_ .!== missing), y) |> findall # indexes with (non-missing) observations
-    T = length(idx) # number of (non-missing) observations
-    ut = Array{eltype(u)}(undef, T)
-    yt = Array{eltype(y)}(undef, T)
-    xt = Array{particletype(kf)}(undef, T)
-    Rt = Array{LLPF.covtype(kf)}(undef, T)
-    et = Array{eltype(particletype(kf))}(undef, T)
-
-    yμ = Array{eltype(y)}(undef, T)
-    yΣ = Array{eltype(y)}(undef, T)
-
-    llt = zero(eltype(particletype(kf)))
-
-    # U = length(u)
-    # x = Array{particletype(kf)}(undef, U)
-    # R = Array{LLPF.covtype(kf)}(undef, U)
-
-    trange_1 = filter(<=(tt), eachindex(u))
-    trange_2 = filter(>(tt), eachindex(u))
-
-    k = 1 # 
-
-    for i in trange_1
-        if !any(y[i] .=== missing) # skip correcting step for missing values
-
-            # x[k] = state(kf) |> copy
-            # R[k] = covariance(kf) |> copy
-
-            (; ll, e, S, Sᵪ, K) = correct!(kf, u[i], y[i])
-
-            # from LLPF
-            llt += ll
-            ut[k] = u[i]
-            yt[k] = y[i]
-            et[k] = first(e)
-            xt[k] = state(kf) |> copy
-            Rt[k] = covariance(kf) |> copy
-
-            # ouput
-            v = predict_kf(kf, u[i]) # TODO: check performance
-            yμ[k] = v.μ
-            yΣ[k] = v.Σ
-
-            k += 1
-        end
-
-        predict!(kf, u[i])
-    end
-
-    for i in trange_2
-        if !any(y[i] .=== missing) # skip correcting step for missing values
-            v = predict_kf(kf, u[i]) # TODO: check performance
-            e = y[i] - v.μ
-            ut[k] = u[i]
-            yt[k] = y[i]
-            et[k] = first(e)
-            xt[k] = state(kf) |> copy
-            Rt[k] = covariance(kf) |> copy
-
-            yμ[k] = v.μ
-            yΣ[k] = v.Σ
-
-            k += 1
-        end
-
-        predict!(kf, u[i])
-    end
-
-    (; idx, u, y, ut, yt, xt, Rt, et, yμ, yΣ, ll=llt, tt)
-end
-
-function loss(θ̂, p)
-    (; ϑ, zt, u, y) = p
-
-    θ⁺ = softplus.(θ̂) # transform to force positive values
-    θ = ComponentVector(; θ⁺..., ϑ...)
+    (; p, m, c) = id
+    u, y = cell_dataset(data, ti, p, m, c)
+    zt = fit_zscore()
     kf = build_kf(θ, u, zt)
 
-    sol = run_kf!(kf, u, y)
-    return sum(abs2, sol.e)
+    stats = @timed begin
+        sol = run_kf!(kf, u, y)
+    end
+
+    @info "Cell p:$(p), m:$(m), c:$(c) complete" stats.time
+
+    (; kf, sol)
 end
 
-function residuals(θ̂, p)
-    (; ϑ, zt, u, y) = p
+function fit_module(data, ti, id)
+    n = 12
+    θ0 = ComponentVector(; # tunable (hyper)params
+        ocv=(; σ=0.5, ℓ=0.5),
+        r0=(; σ=0.01, ℓ=2.0),
+        vσ=n * 3e-3,
+    )
+    ϑ = ComponentVector(; # non-tunable params
+        Ts=1.0,
+        r0μ=n * 1.5e-3,
+        rc=(;
+            v0=n * 0.0, σ0_v=n * 1.0e-5, σ1_v=n * 5.0e-5,
+            r0=n*1.5e-3, σ0_r=n * 5.0e-6, σ1_r=n * 0.0,
+            τ0=250.0, σ0_τ=1.0, σ1_τ=0.0,
+        ),
+        cc=(; σ1=0.1e-5),
+        arr=(; T0=25, k0=20, σ0_k=0.0, σ1_k=0.0),
+    )
+    θ = ComponentVector(; θ0..., ϑ...)
 
-    θ⁺ = softplus.(θ̂) # transform to force positive values
-    θ = ComponentVector(; θ⁺..., ϑ...)
+    (; p, m) = id
+    zt = fit_zscore(n)
+    u, y = module_dataset(data, ti, p, m)
     kf = build_kf(θ, u, zt)
 
-    sol = run_kf!(kf, u, y)
-    return sol.e
+    stats = @timed begin
+        sol = run_kf!(kf, u, y)
+    end
+
+    @info "Module p:$(p), m:$(m), complete" stats.time
+
+    (; kf, sol)
 end
 
-function tune_hyperparams(θ0, p)
-    u0 = invsoftplus.(θ0)
+function fit_modules(data, ti, ids)
+    kfs = Dict()
+    sols = Dict()
 
-    adtype = AutoForwardDiff()
-    f = OptimizationFunction(loss, adtype)
-    prob = OptimizationProblem(f, u0, p)
+    for id in ids
+        (; kf, sol) = fit_module(data, ti, id)
+        kfs[id] = kf
+        sols[id] = sol
+    end
 
-    alg = LBFGS(linesearch=LineSearches.BackTracking())
-    sol = solve(prob,
-        alg,
-        reltol=1e-4,
-        show_trace=true
-    )
-
-    θ = softplus.(sol.u)
-    return θ
+    (; kfs, sols)
 end
 
-function tune_hyperparams_nlls(θ0, p; maxiters=10)
-    u0 = invsoftplus.(θ0)
+function fit_models(data, ti, ids)
+    kfs = Dict()
+    sols = Dict()
 
-    nlls_prob = NonlinearLeastSquaresProblem(residuals, u0, p)
+    for id in ids
+        (; kf, sol) = fit_model(data, ti, id)
+        kfs[id] = kf
+        sols[id] = sol
+    end
 
-    sol = solve(nlls_prob, LevenbergMarquardt();
-        maxiters, show_trace=Val(true),
-        # trace_level=TraceWithJacobianConditionNumber(25)
-    )
-
-    θ = softplus.(sol.u)
-    return θ
+    (; kfs, sols)
 end
 
+function fit_models_spawn(data, ti, ids)
+    kfs = Dict()
+    sols = Dict()
 
+    for batch in Iterators.partition(ids, Threads.nthreads())
+        tasks = Dict(id => Threads.@spawn fit_model(data, ti, id) for id in batch)
 
+        for (id, task) in tasks
+            (; kf, sol) = fetch(task)
+            kfs[id] = kf
+            sols[id] = sol
+        end
+    end
+
+    (; kfs, sols)
+end
 
 
 
@@ -313,49 +291,3 @@ function extract_ocv(kf)
 
     (; ocv=focv, ocv⁻¹=focv⁻¹)
 end
-
-
-function plot_rc_params(kfs)
-
-    fig = Figure()
-    ax = Axis(fig[1, 1])
-
-    zt = kf.p.zt
-
-    for (id, kf) in kfs
-        x = ComponentVector(kf.x, kf.p.xid)
-        r = StatsBase.reconstruct(zt.r, [abs(x.rc.r)]) |> first
-        τ = x.rc.τ
-        scatter!(ax, τ, r)
-    end
-
-    fig
-end
-
-
-function plot_arrhenius(kfs)
-
-    fig = Figure()
-    ax = [Axis(fig[i, 1]) for i in 1:2]
-
-
-    T = 15:30
-    T0 = 25
-
-    for (i, (id, kf)) in enumerate(kfs)
-        x = ComponentVector(kf.x, kf.p.xid)
-        # r = StatsBase.reconstruct(zt.r, [abs(x.rc.r)]) |> first
-        # τ = x.rc.τ
-        # scatter!(ax, τ, r)
-        k = x.arr.k
-        kT = @. exp(k * (1 / T - 1 / T0))
-        lines!(ax[1], T, kT)
-        scatter!(ax[2], i, k)
-    end
-
-    fig
-end
-
-
-
-# fig7 = let id = (; p=3, m=5)
