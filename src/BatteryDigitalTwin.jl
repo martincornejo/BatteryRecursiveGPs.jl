@@ -25,7 +25,7 @@ export build_kf, run_kf!
 export build_kf_state # soc estimation only
 
 # model components
-export CoulombCounting, dynamics_cc
+export ColoumbCounting, dynamics_cc
 export Arrhenius, arrhenius_factor
 export R0, RC, dynamics_rc
 
