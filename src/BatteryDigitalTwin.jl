@@ -24,13 +24,18 @@ include("plot.jl")
 export build_kf, run_kf!
 export build_kf_state # soc estimation only
 
+# model components
+export CoulombCounting, dynamics_cc
+export Arrhenius, arrhenius_factor
+export R0, RC, dynamics_rc
+
 # analysis
 export calc_Q, calc_soc0, calc_soh # single cell
 export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
 
 # ploting
 export plot_sim # single cell
-export plot_ecm 
+export plot_ecm
 export plot_rc_param_trajectory
 export plot_q_estimation, plot_q_estimation_state
 export plot_ecms, plot_ecms_norm # battery pack

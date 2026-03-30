@@ -36,6 +36,18 @@ function arrhenius_factor(x, T, p)
     exp(k * (1 / T - 1 / T0))
 end
 
+function R0(; r0, σ0, σ1)
+    μ0 = ComponentVector(;
+        r=r0
+    )
+
+    Σ0 = false .* μ0 * μ0'
+    Σ0[:r, :r] = σ0^2
+
+    R1 = diagm([σ1]) .^ 2
+
+    return (; μ0, Σ0, R1)
+end
 
 function RC(; v0, r0, τ0, σ0_v, σ0_r, σ0_τ, σ1_v, σ1_r, σ1_τ)
     μ0 = ComponentVector(
