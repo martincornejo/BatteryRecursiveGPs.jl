@@ -6,8 +6,7 @@ using StatsBase
 using Measurements
 using DataInterpolations
 using StaticArrays
-import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
-
+import ComponentArrays: ComponentVector, ComponentMatrix
 using CairoMakie
 
 include("fit-model.jl")
@@ -22,7 +21,7 @@ f = let
     (; ocv⁻¹, ocv)
 end
 
-fR0(s, T; kT=20, T0=25) = (0.0015 + 0.0004 * sinpi(-0.2 + s * 1.5)) * exp(kT * (1 / T - 1 / T0))
+fR0(s, T; kT=2000, T0=25) = (0.0015 + 0.0004 * sinpi(-0.2 + s * 1.5)) * exp(kT * (1 / (T + 273.15) - 1 / (T0 + 273.15)))
 fR025(s) = fR0(s, 25) # reference R0 at 25°C
 
 
@@ -38,7 +37,7 @@ fR025(s) = fR0(s, 25) # reference R0 at 25°C
         τ0=250.0, σ0_τ=1.0, σ1_τ=0.0,
     ),
     cc=(; σ0=0.0, σ1=0.1e-5),
-    arr=(; T0=25, k0=20, σ0_k=σ1 = 0.2e-5, σ1_k=0.0),
+    arr=(; T0=25, k0=1500, σ0_k=20, σ1_k=0.0),
 )
 kfs, sols = fit_models(data, 1:12, θ);
 
@@ -53,12 +52,17 @@ let id = 1
     fig |> display
 end
 let id = 1
-    fig = plot_q_estimation(kfs[id], sols[id], data)
+    fig = plot_q_estimation(data, sols[id], kfs[id])
     fig.content[1].title = "Cell $(id)"
     fig |> display
 end
 let id = 1
     fig = plot_rc_param_trajectory(kfs[id], sols[id]; r1=1.2e-3, τ1=300)
+    fig.content[1].title = "Cell $(id)"
+    fig |> display
+end
+let id = 1
+    fig = plot_arrhenius_param_trajectory(kfs[id], sols[id]; k=2000)
     fig.content[1].title = "Cell $(id)"
     fig |> display
 end
@@ -94,7 +98,6 @@ end
 
 # TODO
 # - plot/validate soc estimation (cell, pack)
-# - plot/validate arrhenius (cell, pack)
 
 # state estimation with EKF
 let id = 1

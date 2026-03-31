@@ -32,8 +32,10 @@ end
 
 function arrhenius_factor(x, T, p)
     (; T0) = p
+    T0_K = T0 + 273.15 # convert to Kelvin
+    T_K = T + 273.15
     k = abs(x.k)
-    exp(k * (1 / T - 1 / T0))
+    exp(k * (1 / T_K - 1 / T0_K))
 end
 
 function R0(; r0, σ0, σ1)

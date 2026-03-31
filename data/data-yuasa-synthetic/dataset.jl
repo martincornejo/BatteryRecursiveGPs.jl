@@ -8,6 +8,8 @@ using Dates
 using CSV, DataFrames, DataInterpolations
 using JSON
 
+using CairoMakie
+
 """
 First order equivalent circuit model (ECM) 
 """
@@ -252,7 +254,7 @@ begin # function main()
     focv = LinearInterpolation(df_ocv.ocv, df_ocv.soc, extrapolation=ExtrapolationType.Constant)
 
     # internal resistance function
-    fR0(s, T; kT=20, T0=25) = (0.0015 + 0.0004 * sinpi(-0.2 + s * 1.5)) * exp(kT * (1 / T - 1 / T0))
+    fR0(s, T; kT=2000, T0=25) = (0.0015 + 0.0004 * sinpi(-0.2 + s * 1.5)) * exp(kT * (1 / (T + 273.15) - 1 / (T0 + 273.15)))
 
     # read current profile
     (; fi, fi_oscilloscope, fT, fv) = read_profiles("data/data-yuasa-cycles-2/")

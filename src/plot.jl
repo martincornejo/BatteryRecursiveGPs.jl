@@ -441,7 +441,7 @@ end
 
 
 function plot_rc_param_trajectory(kf, sol; r1=nothing, τ1=nothing)
-    (; xid, Σid, zt) = kf.p
+    (; xid, Σid, zt, Ts) = kf.p
     xs = ComponentVector.(sol.xt, xid)
     Σs = [ComponentMatrix(R, Σid) for R in sol.Rt]
 
@@ -452,9 +452,9 @@ function plot_rc_param_trajectory(kf, sol; r1=nothing, τ1=nothing)
     τσ = sqrt.([Σ[:rc, :rc][:τ, :τ] for Σ in Σs])
 
     vμ = StatsBase.reconstruct(zt.σ, [x.rc.v for x in xs]) * 1e3
-    vσ = StatsBase.reconstruct(zt.r, sqrt.([Σ[:rc, :rc][:v, :v] for Σ in Σs])) * 1e3
+    vσ = StatsBase.reconstruct(zt.σ, sqrt.([Σ[:rc, :rc][:v, :v] for Σ in Σs])) * 1e3
 
-    t = (1:length(rμ)) / 3600 * 10
+    t = (1:length(rμ)) / 3600 * Ts
     fig = Figure()
     ax = [Axis(fig[i, 1]) for i in 1:3]
     lines!(ax[1], t, rμ)
@@ -484,6 +484,53 @@ function plot_rc_param_trajectory(kf, sol; r1=nothing, τ1=nothing)
     linkxaxes!(ax...)
     fig
 end
+
+function plot_arrhenius_param_trajectory(kf, sol; k=nothing)
+    (; xid, Σid, zt, Ts) = kf.p
+    xs = ComponentVector.(sol.xt, xid)
+    Σs = [ComponentMatrix(R, Σid) for R in sol.Rt]
+
+    kμ = abs.([x.arr.k for x in xs])
+    kσ = sqrt.([Σ[:arr, :arr][:k, :k] for Σ in Σs])
+
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+
+    # trajectory
+    t = (1:length(kμ)) / 3600 * Ts
+    lines!(ax[1], t, kμ)
+    band!(ax[1], t, kμ - 2kσ, kμ + 2kσ; alpha=0.5)
+
+    # arrhenius
+    T = 15:0.1:35
+    T_K = T .+ 273.15 # convert to Kelvin
+    T0_K = 25 + 273.15
+    k0μ = abs(xs[end].arr.k)
+    k0σ = sqrt(Σs[end][:arr, :arr][:k, :k])
+    k0 = k0μ ± k0σ
+    kT = @. exp(k0 * (1 / T_K - 1 / T0_K))
+    kTμ = kT .|> Measurements.value
+    kTσ = kT .|> Measurements.uncertainty
+    lines!(ax[2], T, kTμ)
+    band!(ax[2], T, kTμ - 2kTσ, kTμ + 2kTσ; alpha=0.5)
+
+    if k !== nothing
+        kT_ = @. exp(k * (1 / T_K - 1 / T0_K))
+        hlines!(ax[1], k; color=:black, linestyle=:dash)
+        lines!(ax[2], T, kT_; color=:black, linestyle=:dash)
+    end
+
+    xlims!(ax[1], t[1], t[end])
+    xlims!(ax[2], T[1], T[end])
+
+    ax[1].xlabel = "Time / h"
+    ax[1].ylabel = "k"
+    ax[2].xlabel = "Temperature / °C"
+    ax[2].ylabel = "kT"
+
+    fig
+end
+
 
 function plot_q_trajectory(kf, sol)
     (; xid, Σid, zt) = kf.p

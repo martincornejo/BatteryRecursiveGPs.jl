@@ -3,7 +3,9 @@ function dynamics_state(x, u, p, t)
     (; Ts, r1, τ1, T0, k) = p
     (; i, T) = u
 
-    kT = exp(k * (1 / T - 1 / T0))
+    T_K = T + 273.15
+    T0_K = T0 + 273.15
+    kT = exp(k * (1 / T_K - 1 / T0_K))
     r1 = r1 * kT
 
     q = x[1]
@@ -21,7 +23,9 @@ function measurement_state(x, u, p, t)
     vrc = x[2]
     (; i, T) = u
     # q´ = ((soc - Δsoc) * q - zt.q.mean[1]) / zt.q.scale[1] # transform zt.q !!!
-    kT = exp(k * (1 / T - 1 / T0))
+    T_K = T + 273.15
+    T0_K = T0 + 273.15
+    kT = exp(k * (1 / T_K - 1 / T0_K))
 
     ocv = measurement_gp(kf.p.ocv, kfx.ocv, q)
     r0 = measurement_gp(kf.p.r0, kfx.r0, q) * kT
@@ -31,7 +35,9 @@ end
 function R2_state(x, u, p, t)
     (; kf, k, T0) = p
     (; i, T) = u
-    kT = exp(k * (1 / T - 1 / T0))
+    T_K = T + 273.15
+    T0_K = T0 + 273.15
+    kT = exp(k * (1 / T_K - 1 / T0_K))
     q = x[1]
     # q´ = ((soc - Δsoc) * q - zt.q.mean[1]) / zt.q.scale[1]
     ocv = uncertainty_gp(kf.p.ocv, q)
