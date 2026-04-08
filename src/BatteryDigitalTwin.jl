@@ -30,7 +30,7 @@ export Arrhenius, arrhenius_factor
 export R0, RC, dynamics_rc
 
 # analysis
-export calc_Q, calc_soc0, calc_soh # single cell
+export calc_deltaq, calc_Q, calc_soc0, calc_soh # single cell
 export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
 
 # ploting
