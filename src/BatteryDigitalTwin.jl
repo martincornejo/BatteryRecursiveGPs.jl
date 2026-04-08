@@ -15,14 +15,22 @@ using Measurements
 
 using CairoMakie # use Makie instead?
 
-include("model.jl")
-include("soc_estimation.jl")
+abstract type AbstractBatteryModel end
+
+include("models/components.jl")
+include("models/yuasa.jl")
+include("models/fenecon.jl")
+include("models/yuasa_soc.jl")
+include("runner.jl")
 include("analysis.jl")
 include("plot.jl")
 
-# modeling
-export build_kf, run_kf!
-export build_kf_state # soc estimation only
+# model types
+export AbstractBatteryModel
+export YuasaModel, FeneconModel, YuasaStateModel
+
+# runner
+export run_kf!
 
 # model components
 export ColoumbCounting, dynamics_cc
@@ -33,15 +41,16 @@ export R0, RC, dynamics_rc
 export calc_deltaq, calc_Q, calc_soc0, calc_soh # single cell
 export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
 
-# ploting
-export plot_sim # single cell
-export plot_ecm
-export plot_rc_param_trajectory
-export plot_arrhenius_param_trajectory
-export plot_q_estimation, plot_q_estimation_state
-export plot_ecms, plot_ecms_norm # battery pack
+# plotting — model-agnostic
+export plot_sim
+export plot_ecm, plot_ecm!, plot_ecms
+export plot_q_trajectory, plot_q_estimation, plot_q_estimation_state
 export plot_soc_trajectories
+export plot_module_soh, plot_cell_soh_hist, plot_module_inhomogenity
 
-export animate_model # single cell --> animation
+# plotting — model-specific (YuasaModel)
+export plot_ecms_norm
+export plot_rc_param_trajectory, plot_arrhenius_param_trajectory
+export animate_ecm_evolution, animate_model
 
 end # module BatteryDigitalTwin
