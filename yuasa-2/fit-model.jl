@@ -181,15 +181,15 @@ function fit_model(data, ti, id)
     (; p, m, c) = id
     u, y = cell_dataset(data, ti, p, m, c)
     zt = fit_zscore()
-    kf = build_kf(θ, u, zt)
+    model = YuasaModel(θ, u, zt)
 
     stats = @timed begin
-        sol = run_kf!(kf, u, y)
+        sol = run_kf!(model, u, y)
     end
 
     @info "Cell p:$(p), m:$(m), c:$(c) complete" stats.time
 
-    (; kf, sol)
+    (; model, sol)
 end
 
 function fit_module(data, ti, id)
@@ -215,63 +215,64 @@ function fit_module(data, ti, id)
     (; p, m) = id
     zt = fit_zscore(n)
     u, y = module_dataset(data, ti, p, m)
-    kf = build_kf(θ, u, zt)
+    model = YuasaModel(θ, u, zt)
 
     stats = @timed begin
-        sol = run_kf!(kf, u, y)
+        sol = run_kf!(model, u, y)
     end
 
     @info "Module p:$(p), m:$(m), complete" stats.time
 
-    (; kf, sol)
+    (; model, sol)
 end
 
 function fit_modules(data, ti, ids)
-    kfs = Dict()
+    models = Dict()
     sols = Dict()
 
     for id in ids
-        (; kf, sol) = fit_module(data, ti, id)
-        kfs[id] = kf
+        (; model, sol) = fit_module(data, ti, id)
+        models[id] = model
         sols[id] = sol
     end
 
-    (; kfs, sols)
+    (; models, sols)
 end
 
 function fit_models(data, ti, ids)
-    kfs = Dict()
+    models = Dict()
     sols = Dict()
 
     for id in ids
-        (; kf, sol) = fit_model(data, ti, id)
-        kfs[id] = kf
+        (; model, sol) = fit_model(data, ti, id)
+        models[id] = model
         sols[id] = sol
     end
 
-    (; kfs, sols)
+    (; models, sols)
 end
 
 function fit_models_spawn(data, ti, ids)
-    kfs = Dict()
+    models = Dict()
     sols = Dict()
 
     for batch in Iterators.partition(ids, Threads.nthreads())
         tasks = Dict(id => Threads.@spawn fit_model(data, ti, id) for id in batch)
 
         for (id, task) in tasks
-            (; kf, sol) = fetch(task)
-            kfs[id] = kf
+            (; model, sol) = fetch(task)
+            models[id] = model
             sols[id] = sol
         end
     end
 
-    (; kfs, sols)
+    (; models, sols)
 end
 
 
 
-function extract_ocv(kf)
+function extract_ocv(model::YuasaModel)
+    kf = model.kf
     zt = kf.p.zt
     q̂min, q̂max = extrema(kf.p.r0.b0)
     q̂ = q̂min:0.01:q̂max

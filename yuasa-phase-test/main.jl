@@ -54,23 +54,23 @@ end
 ti = Interval(DateTime("2026-02-09T06:29:00"), DateTime("2026-02-09T20:13:00"))
 # ids = [(; m, c) for m in 1:9, c in 1:12] |> vec |> sort
 ids = [(; m, c) for m in 1:1, c in 1:12] |> vec |> sort
-kfs, sols = fit_models_spawn(data, ti, ids)
+(; models, sols) = fit_models_spawn(data, ti, ids)
 
 for id in ids
-    plot_sim(kfs[id], sols[id]) |> display
+    plot_sim(models[id], sols[id]) |> display
 end
 
-plot_ecms(kfs, sols)
+plot_ecms(models, sols)
 
 vlim = (3.5, 4.0)
-plot_ecms_norm(kfs, sols, f.ocv⁻¹, f.ocv; vlim)
+# plot_ecms_norm(models, sols, f.ocv⁻¹, f.ocv; vlim)
 
-# kf, sol = fit_model(data, ti, (;m=1, c=1))
+# model, sol = fit_model(data, ti, (;m=1, c=1))
 param_cells = Dict(id =>
     Dict(
-        :Q => calc_Q(kfs[id], sols[id], f.ocv⁻¹; v=vlim),
-        :soc => calc_soc0(kfs[id], sols[id], f.ocv⁻¹; v=vlim),
-        :soh => calc_soh(kfs[id], sols[id], f.ocv⁻¹, 100; v=vlim),
+        :Q => calc_Q(models[id], sols[id], f.ocv⁻¹; v=vlim),
+        :soc => calc_soc0(models[id], sols[id], f.ocv⁻¹; v=vlim),
+        :soh => calc_soh(models[id], sols[id], f.ocv⁻¹, 100; v=vlim),
     ) for id in ids
 )
 

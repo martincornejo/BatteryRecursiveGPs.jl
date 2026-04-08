@@ -26,32 +26,32 @@ end
 function fit_model(df::DataFrame, cell_id::Int, θ)
     u, y = cell_dataset(df, cell_id)
     zt = fit_zscore()
-    kf = build_kf(θ, u, zt)
+    model = YuasaModel(θ, u, zt)
 
     stats = @timed begin
-        sol = run_kf!(kf, u, y)
+        sol = run_kf!(model, u, y)
     end
 
     @info "Cell $(cell_id): complete" stats.time
 
-    (; kf, sol)
+    (; model, sol)
 end
 
 function fit_models(data, ids, θ)
-    kfs = Dict()
+    models = Dict()
     sols = Dict()
 
     for batch in Iterators.partition(ids, Threads.nthreads())
         tasks = Dict(id => Threads.@spawn fit_model(data, id, θ) for id in batch)
 
         for (id, task) in tasks
-            (; kf, sol) = fetch(task)
-            kfs[id] = kf
+            (; model, sol) = fetch(task)
+            models[id] = model
             sols[id] = sol
         end
     end
 
-    (; kfs, sols)
+    (; models, sols)
 end
 
 

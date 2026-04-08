@@ -94,11 +94,11 @@ function fit_model(data, ti, id)
     (; m, c) = id
     u, y = cell_dataset(data, ti, m, c)
     zt = fit_zscore()
-    kf = build_kf(θ, u, zt)
+    model = YuasaModel(θ, u, zt)
 
     try
         stats = @timed begin
-            sol = run_kf!(kf, u, y)
+            sol = run_kf!(model, u, y)
         end
     catch e
         @error "Cell m:$(m), c:$(c) failed: $e"
@@ -106,22 +106,22 @@ function fit_model(data, ti, id)
 
     @info "Cell m:$(m), c:$(c) complete" stats.time
 
-    (; kf, sol)
+    (; model, sol)
 end
 
 function fit_models_spawn(data, ti, ids)
-    kfs = Dict()
+    models = Dict()
     sols = Dict()
 
     for batch in Iterators.partition(ids, Threads.nthreads())
         tasks = Dict(id => Threads.@spawn fit_model(data, ti, id) for id in batch)
 
         for (id, task) in tasks
-            (; kf, sol) = fetch(task)
-            kfs[id] = kf
+            (; model, sol) = fetch(task)
+            models[id] = model
             sols[id] = sol
         end
     end
 
-    (; kfs, sols)
+    (; models, sols)
 end

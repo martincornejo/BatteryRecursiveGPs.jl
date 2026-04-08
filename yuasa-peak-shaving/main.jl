@@ -131,8 +131,8 @@ end
 ti = Interval(DateTime("2026-03-27T08:43:00"), DateTime("2026-03-27T19:13:00"))
 ids = [(; m, c) for m in 1:9, c in 1:12] |> vec |> sort
 # ids = [(; m, c) for m in 1:1, c in 1:12] |> vec |> sort
-kfs, sols = fit_models_spawn(data, ti, ids)
+(; models, sols) = fit_models_spawn(data, ti, ids)
 
 
-plot_ecms(kfs, sols) |> display
+plot_ecms(models, sols) |> display
 
