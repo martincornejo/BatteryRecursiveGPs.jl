@@ -43,8 +43,8 @@ fR025(s) = fR0(s, 25) # reference R0 at 25°C
 
 # === analysis
 vlim = (3.7, 4.0)
-plot_ecms(models, sols) |> display
-# plot_ecms_norm(models, sols, f.ocv⁻¹, f.ocv, fR025; vlim) |> display
+fig1 = plot_ecms(models, sols) #|> display
+fig2 = plot_ecms_norm(models, sols, f.ocv⁻¹, f.ocv, fR025; vlim) #|> display
 
 let id = 1
     fig = plot_sim(models[id], sols[id])
@@ -69,32 +69,38 @@ end
 
 
 param_cells = Dict(id =>
-    Dict(
-        :Q => calc_Q(models[id], sols[id], f.ocv⁻¹; v=vlim),
-        :soc => calc_soc0(models[id], sols[id], f.ocv⁻¹; v=vlim),
-        :soh => calc_soh(models[id], sols[id], f.ocv⁻¹, 100; v=vlim),
-    ) for id in 1:12
+    let (; Q, s0) = calc_wls(models[id], sols[id], f.ocv⁻¹)
+        Dict(:Q => Q, :soc => s0)
+    end
+    for id in 1:12
 )
 params_real = JSON.parsefile("data/data-yuasa-synthetic/battery-params.json")
 
-let
+fig3 = let
     fig = Figure()
     ax = Axis(fig[1, 1])
 
     Q = [params_real["cell_$id"]["Q"] for id in 1:12]
-    s = [params_real["cell_$id"]["soc"] for id in 1:12]
-    scatter!(ax, Q, s)
+    s = [params_real["cell_$id"]["soc"] for id in 1:12] * 100
+    scatter!(ax, Q, s; label="Real")
 
     Qμ = [param_cells[id][:Q] for id in 1:12] .|> Measurements.value
     Qσ = [param_cells[id][:Q] for id in 1:12] .|> Measurements.uncertainty
-    sμ = [param_cells[id][:soc] for id in 1:12] .|> Measurements.value
-    sσ = [param_cells[id][:soc] for id in 1:12] .|> Measurements.uncertainty
-    scatter!(ax, Qμ, sμ)
+    sμ = 100 * [param_cells[id][:soc] for id in 1:12] .|> Measurements.value
+    sσ = 100 * [param_cells[id][:soc] for id in 1:12] .|> Measurements.uncertainty
+    scatter!(ax, Qμ, sμ; label="Estimation")
     errorbars!(ax, Qμ, sμ, Qσ, whiskerwidth=10, direction=:x, color=Cycled(2))
     errorbars!(ax, Qμ, sμ, sσ, whiskerwidth=10, direction=:y, color=Cycled(2))
 
+    ax.xlabel = "Q_cell / Ah"
+    ax.ylabel = "Initial SOC / %"
+
+    Legend(fig[2, 1], ax, orientation=:horizontal)
+
     fig
 end
+
+fig4 = plot_ocv_diagnostics(models, sols, param_cells, params_real, f.ocv) #|> display
 
 # TODO
 # - plot/validate soc estimation (cell, pack)

@@ -10,8 +10,8 @@ using StatsBase
 using StaticArrays
 import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
 
+using DataInterpolations
 using Measurements
-# using ForwardDiff
 
 using CairoMakie # use Makie instead?
 
@@ -30,7 +30,7 @@ export AbstractBatteryModel
 export YuasaModel, FeneconModel, YuasaStateModel
 
 # runner
-export run_kf!
+export run_kf!, reinit_kf!
 
 # model components
 export ColoumbCounting, dynamics_cc
@@ -39,6 +39,7 @@ export R0, RC, dynamics_rc
 
 # analysis
 export calc_deltaq, calc_Q, calc_soc0, calc_soh # single cell
+export gls_fit, calc_wls, gp_ocv # improved GLS-based estimation
 export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
 
 # plotting — model-agnostic

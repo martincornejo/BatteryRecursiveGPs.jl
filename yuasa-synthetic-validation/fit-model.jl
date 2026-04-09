@@ -82,3 +82,48 @@ function plot_q_estimation_state(data, sol)
 
     fig
 end
+
+function plot_ocv_diagnostics(models, sols, param_cells, params_real, focv)
+    fig = Figure(size=(800, 500))
+    ax = [Axis(fig[i, j]) for i in 1:2, j in 1:2]
+
+    titles = ["Estimated params", "Real params"]
+    for j in 1:2
+        ax[1, j].title = titles[j]
+        ax[1, j].ylabel = "OCV / V"
+        ax[2, j].ylabel = "Mismatch / mV"
+        ax[2, j].xlabel = "SOC / p.u."
+        hidexdecorations!(ax[1, j]; ticks=false, grid=false)
+    end
+
+    s = 0.0:0.005:1.0
+    for j in 1:2
+        lines!(ax[1, j], s, focv.(s); color=:black, linestyle=:dash)
+        hlines!(ax[2, j], [0]; color=:black, linestyle=:dash)
+    end
+
+    for (id, model) in models
+        (; q, μ, σ) = gp_ocv(model, sols[id])
+
+        Q_est = Measurements.value(param_cells[id][:Q])
+        s0_est = Measurements.value(param_cells[id][:soc])
+        soc_est = s0_est .+ q ./ Q_est
+
+        Q_r = params_real["cell_$id"]["Q"]
+        s0_r = params_real["cell_$id"]["soc"]
+        soc_r = s0_r .+ q ./ Q_r
+
+        for (j, soc) in enumerate((soc_est, soc_r))
+            lines!(ax[1, j], soc, μ)
+            band!(ax[1, j], soc, μ .- 2σ, μ .+ 2σ; alpha=0.3)
+            lines!(ax[2, j], soc, (μ .- focv.(soc)) .* 1000)
+        end
+    end
+
+    linkxaxes!(ax[1, 1], ax[2, 1])
+    linkxaxes!(ax[1, 2], ax[2, 2])
+    linkyaxes!(ax[1, 1], ax[1, 2])
+    linkyaxes!(ax[2, 1], ax[2, 2])
+    fig
+end
+
