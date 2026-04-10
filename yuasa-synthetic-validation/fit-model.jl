@@ -23,10 +23,10 @@ function cell_dataset(data::DataFrame, cell_id::Int; Ts=1.0)
     (; u, y)
 end
 
-function fit_model(df::DataFrame, cell_id::Int, θ)
+function fit_model(df::DataFrame, cell_id::Int, θ; n=21, pad=0.05)
     u, y = cell_dataset(df, cell_id)
     zt = fit_zscore()
-    model = YuasaModel(θ, u, zt)
+    model = YuasaModel(θ, u, zt; n, pad)
 
     stats = @timed begin
         sol = run_kf!(model, u, y)
@@ -37,12 +37,12 @@ function fit_model(df::DataFrame, cell_id::Int, θ)
     (; model, sol)
 end
 
-function fit_models(data, ids, θ)
+function fit_models(data, ids, θ; n=21, pad=0.05)
     models = Dict()
     sols = Dict()
 
     for batch in Iterators.partition(ids, Threads.nthreads())
-        tasks = Dict(id => Threads.@spawn fit_model(data, id, θ) for id in batch)
+        tasks = Dict(id => Threads.@spawn fit_model(data, id, θ; n, pad) for id in batch)
 
         for (id, task) in tasks
             (; model, sol) = fetch(task)
@@ -54,11 +54,15 @@ function fit_models(data, ids, θ)
     (; models, sols)
 end
 
-function refine_model(data::DataFrame, cell_id::Int, model, sol; Ts=1.0)
+function refine_model(data::DataFrame, cell_id::Int, model, sol; Ts=1.0, σ1_cc=nothing)
     u, y = cell_dataset(data, cell_id; Ts)
 
     model_new = deepcopy(model)
     reinit_kf!(model_new.kf; x=sol.xt[end], R=sol.Rt[end])
+
+    if σ1_cc !== nothing
+        model_new.kf.R1[:cc, :cc] .= [σ1_cc^2;;]
+    end
 
     stats = @timed begin
         sol_new = run_kf!(model_new, u, y)
@@ -68,12 +72,12 @@ function refine_model(data::DataFrame, cell_id::Int, model, sol; Ts=1.0)
     (; model=model_new, sol=sol_new)
 end
 
-function refine_models(data, ids, models, sols)
+function refine_models(data, ids, models, sols; kwargs...)
     r_models = Dict()
     r_sols = Dict()
 
     for batch in Iterators.partition(ids, Threads.nthreads())
-        tasks = Dict(id => Threads.@spawn refine_model(data, id, models[id], sols[id]) for id in batch)
+        tasks = Dict(id => Threads.@spawn refine_model(data, id, models[id], sols[id]; kwargs...) for id in batch)
 
         for (id, task) in tasks
             (; model, sol) = fetch(task)

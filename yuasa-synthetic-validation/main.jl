@@ -41,7 +41,7 @@ fR025(s) = fR0(s, 25) # reference R0 at 25°C
     arr=(; T0=25, k0=1500, σ0_k=20, σ1_k=0.0),
 )
 (; models, sols) = fit_models(data, 1:12, θ);
-(; models, sols) = refine_models(data, 1:12, models, sols);
+(; models, sols) = refine_models(data, 1:12, models, sols; σ1_cc=0.8e-5);
 
 # === analysis
 vlim = (3.7, 4.0)
@@ -74,7 +74,7 @@ param_cells = Dict(id =>
     let (; Q, s0) = calc_wls(models[id], sols[id], f.ocv⁻¹, f.ocv)
         Dict(:Q => Q, :soc => s0)
     end
-    for id in 1:12
+                   for id in 1:12
 )
 params_real = JSON.parsefile("data/data-yuasa-synthetic/battery-params.json")
 
@@ -116,14 +116,69 @@ let id = 1
     fig.content[1].title = "Cell $(id)"
     fig |> display
 end
+
 begin
     θ_state = (; q=(; σ0=1e-3, σ1=0.5e-5), rc=(; σ0=1e-4, σ1=1e-4))
-    soc_model = YuasaStateModel(models[1]; q0=0.0, Ts=1.0, θ=θ_state)
-    u, y = cell_dataset(data, 1)
+    soc_models = Dict()
+    sols_state = Dict()
+    for id in 1:12
+        sm = YuasaStateModel(models[id]; q0=0.0, Ts=1.0, θ=θ_state)
+        u, y = cell_dataset(data, id)
+        sols_state[id] = run_kf!(sm, u, y)
+        soc_models[id] = sm
+    end
 
-    sol_state = run_kf!(soc_model, u, y)
+    param_cells_state = Dict(id =>
+        let (; Q, s0) = calc_wls(soc_models[id], sols_state[id], f.ocv⁻¹, f.ocv)
+            Dict(:Q => Q, :soc => s0)
+        end
+                             for id in 1:12
+    )
 
-    plot_q_estimation_state(data, sol_state) |> display
-    report_q_estimation(data, sol_state, 1, param_cells)
+    plot_q_estimation_state(data, sols_state[1]) |> display
+
+    println("\n=== Q/s0 from YuasaModel trajectory ===")
+    report_params(param_cells, params_real)
+    println("\n=== Q/s0 from YuasaStateModel trajectory ===")
+    report_params(param_cells_state, params_real)
+
+    report_q_estimation(data, sols_state[1], 1, param_cells_state)
 end
 
+# === oscilloscope current validation
+# Replace CMU current (î) with oscilloscope current (i) to isolate the source of the Q bias.
+begin
+    data_osc = copy(data)
+    data_osc[!, "î"] = data_osc.i  # swap CMU → oscilloscope
+
+    (models_osc, sols_osc) = fit_models(data_osc, 1:12, θ; n=41, pad=0.2)
+
+    param_cells_osc = Dict(id =>
+        let (; Q, s0) = calc_wls(models_osc[id], sols_osc[id], f.ocv⁻¹, f.ocv)
+            Dict(:Q => Q, :soc => s0)
+        end
+                           for id in 1:12
+    )
+
+    println("\n=== Q/s0 with oscilloscope current ===")
+    report_params(param_cells_osc, params_real)
+    report_ocv_residuals(models_osc, sols_osc, param_cells_osc, params_real, f.ocv)
+end
+fig4 = plot_ocv_diagnostics(models_osc, sols_osc, param_cells_osc, params_real, f.ocv)
+
+
+fig5 = let id = 1
+    (; q, μ) = gp_ocv(models_osc[id], sols_osc[id])
+    Q_est = Measurements.value(param_cells_osc[id][:Q])
+    s0_est = Measurements.value(param_cells_osc[id][:soc])
+    soc_est = s0_est .+ q ./ Q_est
+    slims = extrema(f.ocv.t)
+    mask = findall(slims[1] .<= soc_est .<= slims[2])
+    r = (μ[mask] .- f.ocv.(soc_est[mask])) .* 1000  # mV
+
+    fig = Figure()
+    ax = Axis(fig[1, 1]; xlabel="charge / Ah", ylabel="OCV residual / mV")
+    lines!(ax, q[mask], r)
+    hlines!(ax, [0]; linestyle=:dash, color=:black)
+    fig
+end
