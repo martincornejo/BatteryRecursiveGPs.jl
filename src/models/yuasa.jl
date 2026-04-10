@@ -6,7 +6,7 @@ struct YuasaModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
 end
 
-YuasaModel(θ, u, zt; n=21) = YuasaModel(_build_yuasa_kf(θ, u, zt; n))
+YuasaModel(θ, u, zt; n=21, pad=0.05) = YuasaModel(_build_yuasa_kf(θ, u, zt; n, pad))
 
 
 # === private dynamics / measurement / R2
@@ -50,11 +50,12 @@ end
 
 # === builder
 
-function _build_yuasa_kf(θ, u, zt; n=21)
-    # basis vectors
+function _build_yuasa_kf(θ, u, zt; n=21, pad=0.05)
+    # basis vectors — extend pad*Δq past each observed edge so boundary
+    # basis points are inside the observed range, not at its edge.
     qmin, qmax = extrema([x.q for x in u])
     Δq = qmax - qmin
-    b0 = range(qmin + 0.05Δq, qmax + 0.05Δq, n) |> collect
+    b0 = range(qmin - pad*Δq, qmax + pad*Δq, n) |> collect
 
     # OCV GP
     kernel1 = θ.ocv.σ * with_lengthscale(SEKernel(), θ.ocv.ℓ)
