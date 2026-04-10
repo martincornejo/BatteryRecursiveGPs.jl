@@ -41,6 +41,7 @@ fR025(s) = fR0(s, 25) # reference R0 at 25°C
     arr=(; T0=25, k0=1500, σ0_k=20, σ1_k=0.0),
 )
 (; models, sols) = fit_models(data, 1:12, θ);
+(; models, sols) = refine_models(data, 1:12, models, sols);
 
 # === analysis
 vlim = (3.7, 4.0)

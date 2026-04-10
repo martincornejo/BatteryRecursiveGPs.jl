@@ -94,6 +94,33 @@ function _build_yuasa_kf(θ, u, zt; n=21)
 end
 
 
+"""
+    reinit_kf!(kf; x=kf.x, R=kf.R)
+
+Reinitialize the KF for a second pass on the same data, warm-starting the GP
+posterior from a previous run.
+
+Keeps: GP (ocv, r0) state and covariance, RC parameters (r, τ), Arrhenius state.
+Resets: CC charge to q=0, RC voltage to 0, CC cross-correlations to 0.
+"""
+function reinit_kf!(kf; x=kf.x, R=kf.R)
+    (; xid, Σid) = kf.p
+
+    x_new = ComponentVector(copy(x), xid)
+    x_new.cc.q = 0.0
+    x_new.rc.v = 0.0
+    kf.x .= x_new
+
+    Σ_new = ComponentMatrix(copy(R), Σid)
+    Σ_new[:cc, :] .= 0
+    Σ_new[:, :cc] .= 0
+    Σ_new[:cc, :cc] .= 0.0
+    kf.R .= Σ_new
+
+    return kf
+end
+
+
 # === model-specific plots
 
 function plot_ecm!(ax, model::YuasaModel, sol=nothing)
@@ -125,7 +152,7 @@ function plot_ecm!(ax, model::YuasaModel, sol=nothing)
 end
 
 
-function plot_ecms_norm(models::AbstractDict{K,<:YuasaModel}, sols, fsoc, focv, fR0=nothing; vlim=(3.5, 3.95)) where {K}
+function plot_ecms_norm(models::AbstractDict, sols, fsoc, focv, fR0=nothing; vlim=(3.5, 3.95))
     fig = Figure(size=(600, 600))
     ax = [Makie.Axis(fig[i, 1]) for i in 1:2]
     ax[1].ylabel = "OCV / V"

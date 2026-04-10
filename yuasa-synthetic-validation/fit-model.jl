@@ -54,6 +54,38 @@ function fit_models(data, ids, θ)
     (; models, sols)
 end
 
+function refine_model(data::DataFrame, cell_id::Int, model, sol; Ts=1.0)
+    u, y = cell_dataset(data, cell_id; Ts)
+
+    model_new = deepcopy(model)
+    reinit_kf!(model_new.kf; x=sol.xt[end], R=sol.Rt[end])
+
+    stats = @timed begin
+        sol_new = run_kf!(model_new, u, y)
+    end
+
+    @info "Cell $(cell_id): refined" stats.time
+    (; model=model_new, sol=sol_new)
+end
+
+function refine_models(data, ids, models, sols)
+    r_models = Dict()
+    r_sols = Dict()
+
+    for batch in Iterators.partition(ids, Threads.nthreads())
+        tasks = Dict(id => Threads.@spawn refine_model(data, id, models[id], sols[id]) for id in batch)
+
+        for (id, task) in tasks
+            (; model, sol) = fetch(task)
+            r_models[id] = model
+            r_sols[id] = sol
+        end
+    end
+
+    (; models=r_models, sols=r_sols)
+end
+
+
 
 function plot_q_estimation_state(data, sol)
     fig = Figure()
