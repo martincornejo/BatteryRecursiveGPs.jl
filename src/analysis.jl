@@ -1,15 +1,32 @@
 
 # TODO: rename functions
 
-function calc_deltaq(model::AbstractBatteryModel, sol; v=(3.85, 4.0), n=1)
+# === Private helpers for multi-model dispatch ===
+
+# Returns the KF that holds the GP posterior (OCV/R0 hyperparameters).
+# For YuasaStateModel the GP lives in the inner YuasaModel KF, not the 2-state EKF.
+_gp_kf(model::AbstractBatteryModel) = model.kf
+_gp_kf(model::YuasaStateModel) = model.kf.p.kf
+
+# Returns the normalised charge range (q̂min, q̂max) from a KF solution.
+function _charge_range(model::AbstractBatteryModel, sol)
     kf = model.kf
+    xs = ComponentVector.(sol.xt, kf.p.xid)
+    extrema([x.cc.q for x in xs])
+end
+
+# YuasaStateModel state is SA[q̂, vrc] — charge is the first element.
+_charge_range(::YuasaStateModel, sol) = extrema(first.(sol.xt))
+
+
+function calc_deltaq(model::AbstractBatteryModel, sol; v=(3.85, 4.0), n=1)
+    kf = _gp_kf(model)
     v1 = v[1] * n
     v2 = v[2] * n
 
     zt = kf.p.zt
 
-    xs = ComponentVector.(sol.xt, kf.p.xid)
-    q̂min, q̂max = extrema([x.cc.q for x in xs])
+    q̂min, q̂max = _charge_range(model, sol)
     q̂ = range(q̂min, q̂max, 50) |> collect
     q = StatsBase.reconstruct(zt.q, q̂)
 
@@ -43,13 +60,12 @@ function calc_soh(model::AbstractBatteryModel, sol, fsoc, Q; v=(3.85, 4.0), n=1)
 end
 
 function calc_soc0(model::AbstractBatteryModel, sol, fsoc; v=(3.85, 4.0), n=1)
-    kf = model.kf
+    kf = _gp_kf(model)
     v1 = v[1] * n
 
     zt = kf.p.zt
 
-    xs = ComponentVector.(sol.xt, kf.p.xid)
-    q̂min, q̂max = extrema([x.cc.q for x in xs])
+    q̂min, q̂max = _charge_range(model, sol)
     q̂ = range(q̂min, q̂max, 200) |> collect
     q = StatsBase.reconstruct(zt.q, q̂)
 
@@ -114,12 +130,11 @@ each fixed Q — is unimodal and well-behaved.
 Returns `(; Q, s0)` as `Measurements.jl` objects.
 """
 function calc_wls(model::AbstractBatteryModel, sol, fsoc, focv; n_grid=100, Q_range=40:0.5:160)
-    kf = model.kf
+    kf = _gp_kf(model)
     zt = kf.p.zt
 
     # Charge range from the actual KF state trajectory.
-    xs   = ComponentVector.(sol.xt, kf.p.xid)
-    q̂min, q̂max = extrema([x.cc.q for x in xs])
+    q̂min, q̂max = _charge_range(model, sol)
 
     q̂   = collect(range(q̂min, q̂max, n_grid))
     q    = StatsBase.reconstruct(zt.q, q̂)
@@ -199,11 +214,10 @@ Return the GP OCV posterior over the observed charge range as `(; q, μ, σ)`
 in physical units (Ah, V, V).
 """
 function gp_ocv(model::AbstractBatteryModel, sol)
-    kf = model.kf
+    kf = _gp_kf(model)
     zt = kf.p.zt
 
-    xs   = ComponentVector.(sol.xt, kf.p.xid)
-    q̂min, q̂max = extrema([x.cc.q for x in xs])
+    q̂min, q̂max = _charge_range(model, sol)
     q̂   = collect(q̂min:0.01:q̂max)
     q    = StatsBase.reconstruct(zt.q, q̂)
 
