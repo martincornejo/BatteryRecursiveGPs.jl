@@ -83,6 +83,51 @@ function plot_q_estimation_state(data, sol)
     fig
 end
 
+# report_q_estimation(data, sol, cell_id, param_cells)
+# Part 1 — relative charge tracking: KF estimate and CMU coulomb-counting vs data.q (oscilloscope)
+# Part 2 — absolute SOC: SOC(t) = s0_est + q(t)/Q_est vs soc_cell_<id> ground truth
+function report_q_estimation(data, sol, cell_id, param_cells)
+    zt  = fit_zscore()
+    Ts  = 1.0
+
+    qμ    = StatsBase.reconstruct(zt.q, first.(sol.xt))
+    q_cmu = cumsum(data.î) .* Ts ./ 3600
+    q_ref = data.q
+
+    err_kf  = qμ    .- q_ref
+    err_cmu = q_cmu .- q_ref
+
+    _row(label, e) = print(@sprintf(
+        "  %-18s  RMSE=%7.4f Ah   MAE=%7.4f Ah   max|e|=%7.4f Ah   span=%7.4f Ah   final=%+7.4f Ah\n",
+        label, sqrt(mean(abs2, e)), mean(abs, e), maximum(abs, e), maximum(e) - minimum(e), e[end]))
+
+    println("=== Relative charge tracking — cell $cell_id ===")
+    _row("KF estimate", err_kf)
+    _row("CMU counting", err_cmu)
+
+    if haskey(param_cells, cell_id)
+        Q_est  = Measurements.value(param_cells[cell_id][:Q])
+        s0_est = Measurements.value(param_cells[cell_id][:soc])
+
+        soc_kf   = s0_est .+ qμ    ./ Q_est
+        soc_cmu  = s0_est .+ q_cmu ./ Q_est
+        soc_true = data[:, "soc_cell_$cell_id"]
+
+        e_kf_soc  = (soc_kf  .- soc_true) .* 100
+        e_cmu_soc = (soc_cmu .- soc_true) .* 100
+
+        _row_soc(label, e) = print(@sprintf(
+            "  %-18s  RMSE=%6.3f %%    MAE=%6.3f %%    max|e|=%6.3f %%    final=%+6.3f %%\n",
+            label, sqrt(mean(abs2, e)), mean(abs, e), maximum(abs, e), e[end]))
+
+        println()
+        print(@sprintf("=== Absolute SOC — cell %d  (Q_est=%.2f Ah, s0_est=%.2f%%) ===\n",
+            cell_id, Q_est, s0_est * 100))
+        _row_soc("KF estimate", e_kf_soc)
+        _row_soc("CMU counting", e_cmu_soc)
+    end
+end
+
 function plot_ocv_diagnostics(models, sols, param_cells, params_real, focv)
     fig = Figure(size=(800, 500))
     ax = [Axis(fig[i, j]) for i in 1:2, j in 1:2]
@@ -125,5 +170,115 @@ function plot_ocv_diagnostics(models, sols, param_cells, params_real, focv)
     linkyaxes!(ax[1, 1], ax[1, 2])
     linkyaxes!(ax[2, 1], ax[2, 2])
     fig
+end
+
+
+function report_params(param_cells, params_real)
+    ids = sort(collect(keys(param_cells)))
+    header = @sprintf("%-6s  %-8s  %-8s  %-8s  %-8s  %-8s  %-8s",
+        "cell", "Q_real", "Q_est", "Q_err", "s0_real", "s0_est", "s0_err")
+    sep = "-"^70
+    println(sep)
+    println(header)
+    println(sep)
+    for id in ids
+        Q_real = params_real["cell_$id"]["Q"]
+        s0_real = params_real["cell_$id"]["soc"] * 100
+
+        Q_est  = Measurements.value(param_cells[id][:Q])
+        s0_est = Measurements.value(param_cells[id][:soc]) * 100
+
+        Q_err  = Q_est - Q_real
+        s0_err = s0_est - s0_real
+
+        @printf("%-6d  %-8.3f  %-8.3f  %-+8.3f  %-8.2f  %-8.2f  %-+8.2f\n",
+            id, Q_real, Q_est, Q_err, s0_real, s0_est, s0_err)
+    end
+    println(sep)
+    Q_errs  = [Measurements.value(param_cells[id][:Q]) - params_real["cell_$id"]["Q"] for id in ids]
+    s0_errs = [(Measurements.value(param_cells[id][:soc]) - params_real["cell_$id"]["soc"]) * 100 for id in ids]
+    @printf("%-6s  %-8s  %-8s  %-+8.3f  %-8s  %-8s  %-+8.2f\n",
+        "RMSE", "", "", sqrt(mean(abs2, Q_errs)), "", "", sqrt(mean(abs2, s0_errs)))
+    println(sep)
+end
+
+function report_ocv_residuals(models, sols, param_cells, params_real, focv)
+    ids = sort(collect(keys(param_cells)))
+    header = @sprintf("%-6s  %-12s  %-12s  %-12s  %-12s",
+        "cell", "max|r|_est", "mean|r|_est", "max|r|_real", "mean|r|_real")
+    sep = "-"^62
+    println(sep)
+    println(header)
+    println(" "^8 * "(mV)" * " "^9 * "(mV)" * " "^9 * "(mV)" * " "^9 * "(mV)")
+    println(sep)
+    for id in ids
+        (; q, μ, σ) = gp_ocv(models[id], sols[id])
+
+        Q_est  = Measurements.value(param_cells[id][:Q])
+        s0_est = Measurements.value(param_cells[id][:soc])
+        soc_est = s0_est .+ q ./ Q_est
+
+        Q_r   = params_real["cell_$id"]["Q"]
+        s0_r  = params_real["cell_$id"]["soc"]
+        soc_r = s0_r .+ q ./ Q_r
+
+        # Only evaluate focv within its interpolation domain
+        slims = extrema(focv.t)
+        mask_est  = findall(slims[1] .<= soc_est .<= slims[2])
+        mask_real = findall(slims[1] .<= soc_r   .<= slims[2])
+
+        r_est  = (μ[mask_est]  .- focv.(soc_est[mask_est]))  .* 1000
+        r_real = (μ[mask_real] .- focv.(soc_r[mask_real]))   .* 1000
+
+        @printf("%-6d  %-12.2f  %-12.2f  %-12.2f  %-12.2f\n",
+            id,
+            maximum(abs, r_est),  mean(abs, r_est),
+            maximum(abs, r_real), mean(abs, r_real))
+    end
+    println(sep)
+end
+
+function report_wls_diagnostics(models, sols, fsoc, focv, params_real; ids=1:3)
+    for id in ids
+        Q_real = params_real["cell_$id"]["Q"]
+        s0_real = params_real["cell_$id"]["soc"] * 100
+        @printf("Cell %d  (Q_real=%.3f  s0_real=%.2f%%):\n", id, Q_real, s0_real)
+        report_Q_profile(models[id], sols[id], fsoc, focv; Q_range=(Q_real - 5):1.0:(Q_real + 15))
+        println()
+    end
+end
+
+"""
+    report_Q_profile(model, sol, fsoc, focv; Q_range=75:0.5:115, n_grid=200)
+
+For each Q in Q_range, find the optimal s0 (closed-form GLS) and compute the
+RMS voltage residual. Prints a profile to identify whether the objective is
+unimodal and where the global minimum is.
+"""
+function report_Q_profile(model, sol, fsoc, focv; Q_range=75:0.5:115)
+    # gp_ocv returns (q, μ, σ) in physical units (Ah, V, V)
+    (; q, μ) = gp_ocv(model, sol)
+
+    fsoc_lims = extrema(fsoc.t)
+    focv_lims = extrema(focv.t)
+    v_low = max(fsoc_lims[1], minimum(μ))
+    v_up  = min(fsoc_lims[2], maximum(μ))
+    idxs  = findall(v_low .<= μ .<= v_up)
+    q_f   = q[idxs]
+    μ_f   = μ[idxs]
+
+    soc_gp = fsoc.(μ_f)  # reference SOC at each GP voltage
+
+    println(@sprintf("  %-8s  %-8s  %-10s", "Q", "s0(%)", "rmse(mV)"))
+    println("  " * "-"^30)
+    for Q in Q_range
+        s0 = mean(soc_gp .- q_f ./ Q)
+        soc_model = s0 .+ q_f ./ Q
+        valid = findall(focv_lims[1] .<= soc_model .<= focv_lims[2])
+        isempty(valid) && continue
+        r = μ_f[valid] .- focv.(soc_model[valid])
+        rmse = sqrt(mean(abs2, r)) * 1000
+        @printf("  %-8.1f  %-8.3f  %-10.3f\n", Q, s0 * 100, rmse)
+    end
 end
 

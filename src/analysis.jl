@@ -94,74 +94,102 @@ function gls_fit(y, X, Σ)
 end
 
 """
-    calc_wls(model, sol, fsoc; n_grid=100)
+    calc_wls(model, sol, fsoc, focv; n_grid=100, Q_range=40:0.5:160)
 
-Estimate cell capacity `Q` and initial SOC `s0` using a forward GP approach:
+Estimate cell capacity `Q` and initial SOC `s0` via **profile search**.
 
-1. Evaluate the GP OCV over a dense charge grid of `n_grid` points.
-2. Map predicted voltages through the reference `fsoc` to get SOC values.
-3. Propagate the full GP posterior covariance through `fsoc` via the Jacobian:
-       Σ_soc = J · Σ_ẑᵥ · Jᵀ,  J = Diagonal(∂fsoc/∂v / scale_v)
-4. Fit `soc = β[1] + β[2]·q` by GLS using `Σ_soc` as the observation covariance.
+**Why profile search**: the joint (Q, s0) objective `‖μ_v(q) − focv(s0+q/Q)‖²`
+is ill-conditioned because the Jacobian columns (s0 direction and 1/Q direction)
+are nearly collinear when the observed charge range is small relative to Q.
+Newton-type methods starting away from the global minimum diverge or find wrong
+local minima. The 1D *profile* objective — minimising over s0 analytically for
+each fixed Q — is unimodal and well-behaved.
 
-The voltage range is derived from the GP mean predictions (extrema of μ_v),
-clipped to the `fsoc` interpolation domain. This uses each cell's full observed
-voltage range rather than a fixed conservative window.
+**Algorithm**:
+1. Coarse sweep over `Q_range` (step 0.5 Ah default): for each Q compute the
+   closed-form optimal `s0 = mean(fsoc(μ_v) − q/Q)` and the RMS voltage residual.
+2. Fine sweep ±2 Ah around the coarse minimum at 0.05 Ah step.
+3. At Q*, compute uncertainties from one GLS pass (Σβ of the linearised problem).
 
 Returns `(; Q, s0)` as `Measurements.jl` objects.
 """
-function calc_wls(model::AbstractBatteryModel, sol, fsoc; n_grid=100)
+function calc_wls(model::AbstractBatteryModel, sol, fsoc, focv; n_grid=100, Q_range=40:0.5:160)
     kf = model.kf
     zt = kf.p.zt
 
-    # Charge range from the actual KF state trajectory — the GP is data-informed
-    # here; outside this window it reverts to its prior and carries no real signal.
-    xs = ComponentVector.(sol.xt, kf.p.xid)
+    # Charge range from the actual KF state trajectory.
+    xs   = ComponentVector.(sol.xt, kf.p.xid)
     q̂min, q̂max = extrema([x.cc.q for x in xs])
 
-    q̂ = collect(range(q̂min, q̂max, n_grid))
-    q  = StatsBase.reconstruct(zt.q, q̂)
+    q̂   = collect(range(q̂min, q̂max, n_grid))
+    q    = StatsBase.reconstruct(zt.q, q̂)
 
-    # GP prediction: mean and full covariance over the observed charge range
+    # GP prediction: mean and full covariance in normalised voltage units.
     ocv  = predict_gp(kf, q̂, :ocv)
     μ_v  = StatsBase.reconstruct(zt.v, ocv.μ)
 
-    # Use the full observed voltage range for this cell, clipped to the fsoc domain
-    fsoc_lims    = extrema(fsoc.t)
-    v_low, v_up  = extrema(μ_v)
-    v_low        = max(fsoc_lims[1], v_low)
-    v_up         = min(fsoc_lims[2], v_up)
-
-    idxs = findall(v_low .<= μ_v .<= v_up)
+    # Filter to the fsoc interpolation domain (avoid extrapolation).
+    fsoc_lims   = extrema(fsoc.t)
+    focv_lims   = extrema(focv.t)
+    v_low, v_up = extrema(μ_v)
+    v_low       = max(fsoc_lims[1], v_low)
+    v_up        = min(fsoc_lims[2], v_up)
+    idxs        = findall(v_low .<= μ_v .<= v_up)
 
     q_filt  = q[idxs]
     μ_filt  = μ_v[idxs]
+    Σ_v     = ocv.Σ[idxs, idxs]
+    scale_v = zt.v.scale[1]
+    soc_gp  = fsoc.(μ_filt)           # reference SOC at each GP voltage
 
-    # Reference SOC at each predicted voltage
-    soc = fsoc.(μ_filt)
+    # Profile residual for a fixed Q: optimal s0 in closed form, RMSE in mV.
+    function _profile(Q)
+        s0    = mean(soc_gp .- q_filt ./ Q)
+        soc_m = s0 .+ q_filt ./ Q
+        valid = findall(focv_lims[1] .<= soc_m .<= focv_lims[2])
+        isempty(valid) && return Inf
+        sqrt(mean(abs2, μ_filt[valid] .- focv.(soc_m[valid]))) * 1000
+    end
 
-    # Diagonal Jacobian: ∂soc_i/∂ẑᵥ_i = (∂fsoc/∂v_phys) · (∂v_phys/∂ẑᵥ) = dfsoc · scale_v
-    # reconstruct(zt.v, v̂) = v̂·scale_v + mean_v  →  ∂v_phys/∂v̂ = scale_v (not 1/scale_v).
-    # DataInterpolations.derivative gives the exact analytical derivative of the interpolation,
-    # avoiding the extrapolation errors that ForwardDiff.jacobian causes near domain boundaries.
-    scale_v  = zt.v.scale[1]
-    dfsoc_dv = DataInterpolations.derivative.(Ref(fsoc), μ_filt)
-    J        = Diagonal(dfsoc_dv .* scale_v)
+    # Coarse search
+    Q_coarse = first(Q_range)
+    best_coarse = Inf
+    for Q in Q_range
+        r = _profile(Q)
+        if r < best_coarse
+            best_coarse = r
+            Q_coarse = Q
+        end
+    end
 
-    # Propagate GP covariance: Σ_soc = J · Σ_ẑᵥ[idxs, idxs] · Jᵀ
-    Σ_soc = J * ocv.Σ[idxs, idxs] * J'
+    # Fine search ±2 Ah around coarse minimum
+    Q_fine = (Q_coarse - 2.0):0.05:(Q_coarse + 2.0)
+    Q_star = Q_coarse
+    best_fine = best_coarse
+    for Q in Q_fine
+        r = _profile(Q)
+        if r < best_fine
+            best_fine = r
+            Q_star = Q
+        end
+    end
+    s0_star = mean(soc_gp .- q_filt ./ Q_star)
 
-    # GLS fit: soc = β[1] + β[2]·q
-    X   = [ones(length(q_filt)) q_filt]
-    fit = gls_fit(soc, X, Σ_soc)
+    # --- Uncertainties via one GLS pass at Q_star ---
+    soc_model = s0_star .+ q_filt ./ Q_star
+    uidxs     = findall(focv_lims[1] .<= soc_model .<= focv_lims[2])
+    soc_u     = soc_model[uidxs]
+    q_u       = q_filt[uidxs]
+    v̂_norm    = StatsBase.transform(zt.v, focv.(soc_u))
+    r         = ocv.μ[idxs][uidxs] .- v̂_norm
+    dfocv_ds  = DataInterpolations.derivative.(Ref(focv), soc_u)
+    A         = (dfocv_ds ./ scale_v) .* [ones(length(q_u)) q_u]
+    fit       = gls_fit(r, A, Σ_v[uidxs, uidxs])
 
-    β₂ = fit.β[2] ± sqrt(fit.Σβ[2, 2])
-    β₁ = fit.β[1] ± sqrt(fit.Σβ[1, 1])
+    inv_Q = (1/Q_star) ± sqrt(fit.Σβ[2, 2])
+    s0_m  = s0_star    ± sqrt(fit.Σβ[1, 1])
 
-    Q  = 1 / β₂   # Measurements.jl propagates the uncertainty through 1/β₂
-    s0 = β₁
-
-    return (; Q, s0)
+    return (; Q = 1 / inv_Q, s0 = s0_m)
 end
 
 """

@@ -26,6 +26,7 @@ NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
 OptimizationOptimJL = "36348300-93cb-4f02-beb5-3c3902f8871e"
 PreallocationTools = "d236fae5-4411-538c-8e31-a6e3d9e00b46"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 QuackIO = "7b8617ff-c43a-4c37-a28b-ad5a1791f8ae"
 RecursiveGPs = "d96faaa6-41d2-4991-8e2f-b0cd4a4b0e9a"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
@@ -34,4 +35,5 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
 JSON = "1.4.0"
+Printf = "1.11.0"
 QuackIO = "0.1.5"

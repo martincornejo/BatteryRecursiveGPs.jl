@@ -12,6 +12,7 @@ import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
 
 using DataInterpolations
 using Measurements
+using Printf
 
 using CairoMakie # use Makie instead?
 

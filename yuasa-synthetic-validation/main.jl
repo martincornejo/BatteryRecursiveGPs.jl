@@ -8,6 +8,7 @@ using DataInterpolations
 using StaticArrays
 import ComponentArrays: ComponentVector, ComponentMatrix
 using CairoMakie
+using Printf
 
 include("fit-model.jl")
 
@@ -69,12 +70,15 @@ end
 
 
 param_cells = Dict(id =>
-    let (; Q, s0) = calc_wls(models[id], sols[id], f.ocv⁻¹)
+    let (; Q, s0) = calc_wls(models[id], sols[id], f.ocv⁻¹, f.ocv)
         Dict(:Q => Q, :soc => s0)
     end
     for id in 1:12
 )
 params_real = JSON.parsefile("data/data-yuasa-synthetic/battery-params.json")
+
+report_params(param_cells, params_real)
+report_ocv_residuals(models, sols, param_cells, params_real, f.ocv)
 
 fig3 = let
     fig = Figure()
@@ -116,8 +120,9 @@ begin
     soc_model = YuasaStateModel(models[1]; q0=0.0, Ts=1.0, θ=θ_state)
     u, y = cell_dataset(data, 1)
 
-    sol = run_kf!(soc_model, u, y)
+    sol_state = run_kf!(soc_model, u, y)
 
-    plot_q_estimation_state(data, sol) |> display
+    plot_q_estimation_state(data, sol_state) |> display
+    report_q_estimation(data, sol_state, 1, param_cells)
 end
 
