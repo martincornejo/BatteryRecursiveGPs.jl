@@ -228,6 +228,27 @@ function gp_ocv(model::AbstractBatteryModel, sol)
     return (; q, μ, σ)
 end
 
+"""
+    gp_r0(model, sol)
+
+Return the GP R0 posterior over the observed charge range as `(; q, μ, σ)`
+in physical units (Ah, Ω, Ω).
+"""
+function gp_r0(model::AbstractBatteryModel, sol)
+    kf = _gp_kf(model)
+    zt = kf.p.zt
+
+    q̂min, q̂max = _charge_range(model, sol)
+    q̂   = collect(q̂min:0.01:q̂max)
+    q    = StatsBase.reconstruct(zt.q, q̂)
+
+    r0 = predict_gp(kf, q̂, :r0)
+    μ  = StatsBase.reconstruct(zt.r, r0.μ)
+    σ  = StatsBase.reconstruct(zt.r, sqrt.(diag(r0.Σ)))
+
+    return (; q, μ, σ)
+end
+
 function calc_Q_pack(params)
     Qdch = map(collect(keys(params))) do cell_id
         cell = params[cell_id]
