@@ -1,8 +1,0 @@
-[deps]
-CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
-DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
-DataInterpolations = "82cc6244-b520-54b8-b5a6-8a565e85f1d0"
-GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
-JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
-QuackIO = "7b8617ff-c43a-4c37-a28b-ad5a1791f8ae"
