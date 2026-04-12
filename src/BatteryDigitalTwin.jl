@@ -11,6 +11,7 @@ using StaticArrays
 import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
 
 using DataInterpolations
+using DataFrames
 using Measurements
 using Printf
 
@@ -24,6 +25,7 @@ include("models/fenecon.jl")
 include("models/yuasa_soc.jl")
 include("runner.jl")
 include("analysis.jl")
+include("composite_ocv.jl")
 include("plot.jl")
 
 # model types
@@ -40,8 +42,9 @@ export R0, RC, dynamics_rc
 
 # analysis
 export calc_deltaq, calc_Q, calc_soc0, calc_soh # single cell
-export gls_fit, calc_wls, gp_ocv # improved GLS-based estimation
+export gls_fit, calc_wls, gp_ocv, gp_r0 # improved GLS-based estimation
 export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
+export fit_composite_ocv, composite_ocv_uncertainty, extend_composite_ocv # composite OCV from cell posteriors
 
 # plotting — model-agnostic
 export plot_sim
@@ -49,6 +52,7 @@ export plot_ecm, plot_ecm!, plot_ecms
 export plot_q_trajectory, plot_q_estimation, plot_q_estimation_state
 export plot_soc_trajectories
 export plot_module_soh, plot_cell_soh_hist, plot_module_inhomogenity
+export plot_module_soc
 
 # plotting — model-specific (YuasaModel)
 export plot_ecms_norm
