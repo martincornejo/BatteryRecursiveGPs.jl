@@ -67,16 +67,9 @@ begin
     posteriors_comp = Dict(id => extract_posterior(models[id], sols[id]) for id in 1:12)
     ids_comp = sort(collect(keys(posteriors_comp)))
     cells_comp = [(; q = collect(posteriors_comp[id].q), μ = collect(posteriors_comp[id].μ)) for id in ids_comp]
-    fit_comp = fit_composite_ocv(cells_comp)
-    uq_comp = composite_ocv_uncertainty(fit_comp)
-    composite_u = (;
-        soc_grid = (fit_comp.Q_common .- fit_comp.Q_at_Vmin) ./ fit_comp.Q_full,
-        v_grid = fit_comp.v_grid,
-        v_lo = fit_comp.v_grid[1],
-        v_hi = fit_comp.v_grid[end],
-    )
-end;
+end
 
+fit_comp = fit_composite_ocv(cells_comp; n_v_grid = 250, n_v_pair = 250)
 
 # Union-gauge → lab-gauge transform (for apples-to-apples tables).
 # Clamp into the lab-curve voltage domain — the composite edge voltages are
@@ -85,28 +78,20 @@ end;
 (; lab_soc_span, s_lab_lo, s_lab_hi) = let
     V_lab_lo = minimum(f.ocv.u)
     V_lab_hi = maximum(f.ocv.u)
-    V_lo_u = clamp(composite_u.v_lo, V_lab_lo, V_lab_hi)
-    V_hi_u = clamp(composite_u.v_hi, V_lab_lo, V_lab_hi)
+    V_lo_u = clamp(fit_comp.v_grid[1], V_lab_lo, V_lab_hi)
+    V_hi_u = clamp(fit_comp.v_grid[end], V_lab_lo, V_lab_hi)
     s_lab_lo = f.ocv⁻¹(V_lo_u)
     s_lab_hi = f.ocv⁻¹(V_hi_u)
     lab_soc_span = s_lab_hi - s_lab_lo
     (; lab_soc_span, s_lab_lo, s_lab_hi)
 end
 
-# Per-cell (Q, s0) in the union gauge — the library returns these directly.
-param_cells_composite = Dict(
-    ids_comp[i] => Dict(:Q => uq_comp.est[i].Q, :soc => uq_comp.est[i].s0)
-        for i in eachindex(ids_comp)
-)
-
-# Per-cell (Q, s0) back-projected into the lab gauge for direct comparison
-# with the existing `param_cells` table.
 param_cells = Dict(
-    id => let
-            Q_u = param_cells_composite[id][:Q]
-            s0_u = param_cells_composite[id][:soc]
+    ids_comp[i] => let
+            Q_u = fit_comp.Q_cell[i]
+            s0_u = fit_comp.s0[i]
             Dict(:Q => Q_u / lab_soc_span, :soc => lab_soc_span * s0_u + s_lab_lo)
-    end for id in 1:12
+    end for i in eachindex(ids_comp)
 )
 
 df_params_comp = params_to_df(param_cells, params_real)
@@ -115,7 +100,7 @@ df_params_comp = params_to_df(param_cells, params_real)
 fig_qs = plot_qs_scatter(param_cells, params_real)
 
 fig_compose = plot_composite_ocv(
-    posteriors_comp, param_cells, composite_u, f.ocv;
+    posteriors_comp, param_cells, fit_comp, f.ocv;
     s_lab_lo, s_lab_hi, lab_soc_span
 )
 

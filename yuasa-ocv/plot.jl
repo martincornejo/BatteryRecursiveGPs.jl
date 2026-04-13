@@ -63,7 +63,7 @@ function plot_composite_ocv(composite, ocvs, params)
         fig[1, 1], ylabel = "Voltage / V",
         title = "Composite OCV from aligned cells (Module 7)"
     )
-    ax2 = Axis(fig[2, 1], ylabel = "dV/dQ / (V/Ah)", xlabel = "Capacity / Ah")
+    ax2 = Axis(fig[2, 1], ylabel = "dV/dSOC / V", xlabel = "SOC")
 
     Q_shift = first(composite.t)
     for (i, (f, p)) in enumerate(zip(ocvs, params))
@@ -75,11 +75,11 @@ function plot_composite_ocv(composite, ocvs, params)
         lines!(ax2, q_aligned[1:(end - 1)], diff(v) ./ diff(q_aligned), color = (:gray, 0.4))
     end
 
-    q_comp = range(first(composite.t), last(composite.t); length = 500)
-    v_comp = composite.(q_comp)
-    q_plot = q_comp .- Q_shift
-    lines!(ax1, q_plot, v_comp, color = :black, linewidth = 2, label = "Composite OCV")
-    lines!(ax2, q_plot[1:(end - 1)], diff(v_comp) ./ diff(q_plot), color = :black, linewidth = 2)
+    soc_comp = range(first(composite.t), last(composite.t); length = 500)
+    v_comp = composite.(soc_comp)
+    soc_plot = soc_comp .- Q_shift
+    lines!(ax1, soc_plot, v_comp, color = :black, linewidth = 2, label = "Composite OCV")
+    lines!(ax2, soc_plot[1:(end - 1)], diff(v_comp) ./ diff(soc_plot), color = :black, linewidth = 2)
 
     axislegend(ax1; position = :cb, merge = true)
     linkxaxes!(ax1, ax2)
@@ -88,13 +88,13 @@ end
 
 
 function plot_ocv_residuals(composite, ocvs, params)
-    Q_lo = first(composite.t)
-    Q_hi = last(composite.t)
-    Q_shift = Q_lo
+    soc_lo = first(composite.t)
+    soc_hi = last(composite.t)
+    soc_shift = soc_lo
 
     fig = Figure(size = (900, 400))
     ax = Axis(
-        fig[1, 1]; xlabel = "Capacity / Ah", ylabel = "Residual / mV",
+        fig[1, 1]; xlabel = "SOC", ylabel = "Residual / mV",
         title = "Per-cell OCV − composite OCV"
     )
     for (i, (f, p)) in enumerate(zip(ocvs, params))
@@ -102,9 +102,9 @@ function plot_ocv_residuals(composite, ocvs, params)
         q = range(first(f.t), last(f.t); length = 300)
         q_aligned = collect(q .* s .+ Q0)
         v_cell = f.(q)
-        mask = (q_aligned .>= Q_lo) .& (q_aligned .<= Q_hi)
+        mask = (q_aligned .>= soc_lo) .& (q_aligned .<= soc_hi)
         r_mV = (v_cell[mask] .- composite.(q_aligned[mask])) .* 1000
-        lines!(ax, q_aligned[mask] .- Q_shift, r_mV; color = (:gray, 0.5), linewidth = 1)
+        lines!(ax, q_aligned[mask] .- soc_shift, r_mV; color = (:gray, 0.5), linewidth = 1)
     end
     hlines!(ax, [0.0]; color = :black, linestyle = :dot)
     return fig
@@ -112,28 +112,25 @@ end
 
 
 function plot_ocv_extrapolation(composite; V_min = 2.9, V_max = 4.1)
-    q = collect(composite.t)
+    soc = collect(composite.t)
     v = collect(composite.u)
-    Q_shift = first(composite.t)
-    ocv_extrap = LinearInterpolation(v, q; extrapolation = ExtrapolationType.Linear)
-    qv_extrap = invert_ocv(ocv_extrap; n_samples = 1000, extrapolation = ExtrapolationType.Linear)
+    ocv_extrap = LinearInterpolation(v, soc; extrapolation = ExtrapolationType.Linear)
+    sv_extrap = invert_ocv(ocv_extrap; n_samples = 1000, extrapolation = ExtrapolationType.Linear)
 
-    Q_at_Vmin = qv_extrap(V_min)
-    Q_at_Vmax = qv_extrap(V_max)
+    soc_at_Vmin = sv_extrap(V_min)
+    soc_at_Vmax = sv_extrap(V_max)
 
     fig = Figure(size = (900, 500))
     ax = Axis(
-        fig[1, 1], ylabel = "Voltage / V", xlabel = "Capacity / Ah",
+        fig[1, 1], ylabel = "Voltage / V", xlabel = "SOC",
         title = "OCV with linear extrapolation"
     )
 
-    q_full = range(Q_at_Vmin, Q_at_Vmax; length = 500)
-    lines!(ax, q_full .- Q_shift, ocv_extrap.(q_full), color = :red, linewidth = 2, linestyle = :dash, label = "Extrapolated")
+    soc_full = range(soc_at_Vmin, soc_at_Vmax; length = 500)
+    lines!(ax, collect(soc_full), ocv_extrap.(soc_full), color = :red, linewidth = 2, linestyle = :dash, label = "Extrapolated")
 
-    Q_data_min = first(composite.t)
-    Q_data_max = last(composite.t)
-    q_data = range(Q_data_min, Q_data_max; length = 500)
-    lines!(ax, q_data .- Q_shift, composite.(q_data), color = :black, linewidth = 2, label = "Measured")
+    soc_data = range(first(soc), last(soc); length = 500)
+    lines!(ax, collect(soc_data), composite.(soc_data), color = :black, linewidth = 2, label = "Measured")
 
     hlines!(ax, [V_min, V_max], color = :gray, linestyle = :dot)
     axislegend(ax; position = :rc)

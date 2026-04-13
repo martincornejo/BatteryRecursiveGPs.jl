@@ -83,7 +83,7 @@ param_modules = Dict(id =>
     ) for id in ids2
 )
 
-# plot_ecms_norm(models, sols, f.ocv⁻¹, f.ocv; vlim)
+plot_ecms_norm(models, sols, f.ocv⁻¹, f.ocv; vlim)
 
 
 # fig4 = plot_module_soh(param_cells, param_modules)

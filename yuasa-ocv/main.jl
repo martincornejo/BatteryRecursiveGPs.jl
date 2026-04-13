@@ -7,7 +7,7 @@ using Printf
 using Statistics
 using Dates
 
-using BatteryDigitalTwin: fit_composite_ocv, composite_ocv_uncertainty, extend_composite_ocv
+using BatteryDigitalTwin: fit_composite_ocv
 
 # using GLMakie
 using CairoMakie
@@ -48,11 +48,9 @@ cells = [(; q = c.q, μ = c.μ) for c in per_cell]
 ocvs = [c.ocv for c in per_cell]
 
 fit = fit_composite_ocv(cells)
-uq = composite_ocv_uncertainty(fit)
 
-ext = extend_composite_ocv(fit, cells)
 composite = LinearInterpolation(
-    ext.v_grid, ext.Q_common;
+    fit.v_grid, fit.soc_grid;
     extrapolation = ExtrapolationType.Constant
 )
 params = fit.params
@@ -61,8 +59,8 @@ ocv_smooth = smooth_ocv(composite)
 
 # === Evaluate and plot ===
 
-eval_fit_parameters(params, uq)
-eval_cell_parameters(composite, params, uq, fit; V_ref = (3.3, 4.05), soc_ref = (0.05, 0.95))
+eval_fit_parameters(fit)
+eval_cell_parameters(composite, fit; V_ref = (3.3, 4.05), soc_ref = (0.05, 0.95))
 eval_ocv_residuals(composite, ocvs, params)
 eval_soc_range(composite)
 

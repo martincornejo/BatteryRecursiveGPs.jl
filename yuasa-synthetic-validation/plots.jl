@@ -180,7 +180,7 @@ function plot_qs_scatter(param_cells, params_real)
 end
 
 function plot_composite_ocv(
-        posteriors, param_cells, composite_u, focv;
+        posteriors, param_cells, fit, focv;
         s_lab_lo, s_lab_hi, lab_soc_span
     )
     ids = sort(collect(keys(posteriors)))
@@ -208,9 +208,9 @@ function plot_composite_ocv(
         linestyle = :dash, label = "Lab reference",
     )
 
-    soc_comp_lab = lab_soc_span .* composite_u.soc_grid .+ s_lab_lo
+    soc_comp_lab = lab_soc_span .* fit.soc_grid .+ s_lab_lo
     lines!(
-        ax, soc_comp_lab, composite_u.v_grid;
+        ax, soc_comp_lab, fit.v_grid;
         color = :crimson, linewidth = 2.5, label = "Composite (lab-free)",
     )
 
@@ -222,7 +222,7 @@ function plot_composite_ocv(
         xlabel = "SOC (lab gauge)", ylabel = "ΔV / mV",
         title = "Composite − lab reference",
     )
-    resid_mV = (composite_u.v_grid .- focv.(soc_comp_lab)) .* 1000
+    resid_mV = (fit.v_grid .- focv.(soc_comp_lab)) .* 1000
     lines!(ax2, soc_comp_lab, resid_mV; color = :crimson, linewidth = 2)
     hlines!(ax2, [0.0]; color = (:gray, 0.5), linestyle = :dot)
 
@@ -231,7 +231,7 @@ function plot_composite_ocv(
         xlabel = "SOC (lab gauge)", ylabel = "ΔV / mV",
         title = "Per-cell GP − composite",
     )
-    comp_interp = LinearInterpolation(composite_u.v_grid, soc_comp_lab)
+    comp_interp = LinearInterpolation(fit.v_grid, soc_comp_lab)
     comp_lo, comp_hi = extrema(soc_comp_lab)
     colors = cgrad(:viridis, length(cell_curves); categorical = true)
     for (k, c) in enumerate(cell_curves)

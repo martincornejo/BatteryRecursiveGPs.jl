@@ -61,7 +61,6 @@ posteriors_osc = Dict(id => extract_posterior(models_osc[id], sols_osc[id]) for 
 ids_osc = sort(collect(keys(posteriors_osc)))
 cells_osc = [(; q = collect(posteriors_osc[id].q), μ = collect(posteriors_osc[id].μ)) for id in ids_osc]
 fit_osc = fit_composite_ocv(cells_osc)
-uq_osc = composite_ocv_uncertainty(fit_osc)
 
 (; lab_soc_span, s_lab_lo, s_lab_hi) = let
     V_lab_lo = minimum(f.ocv.u)
@@ -74,17 +73,12 @@ uq_osc = composite_ocv_uncertainty(fit_osc)
     (; lab_soc_span, s_lab_lo, s_lab_hi)
 end
 
-param_cells_composite_osc = Dict(
-    ids_osc[i] => Dict(:Q => uq_osc.est[i].Q, :soc => uq_osc.est[i].s0)
-        for i in eachindex(ids_osc)
-)
-
 param_cells_osc = Dict(
-    id => let
-            Q_u = param_cells_composite_osc[id][:Q]
-            s0_u = param_cells_composite_osc[id][:soc]
+    ids_osc[i] => let
+            Q_u = fit_osc.Q_cell[i]
+            s0_u = fit_osc.s0[i]
             Dict(:Q => Q_u / lab_soc_span, :soc => lab_soc_span * s0_u + s_lab_lo)
-    end for id in 1:12
+    end for i in eachindex(ids_osc)
 )
 
 println("\n=== Q/s0 with oscilloscope current ===")

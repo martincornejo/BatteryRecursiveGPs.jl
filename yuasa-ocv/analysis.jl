@@ -1,54 +1,57 @@
-function eval_fit_parameters(params, uq)
-    @printf("\n=== Composite OCV (joint-Hessian UQ) ===\n")
+function eval_fit_parameters(fit)
+    (; params, Q_cell, s0) = fit
+    @printf("\n=== Composite OCV (OLS UQ) ===\n")
     @printf(
         "%-6s %8s %8s %8s %10s %8s %10s\n",
         "Cell", "Q0/Ah", "s", "C/Ah", "σ_C/Ah", "s0", "σ_s0"
     )
     for i in eachindex(params)
         Q0, s = params[i]
-        C_i = Measurements.value(uq.est[i].Q)
-        σ_C = Measurements.uncertainty(uq.est[i].Q)
-        s0_i = Measurements.value(uq.est[i].s0)
-        σ_s0 = Measurements.uncertainty(uq.est[i].s0)
         @printf(
             "Cell %2d: %6.2f  %8.4f  %6.2f  %8.4f  %8.4f  %8.4f\n",
-            i, Q0, s, C_i, σ_C, s0_i, σ_s0
+            i, Q0, s,
+            Measurements.value(Q_cell[i]),
+            Measurements.uncertainty(Q_cell[i]),
+            Measurements.value(s0[i]),
+            Measurements.uncertainty(s0[i]),
         )
     end
     return
 end
 
 function eval_cell_parameters(
-        composite, params, uq, fit;
+        composite, fit;
         V_ref = (3.3, 4.05), soc_ref = (0.05, 0.95)
     )
+    (; params, Q_cell, s0) = fit
     qv = invert_ocv(composite)
-    Q_ref = qv.(V_ref)
-    Q_full_ref = (Q_ref[2] - Q_ref[1]) / (soc_ref[2] - soc_ref[1])
-    Q_zero_ref = Q_ref[1] - soc_ref[1] * Q_full_ref
+    soc_at_ref = qv.(V_ref)
+    soc_span = (soc_at_ref[2] - soc_at_ref[1]) / (soc_ref[2] - soc_ref[1])
+    soc_zero = soc_at_ref[1] - soc_ref[1] * soc_span
 
     @printf("\n=== Cell capacity and initial SOC ===\n")
     @printf(
         "  SOC anchors: %.2f V → %d %%,  %.2f V → %d %%\n",
         V_ref[1], Int(soc_ref[1] * 100), V_ref[2], Int(soc_ref[2] * 100)
     )
-    @printf("  Q_full = %.3f Ah\n\n", Q_full_ref)
+    @printf("  soc_span = %.4f\n\n", soc_span)
     @printf("%-8s %8s %8s %8s %8s\n", "Cell", "Q/Ah", "σ_Q/Ah", "SOC_0", "σ_SOC_0")
     for i in eachindex(params)
-        Q0_i, s_i = params[i]
-        C_i = Q_full_ref / s_i
-        soc0_i = (Q0_i - Q_zero_ref) / Q_full_ref
-        σ_Q = Measurements.uncertainty(uq.est[i].Q) * Q_full_ref / fit.Q_full
-        σ_s0 = Measurements.uncertainty(uq.est[i].s0) * fit.Q_full / Q_full_ref
-        @printf("Cell %2d: %8.3f %8.4f %8.4f %8.4f\n", i, C_i, σ_Q, soc0_i, σ_s0)
+        C_i = Q_cell[i] / soc_span
+        soc0_i = soc_span * s0[i] + soc_zero
+        @printf(
+            "Cell %2d: %8.3f %8.4f %8.4f %8.4f\n",
+            i, Measurements.value(C_i), Measurements.uncertainty(C_i),
+            Measurements.value(soc0_i), Measurements.uncertainty(soc0_i),
+        )
     end
-    Cs = [Q_full_ref / p[2] for p in params]
+    Cs = [Measurements.value(Q_cell[i]) / soc_span for i in eachindex(params)]
     return @printf("%-8s %8.3f %8.4f\n", "Mean", mean(Cs), std(Cs))
 end
 
 function eval_ocv_residuals(composite, ocvs, params)
-    Q_lo = first(composite.t)
-    Q_hi = last(composite.t)
+    soc_lo = first(composite.t)
+    soc_hi = last(composite.t)
 
     @printf("\n=== Per-cell residuals vs composite OCV (mV) ===\n")
     @printf("%-8s %6s %8s %8s %8s\n", "Cell", "N", "mean", "rms", "max|r|")
@@ -59,7 +62,7 @@ function eval_ocv_residuals(composite, ocvs, params)
         q = range(first(f.t), last(f.t); length = 300)
         q_aligned = collect(q .* s .+ Q0)
         v_cell = f.(q)
-        mask = (q_aligned .>= Q_lo) .& (q_aligned .<= Q_hi)
+        mask = (q_aligned .>= soc_lo) .& (q_aligned .<= soc_hi)
         r_mV = (v_cell[mask] .- composite.(q_aligned[mask])) .* 1000
         append!(all_r, r_mV)
         @printf(
@@ -75,34 +78,34 @@ function eval_ocv_residuals(composite, ocvs, params)
 end
 
 function eval_soc_range(composite; V_min = 2.9, V_max = 4.1)
-    q = collect(composite.t)
+    soc = collect(composite.t)
     v = collect(composite.u)
-    ocv_extrap = LinearInterpolation(v, q; extrapolation = ExtrapolationType.Linear)
-    qv_extrap = invert_ocv(ocv_extrap; n_samples = 1000, extrapolation = ExtrapolationType.Linear)
+    ocv_extrap = LinearInterpolation(v, soc; extrapolation = ExtrapolationType.Linear)
+    sv_extrap = invert_ocv(ocv_extrap; n_samples = 1000, extrapolation = ExtrapolationType.Linear)
 
-    Q_at_Vmin = qv_extrap(V_min)
-    Q_at_Vmax = qv_extrap(V_max)
-    Q_full = Q_at_Vmax - Q_at_Vmin
+    soc_at_Vmin = sv_extrap(V_min)
+    soc_at_Vmax = sv_extrap(V_max)
+    soc_full = soc_at_Vmax - soc_at_Vmin
 
-    Q_data_min = first(composite.t)
-    Q_data_max = last(composite.t)
-    Q_data = Q_data_max - Q_data_min
+    soc_data_min = first(soc)
+    soc_data_max = last(soc)
+    soc_data = soc_data_max - soc_data_min
 
     V_data_min = first(v)
     V_data_max = last(v)
 
     @printf("\nSOC range estimation (linear extrapolation):\n")
     @printf(
-        "  Data covers:    %.1f - %.1f Ah (%.1f Ah) [%.2fV - %.2fV]\n",
-        Q_data_min, Q_data_max, Q_data, V_data_min, V_data_max
+        "  Data covers:    %.3f - %.3f (%.3f) [%.2fV - %.2fV]\n",
+        soc_data_min, soc_data_max, soc_data, V_data_min, V_data_max
     )
     @printf(
-        "  Full range:     %.1f - %.1f Ah (%.1f Ah) [%.2fV - %.2fV]\n",
-        Q_at_Vmin, Q_at_Vmax, Q_full, V_min, V_max
+        "  Full range:     %.3f - %.3f (%.3f) [%.2fV - %.2fV]\n",
+        soc_at_Vmin, soc_at_Vmax, soc_full, V_min, V_max
     )
     return @printf(
         "  SOC range used: %.1f%% - %.1f%%\n",
-        100 * (Q_data_min - Q_at_Vmin) / Q_full,
-        100 * (Q_data_max - Q_at_Vmin) / Q_full
+        100 * (soc_data_min - soc_at_Vmin) / soc_full,
+        100 * (soc_data_max - soc_at_Vmin) / soc_full
     )
 end
