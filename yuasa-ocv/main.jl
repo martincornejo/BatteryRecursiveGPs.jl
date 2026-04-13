@@ -47,7 +47,7 @@ end
 cells = [(; q = c.q, μ = c.μ) for c in per_cell]
 ocvs = [c.ocv for c in per_cell]
 
-fit = fit_composite_ocv(cells)
+fit = fit_composite_ocv(cells; n_v_grid = 100)
 
 composite = LinearInterpolation(
     fit.v_grid, fit.soc_grid;
@@ -60,10 +60,11 @@ ocv_smooth = smooth_ocv(composite)
 # === Evaluate and plot ===
 
 eval_fit_parameters(fit)
-eval_cell_parameters(fit; v_ref = (3.3, 4.05), soc_ref = (0.05, 0.95))
+eval_cell_parameters(fit; v_ref = (3.35, 4.05), soc_ref = (0.05, 0.85))
 eval_ocv_residuals(composite, ocvs, params)
 eval_soc_range(composite)
 
-plot_composite_ocv(composite, ocvs, params) |> display
-plot_ocv_residuals(composite, ocvs, params) |> display
+plot_composite_ocv(fit, cells) |> display
+plot_composite_ocv(fit, cells; xaxis = :ah) |> display
+plot_ocv_residuals(fit, cells) |> display
 plot_ocv_extrapolation(composite) |> display

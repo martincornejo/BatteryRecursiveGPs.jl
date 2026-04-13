@@ -57,29 +57,29 @@ function compare_current_sources(df; m = 7, tek_offset = 0.0)
 end
 
 
-function plot_composite_ocv(composite, ocvs, params)
+function plot_composite_ocv(fit, cells; xaxis = :soc)
+    (; soc_grid, v_grid, Q_cell, s0, Q_full) = fit
+    xscale = xaxis == :ah ? Q_full : 1.0
+    xlabel = xaxis == :ah ? "Capacity / Ah" : "SOC"
+
     fig = Figure(size = (900, 700))
     ax1 = Axis(
-        fig[1, 1], ylabel = "Voltage / V",
+        fig[1, 1]; ylabel = "Voltage / V",
         title = "Composite OCV from aligned cells (Module 7)"
     )
-    ax2 = Axis(fig[2, 1], ylabel = "dV/dSOC / V", xlabel = "SOC")
+    ax2 = Axis(fig[2, 1]; ylabel = "dV/d$(xlabel)", xlabel)
 
-    Q_shift = first(composite.t)
-    for (i, (f, p)) in enumerate(zip(ocvs, params))
-        Q0, s = p
-        q = range(first(f.t), last(f.t); length = 300)
-        q_aligned = q .* s .+ Q0 .- Q_shift
-        v = f.(q)
-        lines!(ax1, q_aligned, v, color = (:gray, 0.4), label = "Cell OCV")
-        lines!(ax2, q_aligned[1:(end - 1)], diff(v) ./ diff(q_aligned), color = (:gray, 0.4))
+    for i in eachindex(cells)
+        q = cells[i].q
+        v = cells[i].μ
+        x = (q ./ Measurements.value(Q_cell[i]) .+ Measurements.value(s0[i])) .* xscale
+        lines!(ax1, x, v; color = (:gray, 0.5), label = "Cell OCV")
+        lines!(ax2, x[2:end], diff(v) ./ diff(x); color = (:gray, 0.3))
     end
 
-    soc_comp = range(first(composite.t), last(composite.t); length = 500)
-    v_comp = composite.(soc_comp)
-    soc_plot = soc_comp .- Q_shift
-    lines!(ax1, soc_plot, v_comp, color = :black, linewidth = 2, label = "Composite OCV")
-    lines!(ax2, soc_plot[1:(end - 1)], diff(v_comp) ./ diff(soc_plot), color = :black, linewidth = 2)
+    x_comp = soc_grid .* xscale
+    lines!(ax1, x_comp, v_grid; color = :black, linewidth = 2, label = "Composite OCV")
+    lines!(ax2, x_comp[2:end], diff(v_grid) ./ diff(x_comp); color = :black, linewidth = 2)
 
     axislegend(ax1; position = :cb, merge = true)
     linkxaxes!(ax1, ax2)
@@ -87,24 +87,24 @@ function plot_composite_ocv(composite, ocvs, params)
 end
 
 
-function plot_ocv_residuals(composite, ocvs, params)
-    soc_lo = first(composite.t)
-    soc_hi = last(composite.t)
-    soc_shift = soc_lo
+function plot_ocv_residuals(fit, cells)
+    (; soc_grid, v_grid, Q_cell, s0) = fit
+    composite = LinearInterpolation(
+        v_grid, soc_grid;
+        extrapolation = ExtrapolationType.Constant,
+    )
 
     fig = Figure(size = (900, 400))
     ax = Axis(
         fig[1, 1]; xlabel = "SOC", ylabel = "Residual / mV",
-        title = "Per-cell OCV − composite OCV"
+        title = "Per-cell OCV − composite OCV",
     )
-    for (i, (f, p)) in enumerate(zip(ocvs, params))
-        Q0, s = p
-        q = range(first(f.t), last(f.t); length = 300)
-        q_aligned = collect(q .* s .+ Q0)
-        v_cell = f.(q)
-        mask = (q_aligned .>= soc_lo) .& (q_aligned .<= soc_hi)
-        r_mV = (v_cell[mask] .- composite.(q_aligned[mask])) .* 1000
-        lines!(ax, q_aligned[mask] .- soc_shift, r_mV; color = (:gray, 0.5), linewidth = 1)
+    for i in eachindex(cells)
+        soc = cells[i].q ./ Measurements.value(Q_cell[i]) .+ Measurements.value(s0[i])
+        v = cells[i].μ
+        mask = (soc .>= first(soc_grid)) .& (soc .<= last(soc_grid))
+        r_mV = (v[mask] .- composite.(soc[mask])) .* 1000
+        lines!(ax, soc[mask], r_mV; color = (:gray, 0.5), linewidth = 1)
     end
     hlines!(ax, [0.0]; color = :black, linestyle = :dot)
     return fig

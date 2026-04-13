@@ -103,7 +103,7 @@ function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50)
         s0[i] = (params[i][1] - Q_at_Vmin) / Q_full ± sqrt(max(Σ_out[2, 2], 0.0))
     end
 
-    return (; Q_cell, s0, params, soc_grid, v_grid)
+    return (; Q_cell, s0, params, soc_grid, v_grid, Q_full)
 end
 
 

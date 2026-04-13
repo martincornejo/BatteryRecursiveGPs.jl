@@ -208,10 +208,10 @@ function plot_composite_ocv(
         linestyle = :dash, label = "Lab reference",
     )
 
-    composite_interp = LinearInterpolation(fit.v_grid, fit.soc_grid)
+    composite_interp = LinearInterpolation(fit.soc_grid, fit.v_grid)
     soc_at_ref = composite_interp.(v_ref)
-    soc_span = (soc_at_ref[2] - soc_at_ref[1]) / (soc_ref[2] - soc_ref[1])
-    soc_zero = soc_at_ref[1] - soc_ref[1] * soc_span
+    soc_span = (soc_ref[2] - soc_ref[1]) / (soc_at_ref[2] - soc_at_ref[1])
+    soc_zero = soc_ref[1] - soc_span * soc_at_ref[1]
     soc_comp_lab = soc_span .* fit.soc_grid .+ soc_zero
     lines!(
         ax, soc_comp_lab, fit.v_grid;
