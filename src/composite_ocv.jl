@@ -30,7 +30,7 @@ on `Q_cell` and `s0`. Results are vector-indexed in the same order as
 
 See `notes/approach-5-simple-qv-em.md` for derivation and design notes.
 """
-function fit_composite_ocv(cells; n_v_grid::Int=50, n_iters::Int=30, tol::Float64=1.0e-9)
+function fit_composite_ocv(cells; n_v_grid::Int = 50, n_iters::Int = 30, tol::Float64 = 1.0e-9)
     Q_mat, v_grid = _build_shared_qv_grid(cells, n_v_grid)
     sums = _precompute_hessian_sums(Q_mat)
 
@@ -42,7 +42,7 @@ function fit_composite_ocv(cells; n_v_grid::Int=50, n_iters::Int=30, tol::Float6
         n_iters_run = iter
 
         Q_aligned = hcat((Q_mat[:, i] .* params[i][2] .+ params[i][1] for i in 1:N)...)
-        Q_common = vec(mean(Q_aligned; dims=2))
+        Q_common = vec(mean(Q_aligned; dims = 2))
 
         max_delta = 0.0
         for i in 1:N
@@ -62,12 +62,143 @@ function fit_composite_ocv(cells; n_v_grid::Int=50, n_iters::Int=30, tol::Float6
 
     return (;
         Q_mat, sums, rss, params, Q_common,
-        Q_cell=readout.Q_cell, s0=readout.s0,
-        Q_full=readout.Q_full,
-        Q_at_Vmin=readout.Q_at_Vmin,
-        Q_at_Vmax=readout.Q_at_Vmax,
+        Q_cell = readout.Q_cell, s0 = readout.s0,
+        Q_full = readout.Q_full,
+        Q_at_Vmin = readout.Q_at_Vmin,
+        Q_at_Vmax = readout.Q_at_Vmax,
         v_grid, n_iters_run,
     )
+end
+
+
+"""
+    fit_composite_ocv_pairwise(cells; n_v_grid=50, n_v_pair=50)
+
+Pairwise-OLS variant of `fit_composite_ocv`.  Instead of building a single
+voltage grid on the intersection of all cells (where one narrow cell shrinks
+the grid for everyone), this formulation works with per-pair voltage overlaps.
+
+For each pair `(i, j)` the aligned curves must agree on their mutual overlap:
+`s_i·q_i(v) + Q0_i ≈ s_j·q_j(v) + Q0_j`.  This gives a linear system that
+is solved in one OLS shot (no EM iteration) after pinning cell 1 to
+`(Q0, s) = (0, 1)`.
+
+The returned named tuple matches `fit_composite_ocv` (with `Q_common` and
+readout evaluated on the global intersection grid for direct comparison).
+"""
+function fit_composite_ocv_pairwise(cells; n_v_grid::Int = 50, n_v_pair::Int = 50)
+    N = length(cells)
+    N >= 2 || error("Need at least 2 cells for pairwise fit")
+    fqs = [_as_v_frame_function(collect(c.q), collect(c.μ)) for c in cells]
+
+    n_free = 2 * (N - 1)
+
+    pair_grids = Tuple{Int, Int, Vector{Float64}}[]
+    n_total = 0
+    for i in 1:N, j in (i + 1):N
+        v_lo = max(minimum(fqs[i].t), minimum(fqs[j].t)) + 1.0e-3
+        v_hi = min(maximum(fqs[i].t), maximum(fqs[j].t)) - 1.0e-3
+        v_lo >= v_hi && continue
+        vg = collect(range(v_lo, v_hi; length = n_v_pair))
+        push!(pair_grids, (i, j, vg))
+        n_total += n_v_pair
+    end
+    isempty(pair_grids) && error("No pair has voltage overlap — cannot align.")
+
+    A = zeros(n_total, n_free)
+    b = zeros(n_total)
+
+    row = 0
+    for (i, j, vg) in pair_grids
+        for v in vg
+            row += 1
+            qi_v = fqs[i](v)
+            qj_v = fqs[j](v)
+
+            if i == 1
+                A[row, 2 * (j - 2) + 1] = 1.0
+                A[row, 2 * (j - 2) + 2] = qj_v
+                b[row] = qi_v
+            else
+                A[row, 2 * (i - 2) + 1] = 1.0
+                A[row, 2 * (i - 2) + 2] = qi_v
+                A[row, 2 * (j - 2) + 1] -= 1.0
+                A[row, 2 * (j - 2) + 2] -= qj_v
+            end
+        end
+    end
+
+    θ = A \ b
+
+    params = Vector{Vector{Float64}}(undef, N)
+    params[1] = [0.0, 1.0]
+    for i in 2:N
+        params[i] = [θ[2 * (i - 2) + 1], θ[2 * (i - 2) + 2]]
+    end
+
+    Q_mat, v_grid = _build_shared_qv_grid(cells, n_v_grid)
+    Q_common = _final_e_step(Q_mat, params)
+    sums = _precompute_hessian_sums(Q_mat)
+    readout = _union_gauge_readout(params, Q_common)
+    rss = _residual_sum_of_squares(Q_mat, Q_common, params)
+
+    pairwise_rss = sum(abs2, A * θ - b)
+
+    return (;
+        Q_mat, sums, rss, params, Q_common,
+        Q_cell = readout.Q_cell, s0 = readout.s0,
+        Q_full = readout.Q_full,
+        Q_at_Vmin = readout.Q_at_Vmin,
+        Q_at_Vmax = readout.Q_at_Vmax,
+        v_grid, n_v_pair,
+        ols_AtA = A' * A, pairwise_rss, n_equations = n_total,
+    )
+end
+
+
+"""
+    composite_ocv_pairwise_uncertainty(fit)
+
+OLS-based 1σ uncertainty for the pairwise composite-OCV fit returned by
+`fit_composite_ocv_pairwise`.
+
+Because the gauge is pinned during fitting (`(Q0_1, s_1) = (0, 1)`), the
+normal-equations matrix `A'A` is full rank — no pseudoinverse or eigenvalue
+zeroing is needed.  The covariance is the standard OLS formula
+`Σ_θ = σ̂² · (A'A)⁻¹` where `σ̂² = pairwise_rss / (n_eq - 2(N-1))`.
+
+Cell 1 has zero uncertainty by construction (gauge anchor); all other cells'
+bars are relative to it.
+
+Returns `(; est, Σθ, σ²_hat)` where
+`est::Vector{@NamedTuple{Q::Measurement, s0::Measurement}}` is vector-indexed
+in the same order as `fit.Q_cell`.
+"""
+function composite_ocv_pairwise_uncertainty(fit)
+    (; params, Q_full, ols_AtA, pairwise_rss, n_equations) = fit
+    N = length(params)
+    n_free = 2 * (N - 1)
+
+    σ²_hat = pairwise_rss / (n_equations - n_free)
+    Σθ = σ²_hat .* inv(ols_AtA)
+
+    est = Vector{@NamedTuple{Q::Measurement{Float64}, s0::Measurement{Float64}}}(undef, N)
+    est[1] = (; Q = fit.Q_cell[1] ± 0.0, s0 = fit.s0[1] ± 0.0)
+    for i in 2:N
+        idx = [2 * (i - 2) + 1, 2 * (i - 2) + 2]
+        Σ_block = Σθ[idx, idx]
+        si_val = params[i][2]
+        J = [
+            0.0 -Q_full / si_val^2
+            1.0 / Q_full 0.0
+        ]
+        Σ_out = J * Σ_block * J'
+        σ_Q = sqrt(max(Σ_out[1, 1], 0.0))
+        σ_s0 = sqrt(max(Σ_out[2, 2], 0.0))
+        est[i] = (; Q = fit.Q_cell[i] ± σ_Q, s0 = fit.s0[i] ± σ_s0)
+    end
+
+    return (; est, Σθ, σ²_hat)
 end
 
 
@@ -138,13 +269,13 @@ function composite_ocv_uncertainty(fit)
         idx = [K + 2i - 1, K + 2i]
         Σ_block = Σθ[idx, idx]
         J = [
-            -Q_full/si_val^2 0.0
-            0.0 1.0/Q_full
+            -Q_full / si_val^2 0.0
+            0.0 1.0 / Q_full
         ]
         Σ_out = J * Σ_block * J'
         σ_Q = sqrt(max(Σ_out[1, 1], 0.0))
         σ_s0 = sqrt(max(Σ_out[2, 2], 0.0))
-        est[i] = (; Q=fit.Q_cell[i] ± σ_Q, s0=fit.s0[i] ± σ_s0)
+        est[i] = (; Q = fit.Q_cell[i] ± σ_Q, s0 = fit.s0[i] ± σ_s0)
     end
 
     return (; est, H, Σθ, σ²_hat, H_eig_bottom3)
@@ -165,13 +296,13 @@ have data at each voltage point.
 Returns `(; Q_common, v_grid, counts)` where `counts[k]` is the number of
 cells contributing at `v_grid[k]`.
 """
-function extend_composite_ocv(fit, cells; n_v_grid::Int=200)
+function extend_composite_ocv(fit, cells; n_v_grid::Int = 200)
     N = length(cells)
     fqs = [_as_v_frame_function(collect(c.q), collect(c.μ)) for c in cells]
 
     v_min = minimum(minimum(fq.t) for fq in fqs) + 1.0e-3
     v_max = maximum(maximum(fq.t) for fq in fqs) - 1.0e-3
-    v_grid = collect(range(v_min, v_max; length=n_v_grid))
+    v_grid = collect(range(v_min, v_max; length = n_v_grid))
 
     Q_common = zeros(n_v_grid)
     counts = zeros(Int, n_v_grid)
@@ -203,7 +334,7 @@ function _as_v_frame_function(q::AbstractVector, μ::AbstractVector)
     mask = [true; diff(v_sorted) .> 1.0e-9]
     return LinearInterpolation(
         q_sorted[mask], v_sorted[mask];
-        extrapolation=ExtrapolationType.Linear,
+        extrapolation = ExtrapolationType.Linear,
     )
 end
 
@@ -214,7 +345,7 @@ function _build_shared_qv_grid(cells, n_v_grid::Int)
     v_min = maximum(minimum(fq.t) for fq in fqs) + 1.0e-3
     v_max = minimum(maximum(fq.t) for fq in fqs) - 1.0e-3
     v_min >= v_max && error("No voltage overlap across cells — cannot align.")
-    v_grid = collect(range(v_min, v_max; length=n_v_grid))
+    v_grid = collect(range(v_min, v_max; length = n_v_grid))
 
     K = n_v_grid
     N = length(cells)
@@ -288,10 +419,10 @@ end
 
 
 function _residual_sum_of_squares(
-    Q_mat::AbstractMatrix,
-    Q_common::AbstractVector,
-    params::Vector{Vector{Float64}},
-)
+        Q_mat::AbstractMatrix,
+        Q_common::AbstractVector,
+        params::Vector{Vector{Float64}},
+    )
     K, N = size(Q_mat)
     rss = 0.0
     for i in 1:N
