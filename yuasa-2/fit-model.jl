@@ -1,11 +1,11 @@
-replace_missing!(v) = accumulate!((n0, n1) -> ismissing(n1) ? n0 : n1, v, v, init=zero(eltype(v)))
+replace_missing!(v) = accumulate!((n0, n1) -> ismissing(n1) ? n0 : n1, v, v, init = zero(eltype(v)))
 
-function ffill(df, ts=Second(1))
+function ffill(df, ts = Second(1))
     t0 = first(df._time)
     t1 = last(df._time)
 
-    df2 = DataFrame(_time=t0:ts:t1)
-    leftjoin!(df2, df, on=:_time)
+    df2 = DataFrame(_time = t0:ts:t1)
+    leftjoin!(df2, df, on = :_time)
     sort!(df2, :_time)
 
 
@@ -15,33 +15,33 @@ function ffill(df, ts=Second(1))
 
     disallowmissing!(df2)
 
-    df2
+    return df2
 end
 
 
-function fill_missings(df, ts=Second(1); time=:time)
+function fill_missings(df, ts = Second(1); time = :time)
     t0 = first(df[:, time])
     t1 = last(df[:, time])
 
     df2 = DataFrame(time => t0:ts:t1)
-    leftjoin!(df2, df, on=time)
+    leftjoin!(df2, df, on = time)
     sort!(df2, time)
 
     return df2
 end
 
-function interpolate(df, ti; Ts=1)
+function interpolate(df, ti; Ts = 1)
     t = Dates.value.(df.time - first(ti)) .÷ 1000
-    tr = 0:Ts:(Dates.value(last(ti) - first(ti)).÷1000)
+    tr = 0:Ts:(Dates.value(last(ti) - first(ti)) .÷ 1000)
     f = LinearInterpolation(df.value, t)
 
     dt = first(ti):Second(Ts):last(ti)
 
-    DataFrame(; time=dt, t=tr, value=f(tr))
+    return DataFrame(; time = dt, t = tr, value = f(tr))
 end
 
 
-function cell_dataset(data, ti, p, m, c; Ts=1.0)
+function cell_dataset(data, ti, p, m, c; Ts = 1.0)
     # df_i = ffill(data[:module_current], Second(1))
     # df_v = ffill(data[:cell_voltage], Second(10))
     zt = fit_zscore()
@@ -74,11 +74,11 @@ function cell_dataset(data, ti, p, m, c; Ts=1.0)
     u = [(; i, q, T) for (i, q, T) in zip(î, q̂, T)]
     y = [SA[v] for v in v̂]
 
-    (; u, y)
+    return (; u, y)
 end
 
 
-function module_dataset(data, ti, p, m; Ts=1.0)
+function module_dataset(data, ti, p, m; Ts = 1.0)
     zt = fit_zscore(12)
 
     # voltage
@@ -91,7 +91,7 @@ function module_dataset(data, ti, p, m; Ts=1.0)
     # current
     df_i = copy(data[:module_current])
     select!(df_i, "_time" => "time", "module_average_current_$(p)_$(m)" => ByRow(x -> -x) => "value")
-    df_i = interpolate(df_i, ti; Ts=1.0)
+    df_i = interpolate(df_i, ti; Ts = 1.0)
 
     # coulomb counting
     q = cumsum(df_i.value) * Ts / 3600
@@ -109,7 +109,7 @@ function module_dataset(data, ti, p, m; Ts=1.0)
     u = [(; i, q, T) for (i, q, T) in zip(î, q̂, T)]
     y = [SA[v] for v in v̂]
 
-    (; u, y)
+    return (; u, y)
 end
 
 
@@ -126,7 +126,7 @@ function cell_dataset_osci(data, ti, c)
     df_v[!, :value] = StatsBase.transform(zt.v, df_v.value)
     df_v = fill_missings(df_v, Second(Ts))
 
-    df_î = CSV.File(datadir * "oscilloscope_p1_m9.csv"; dateformat=dateformat"y-m-dTH:M:S.sss+00:00") |> DataFrame
+    df_î = CSV.File(datadir * "oscilloscope_p1_m9.csv"; dateformat = dateformat"y-m-dTH:M:S.sss+00:00") |> DataFrame
     df_î.timestamp_utc = floor.(df_î.timestamp_utc, Second(1))
     df_î = combine(groupby(df_î, :timestamp_utc), :MEAS1 => mean => :MEAS1)
     select!(df_î, :timestamp_utc => :_time, :MEAS1 => ByRow(x -> -x) => :i)
@@ -146,35 +146,37 @@ function cell_dataset_osci(data, ti, c)
     u = [(; i, q) for (i, q) in zip(î, q̂)]
     y = [SA[v] for v in v̂]
 
-    (; u, y)
+    return (; u, y)
 end
 
-function fit_zscore(n=1)
-    v = StatsBase.fit(ZScoreTransform, (n*3.3):(n*0.01):(n*4.1))
-    σ = StatsBase.fit(ZScoreTransform, (n*3.3):(n*0.01):(n*4.1), center=false)
-    i = StatsBase.fit(ZScoreTransform, -50:0.1:50, center=false)
-    q = StatsBase.fit(ZScoreTransform, -50:0.1:50, center=false)
+function fit_zscore(n = 1)
+    v = StatsBase.fit(ZScoreTransform, (n * 3.3):(n * 0.01):(n * 4.1))
+    σ = StatsBase.fit(ZScoreTransform, (n * 3.3):(n * 0.01):(n * 4.1), center = false)
+    i = StatsBase.fit(ZScoreTransform, -50:0.1:50, center = false)
+    q = StatsBase.fit(ZScoreTransform, -50:0.1:50, center = false)
     r = ZScoreTransform(1, 1, [0.0], [σ.scale[1] / i.scale[1]])
     return (; v, σ, i, q, r)
 end
 
 
 function fit_model(data, ti, id)
-    θ0 = ComponentVector(; # tunable (hyper)params
-        ocv=(; σ=0.5, ℓ=0.5),
-        r0=(; σ=0.01, ℓ=2.0),
-        vσ=3e-3,
+    θ0 = ComponentVector(;
+        # tunable (hyper)params
+        ocv = (; σ = 0.5, ℓ = 0.5),
+        r0 = (; σ = 0.01, ℓ = 2.0),
+        vσ = 3.0e-3,
     )
-    ϑ = ComponentVector(; # non-tunable params
-        Ts=1.0,
-        r0μ=1.5e-3,
-        rc=(;
-            v0=0.0, σ0_v=1.0e-5, σ1_v=5.0e-5,
-            r0=1.5e-3, σ0_r=5.0e-6, σ1_r=0.0,
-            τ0=250.0, σ0_τ=1.0, σ1_τ=0.0,
+    ϑ = ComponentVector(;
+        # non-tunable params
+        Ts = 1.0,
+        r0μ = 1.5e-3,
+        rc = (;
+            v0 = 0.0, σ0_v = 1.0e-5, σ1_v = 5.0e-5,
+            r0 = 1.5e-3, σ0_r = 5.0e-6, σ1_r = 0.0,
+            τ0 = 250.0, σ0_τ = 1.0, σ1_τ = 0.0,
         ),
-        cc=(; σ1=0.1e-5),
-        arr=(; T0=25, k0=2000, σ0_k=0.0, σ1_k=0.0),
+        cc = (; σ1 = 0.1e-5),
+        arr = (; T0 = 25, k0 = 2000, σ0_k = 0.0, σ1_k = 0.0),
     )
     θ = ComponentVector(; θ0..., ϑ...)
 
@@ -189,26 +191,28 @@ function fit_model(data, ti, id)
 
     @info "Cell p:$(p), m:$(m), c:$(c) complete" stats.time
 
-    (; model, sol)
+    return (; model, sol)
 end
 
 function fit_module(data, ti, id)
     n = 12
-    θ0 = ComponentVector(; # tunable (hyper)params
-        ocv=(; σ=0.5, ℓ=0.5),
-        r0=(; σ=0.01, ℓ=2.0),
-        vσ=n * 3e-3,
+    θ0 = ComponentVector(;
+        # tunable (hyper)params
+        ocv = (; σ = 0.5, ℓ = 0.5),
+        r0 = (; σ = 0.01, ℓ = 2.0),
+        vσ = n * 3.0e-3,
     )
-    ϑ = ComponentVector(; # non-tunable params
-        Ts=1.0,
-        r0μ=n * 1.5e-3,
-        rc=(;
-            v0=n * 0.0, σ0_v=n * 1.0e-5, σ1_v=n * 5.0e-5,
-            r0=n * 1.5e-3, σ0_r=n * 5.0e-6, σ1_r=n * 0.0,
-            τ0=250.0, σ0_τ=1.0, σ1_τ=0.0,
+    ϑ = ComponentVector(;
+        # non-tunable params
+        Ts = 1.0,
+        r0μ = n * 1.5e-3,
+        rc = (;
+            v0 = n * 0.0, σ0_v = n * 1.0e-5, σ1_v = n * 5.0e-5,
+            r0 = n * 1.5e-3, σ0_r = n * 5.0e-6, σ1_r = n * 0.0,
+            τ0 = 250.0, σ0_τ = 1.0, σ1_τ = 0.0,
         ),
-        cc=(; σ1=0.1e-5),
-        arr=(; T0=25, k0=20, σ0_k=0.0, σ1_k=0.0),
+        cc = (; σ1 = 0.1e-5),
+        arr = (; T0 = 25, k0 = 20, σ0_k = 0.0, σ1_k = 0.0),
     )
     θ = ComponentVector(; θ0..., ϑ...)
 
@@ -223,7 +227,7 @@ function fit_module(data, ti, id)
 
     @info "Module p:$(p), m:$(m), complete" stats.time
 
-    (; model, sol)
+    return (; model, sol)
 end
 
 function fit_modules(data, ti, ids)
@@ -236,7 +240,7 @@ function fit_modules(data, ti, ids)
         sols[id] = sol
     end
 
-    (; models, sols)
+    return (; models, sols)
 end
 
 function fit_models(data, ti, ids)
@@ -249,7 +253,7 @@ function fit_models(data, ti, ids)
         sols[id] = sol
     end
 
-    (; models, sols)
+    return (; models, sols)
 end
 
 function fit_models_spawn(data, ti, ids)
@@ -266,9 +270,8 @@ function fit_models_spawn(data, ti, ids)
         end
     end
 
-    (; models, sols)
+    return (; models, sols)
 end
-
 
 
 function extract_ocv(model::YuasaModel)
@@ -281,7 +284,7 @@ function extract_ocv(model::YuasaModel)
     # Q = last(q) - first(q)
     # soc = (q .- first(q)) ./ Q
 
-    soc = range(0.15, 0.9, length=length(q))
+    soc = range(0.15, 0.9, length = length(q))
     # soc = range(0.05, 0.95, length=length(q))
 
     ocv = predict_gp(kf, q̂, :ocv)
@@ -290,5 +293,5 @@ function extract_ocv(model::YuasaModel)
     focv = LinearInterpolation(ocvμ, soc)
     focv⁻¹ = LinearInterpolation(soc, ocvμ)
 
-    (; ocv=focv, ocv⁻¹=focv⁻¹)
+    return (; ocv = focv, ocv⁻¹ = focv⁻¹)
 end

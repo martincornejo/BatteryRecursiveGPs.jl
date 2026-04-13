@@ -32,8 +32,6 @@ data = Dict(id => CSV.File(file; dateformat) |> DataFrame for (id, file) in file
 ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
 
-
-
 ids = [(; p, m, c) for p in 1:3, m in 1:9, c in 1:12] |> vec |> sort
 # @time (; kfs, sols) = fit_models(data, ti, ids);
 # begin
@@ -50,7 +48,7 @@ fig2 = plot_ecms(models, sols)
 
 ids2 = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
 (models2, sols2) = fit_modules(data, ti, ids2)
-fig3 = plot_ecms(models2, sols2; n=12)
+fig3 = plot_ecms(models2, sols2; n = 12)
 
 for id in ids
     plot_rc_param_trajectory(models[id], sols[id]) |> display
@@ -67,20 +65,22 @@ end
 
 
 vlim = (3.75, 3.9)
-param_cells = Dict(id =>
-    Dict(
-        :Q => calc_Q(models[id], sols[id], f.ocv⁻¹; v=vlim),
-        :soc => calc_soc0(models[id], sols[id], f.ocv⁻¹; v=vlim),
-        :soh => calc_soh(models[id], sols[id], f.ocv⁻¹, 100; v=vlim),
-    ) for id in ids
+param_cells = Dict(
+    id =>
+        Dict(
+            :Q => calc_Q(models[id], sols[id], f.ocv⁻¹; v = vlim),
+            :soc => calc_soc0(models[id], sols[id], f.ocv⁻¹; v = vlim),
+            :soh => calc_soh(models[id], sols[id], f.ocv⁻¹, 100; v = vlim),
+        ) for id in ids
 )
 
-param_modules = Dict(id =>
-    Dict(
-        :Q => calc_Q(models2[id], sols2[id], f.ocv⁻¹; v=vlim, n=12),
-        :soc => calc_soc0(models2[id], sols2[id], f.ocv⁻¹; v=vlim, n=12),
-        :soh => calc_soh(models2[id], sols2[id], f.ocv⁻¹, 100; v=vlim, n=12),
-    ) for id in ids2
+param_modules = Dict(
+    id =>
+        Dict(
+            :Q => calc_Q(models2[id], sols2[id], f.ocv⁻¹; v = vlim, n = 12),
+            :soc => calc_soc0(models2[id], sols2[id], f.ocv⁻¹; v = vlim, n = 12),
+            :soh => calc_soh(models2[id], sols2[id], f.ocv⁻¹, 100; v = vlim, n = 12),
+        ) for id in ids2
 )
 
 plot_ecms_norm(models, sols, f.ocv⁻¹, f.ocv; vlim)
@@ -90,12 +90,12 @@ plot_ecms_norm(models, sols, f.ocv⁻¹, f.ocv; vlim)
 # fig5 = plot_cell_soh_hist(param_cells)
 # fig6 = plot_module_inhomogenity(param_modules)
 
-fig7 = let id = (; p=1, m=1, c=1)
+fig7 = let id = (; p = 1, m = 1, c = 1)
     plot_sim(models[id], sols[id])
 end
 
 
-let id = (; p=3, m=2, c=1)
+let id = (; p = 3, m = 2, c = 1)
     plot_rc_param_trajectory(models[id], sols[id])
 end
 

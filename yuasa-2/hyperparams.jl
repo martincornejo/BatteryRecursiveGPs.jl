@@ -1,4 +1,3 @@
-
 function loss(θ̂, p)
     (; ϑ, zt, u, y) = p
 
@@ -28,24 +27,26 @@ function tune_hyperparams(θ0, p)
     f = OptimizationFunction(loss, adtype)
     prob = OptimizationProblem(f, u0, p)
 
-    alg = LBFGS(linesearch=LineSearches.BackTracking())
-    sol = solve(prob,
+    alg = LBFGS(linesearch = LineSearches.BackTracking())
+    sol = solve(
+        prob,
         alg,
-        reltol=1e-4,
-        show_trace=true
+        reltol = 1.0e-4,
+        show_trace = true
     )
 
     θ = softplus.(sol.u)
     return θ
 end
 
-function tune_hyperparams_nlls(θ0, p; maxiters=10)
+function tune_hyperparams_nlls(θ0, p; maxiters = 10)
     u0 = invsoftplus.(θ0)
 
     nlls_prob = NonlinearLeastSquaresProblem(residuals, u0, p)
 
-    sol = solve(nlls_prob, LevenbergMarquardt();
-        maxiters, show_trace=Val(true),
+    sol = solve(
+        nlls_prob, LevenbergMarquardt();
+        maxiters, show_trace = Val(true),
         # trace_level=TraceWithJacobianConditionNumber(25)
     )
 
