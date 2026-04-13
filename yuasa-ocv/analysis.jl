@@ -20,32 +20,27 @@ function eval_fit_parameters(fit)
 end
 
 function eval_cell_parameters(
-        composite, fit;
-        V_ref = (3.3, 4.05), soc_ref = (0.05, 0.95)
+        fit;
+        v_ref = (3.3, 4.05), soc_ref = (0.05, 0.95)
     )
-    (; params, Q_cell, s0) = fit
-    qv = invert_ocv(composite)
-    soc_at_ref = qv.(V_ref)
-    soc_span = (soc_at_ref[2] - soc_at_ref[1]) / (soc_ref[2] - soc_ref[1])
-    soc_zero = soc_at_ref[1] - soc_ref[1] * soc_span
+    rescaled = rescale_composite_ocv(fit; v_ref, soc_ref)
 
     @printf("\n=== Cell capacity and initial SOC ===\n")
     @printf(
         "  SOC anchors: %.2f V → %d %%,  %.2f V → %d %%\n",
-        V_ref[1], Int(soc_ref[1] * 100), V_ref[2], Int(soc_ref[2] * 100)
+        v_ref[1], Int(soc_ref[1] * 100), v_ref[2], Int(soc_ref[2] * 100)
     )
-    @printf("  soc_span = %.4f\n\n", soc_span)
     @printf("%-8s %8s %8s %8s %8s\n", "Cell", "Q/Ah", "σ_Q/Ah", "SOC_0", "σ_SOC_0")
-    for i in eachindex(params)
-        C_i = Q_cell[i] / soc_span
-        soc0_i = soc_span * s0[i] + soc_zero
+    for i in eachindex(rescaled.Q_cell)
         @printf(
             "Cell %2d: %8.3f %8.4f %8.4f %8.4f\n",
-            i, Measurements.value(C_i), Measurements.uncertainty(C_i),
-            Measurements.value(soc0_i), Measurements.uncertainty(soc0_i),
+            i, Measurements.value(rescaled.Q_cell[i]),
+            Measurements.uncertainty(rescaled.Q_cell[i]),
+            Measurements.value(rescaled.s0[i]),
+            Measurements.uncertainty(rescaled.s0[i]),
         )
     end
-    Cs = [Measurements.value(Q_cell[i]) / soc_span for i in eachindex(params)]
+    Cs = Measurements.value.(rescaled.Q_cell)
     return @printf("%-8s %8.3f %8.4f\n", "Mean", mean(Cs), std(Cs))
 end
 

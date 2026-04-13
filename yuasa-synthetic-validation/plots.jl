@@ -181,7 +181,7 @@ end
 
 function plot_composite_ocv(
         posteriors, param_cells, fit, focv;
-        s_lab_lo, s_lab_hi, lab_soc_span
+        v_ref, soc_ref,
     )
     ids = sort(collect(keys(posteriors)))
     fig = Figure(size = (1000, 900))
@@ -208,13 +208,17 @@ function plot_composite_ocv(
         linestyle = :dash, label = "Lab reference",
     )
 
-    soc_comp_lab = lab_soc_span .* fit.soc_grid .+ s_lab_lo
+    composite_interp = LinearInterpolation(fit.v_grid, fit.soc_grid)
+    soc_at_ref = composite_interp.(v_ref)
+    soc_span = (soc_at_ref[2] - soc_at_ref[1]) / (soc_ref[2] - soc_ref[1])
+    soc_zero = soc_at_ref[1] - soc_ref[1] * soc_span
+    soc_comp_lab = soc_span .* fit.soc_grid .+ soc_zero
     lines!(
         ax, soc_comp_lab, fit.v_grid;
         color = :crimson, linewidth = 2.5, label = "Composite (lab-free)",
     )
 
-    vlines!(ax, [s_lab_lo, s_lab_hi]; color = (:gray, 0.5), linestyle = :dot)
+    vlines!(ax, [soc_ref...]; color = (:gray, 0.5), linestyle = :dot)
     axislegend(ax; position = :rb)
 
     ax2 = Axis(

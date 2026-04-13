@@ -75,23 +75,21 @@ fit_comp = fit_composite_ocv(cells_comp; n_v_grid = 250, n_v_pair = 250)
 # Clamp into the lab-curve voltage domain — the composite edge voltages are
 # the extrema across all cells and can overshoot the lab reference's
 # sampled voltage range by a few mV.
-(; lab_soc_span, s_lab_lo, s_lab_hi) = let
+(; v_ref, soc_ref) = let
     V_lab_lo = minimum(f.ocv.u)
     V_lab_hi = maximum(f.ocv.u)
-    V_lo_u = clamp(fit_comp.v_grid[1], V_lab_lo, V_lab_hi)
-    V_hi_u = clamp(fit_comp.v_grid[end], V_lab_lo, V_lab_hi)
-    s_lab_lo = f.ocv⁻¹(V_lo_u)
-    s_lab_hi = f.ocv⁻¹(V_hi_u)
-    lab_soc_span = s_lab_hi - s_lab_lo
-    (; lab_soc_span, s_lab_lo, s_lab_hi)
+    v_ref = (
+        clamp(fit_comp.v_grid[1], V_lab_lo, V_lab_hi),
+        clamp(fit_comp.v_grid[end], V_lab_lo, V_lab_hi),
+    )
+    soc_ref = (f.ocv⁻¹(v_ref[1]), f.ocv⁻¹(v_ref[2]))
+    (; v_ref, soc_ref)
 end
 
+rescaled = rescale_composite_ocv(fit_comp; v_ref, soc_ref)
 param_cells = Dict(
-    ids_comp[i] => let
-            Q_u = fit_comp.Q_cell[i]
-            s0_u = fit_comp.s0[i]
-            Dict(:Q => Q_u / lab_soc_span, :soc => lab_soc_span * s0_u + s_lab_lo)
-    end for i in eachindex(ids_comp)
+    ids_comp[i] => Dict(:Q => rescaled.Q_cell[i], :soc => rescaled.s0[i])
+        for i in eachindex(ids_comp)
 )
 
 df_params_comp = params_to_df(param_cells, params_real)
@@ -101,7 +99,7 @@ fig_qs = plot_qs_scatter(param_cells, params_real)
 
 fig_compose = plot_composite_ocv(
     posteriors_comp, param_cells, fit_comp, f.ocv;
-    s_lab_lo, s_lab_hi, lab_soc_span
+    v_ref, soc_ref,
 )
 
 # OCV GP vs reference — estimated and true Q/s0 mapping

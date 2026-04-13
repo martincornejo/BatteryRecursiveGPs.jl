@@ -62,23 +62,18 @@ ids_osc = sort(collect(keys(posteriors_osc)))
 cells_osc = [(; q = collect(posteriors_osc[id].q), μ = collect(posteriors_osc[id].μ)) for id in ids_osc]
 fit_osc = fit_composite_ocv(cells_osc)
 
-(; lab_soc_span, s_lab_lo, s_lab_hi) = let
+v_ref_osc = let
     V_lab_lo = minimum(f.ocv.u)
     V_lab_hi = maximum(f.ocv.u)
-    V_lo_u = clamp(fit_osc.v_grid[1], V_lab_lo, V_lab_hi)
-    V_hi_u = clamp(fit_osc.v_grid[end], V_lab_lo, V_lab_hi)
-    s_lab_lo = f.ocv⁻¹(V_lo_u)
-    s_lab_hi = f.ocv⁻¹(V_hi_u)
-    lab_soc_span = s_lab_hi - s_lab_lo
-    (; lab_soc_span, s_lab_lo, s_lab_hi)
+    (clamp(fit_osc.v_grid[1], V_lab_lo, V_lab_hi),
+     clamp(fit_osc.v_grid[end], V_lab_lo, V_lab_hi))
 end
+soc_ref_osc = (f.ocv⁻¹(v_ref_osc[1]), f.ocv⁻¹(v_ref_osc[2]))
+rescaled_osc = rescale_composite_ocv(fit_osc; v_ref = v_ref_osc, soc_ref = soc_ref_osc)
 
 param_cells_osc = Dict(
-    ids_osc[i] => let
-            Q_u = fit_osc.Q_cell[i]
-            s0_u = fit_osc.s0[i]
-            Dict(:Q => Q_u / lab_soc_span, :soc => lab_soc_span * s0_u + s_lab_lo)
-    end for i in eachindex(ids_osc)
+    ids_osc[i] => Dict(:Q => rescaled_osc.Q_cell[i], :soc => rescaled_osc.s0[i])
+        for i in eachindex(ids_osc)
 )
 
 println("\n=== Q/s0 with oscilloscope current ===")

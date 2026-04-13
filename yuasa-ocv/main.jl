@@ -7,7 +7,7 @@ using Printf
 using Statistics
 using Dates
 
-using BatteryDigitalTwin: fit_composite_ocv
+using BatteryDigitalTwin: fit_composite_ocv, rescale_composite_ocv
 
 # using GLMakie
 using CairoMakie
@@ -60,7 +60,7 @@ ocv_smooth = smooth_ocv(composite)
 # === Evaluate and plot ===
 
 eval_fit_parameters(fit)
-eval_cell_parameters(composite, fit; V_ref = (3.3, 4.05), soc_ref = (0.05, 0.95))
+eval_cell_parameters(fit; v_ref = (3.3, 4.05), soc_ref = (0.05, 0.95))
 eval_ocv_residuals(composite, ocvs, params)
 eval_soc_range(composite)
 

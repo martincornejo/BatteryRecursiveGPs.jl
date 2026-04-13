@@ -108,6 +108,32 @@ function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50)
 end
 
 
+"""
+    rescale_composite_ocv(fit; v_ref, soc_ref)
+
+Transform the normalised `(Q_cell, s0)` from `fit_composite_ocv` into
+absolute units given two voltage–SOC reference pairs.
+
+`v_ref` and `soc_ref` are 2-tuples: e.g. `v_ref = (3.3, 4.05)`,
+`soc_ref = (0.05, 0.95)` means 3.3 V corresponds to 5 % SOC and
+4.05 V to 95 %. The composite OCV curve is interpolated at the
+reference voltages to determine the affine mapping.
+
+Returns `(; Q_cell, s0)` as `Measurement{Float64}` vectors in the
+reference gauge (Q in Ah, s0 as absolute SOC fraction).
+"""
+function rescale_composite_ocv(fit; v_ref, soc_ref)
+    composite = LinearInterpolation(fit.v_grid, fit.soc_grid)
+    soc_at_ref = composite.(v_ref)
+    soc_span = (soc_at_ref[2] - soc_at_ref[1]) / (soc_ref[2] - soc_ref[1])
+    soc_zero = soc_at_ref[1] - soc_ref[1] * soc_span
+
+    Q_cell = fit.Q_cell ./ soc_span
+    s0 = soc_span .* fit.s0 .+ soc_zero
+    return (; Q_cell, s0)
+end
+
+
 # === Private helpers ===
 
 function _as_v_frame_function(q::AbstractVector, μ::AbstractVector)
