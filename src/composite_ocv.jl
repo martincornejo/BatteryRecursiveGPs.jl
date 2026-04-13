@@ -12,11 +12,10 @@ voltages V_lo and V_hi where all cells have data: the composite is normalised
 to `q*(V_lo) = 0`, `q*(V_hi) = 1`.  Every cell contributes two anchor rows,
 so no cell is special and `A'A` is full rank — standard OLS covariance applies.
 
-Returns `(; Q_cell, s0, params, soc_grid, v_grid, v_anchor_lo, v_anchor_hi)`.
+Returns `(; Q_cell, s0, params, soc_grid, v_grid)`.
 `Q_cell` and `s0` are `Measurement{Float64}` vectors with OLS-based 1σ bars.
 `soc_grid` and `v_grid` define the composite OCV curve on the union voltage range.
-`v_anchor_lo` and `v_anchor_hi` delimit the SOC window used for normalisation —
-use them with a lab reference to convert to absolute Ah.
+Use `rescale_composite_ocv` with a voltage–SOC reference to convert to absolute Ah.
 """
 function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50)
     N = length(cells)
@@ -104,7 +103,7 @@ function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50)
         s0[i] = (params[i][1] - Q_at_Vmin) / Q_full ± sqrt(max(Σ_out[2, 2], 0.0))
     end
 
-    return (; Q_cell, s0, params, soc_grid, v_grid, v_anchor_lo, v_anchor_hi)
+    return (; Q_cell, s0, params, soc_grid, v_grid)
 end
 
 
@@ -123,18 +122,16 @@ Returns `(; Q_cell, s0)` as `Measurement{Float64}` vectors in the
 reference gauge (Q in Ah, s0 as absolute SOC fraction).
 """
 function rescale_composite_ocv(fit; v_ref, soc_ref)
-    composite = LinearInterpolation(fit.v_grid, fit.soc_grid)
+    composite = LinearInterpolation(fit.soc_grid, fit.v_grid)
     soc_at_ref = composite.(v_ref)
-    soc_span = (soc_at_ref[2] - soc_at_ref[1]) / (soc_ref[2] - soc_ref[1])
-    soc_zero = soc_at_ref[1] - soc_ref[1] * soc_span
+    soc_span = (soc_ref[2] - soc_ref[1]) / (soc_at_ref[2] - soc_at_ref[1])
+    soc_zero = soc_ref[1] - soc_span * soc_at_ref[1]
 
     Q_cell = fit.Q_cell ./ soc_span
     s0 = soc_span .* fit.s0 .+ soc_zero
     return (; Q_cell, s0)
 end
 
-
-# === Private helpers ===
 
 function _as_v_frame_function(q::AbstractVector, μ::AbstractVector)
     order = sortperm(μ)
