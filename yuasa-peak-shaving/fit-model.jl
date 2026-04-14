@@ -13,10 +13,12 @@ function resample(df::DataFrame, period::TimePeriod; time_col = :time, val_cols 
     return df
 end
 
-function fill_missings(df::DataFrame, ts::TimePeriod = Second(1); time_col = :time)
-    t0 = first(df[:, time_col])
-    t1 = last(df[:, time_col])
-
+function fill_missings(
+        df::DataFrame, ts::TimePeriod = Second(1);
+        time_col = :time,
+        t0 = first(df[:, time_col]),
+        t1 = last(df[:, time_col]),
+    )
     df_time = DataFrame(time_col => t0:ts:t1)
     leftjoin!(df_time, df, on = time_col)
     sort!(df_time, time_col)
@@ -41,13 +43,15 @@ function cell_dataset(data, ti, m, c; Ts = 1.0)
 
     df = subset(data, :timestamp_utc => ByRow(∈(ti)))
     df = resample(df, Second(Ts); time_col = :timestamp_utc)
+    t0 = first(df.timestamp_utc)
+    t1 = last(df.timestamp_utc)
 
     # voltage
     cell = @sprintf("%02d", c)
     df_v = select(df, :timestamp_utc, Symbol("m$(m)_cell$(cell)") => :value)
     dropmissing!(df_v, :value)
     df_v[!, :value] = StatsBase.transform(zt.v, df_v.value)
-    df_v = fill_missings(df_v, Second(Ts); time_col = :timestamp_utc)
+    df_v = fill_missings(df_v, Second(Ts); time_col = :timestamp_utc, t0, t1)
 
     # current
     df_i = select(df, :timestamp_utc, Symbol("m$(m)_current") => ByRow(x -> -x) => :value)
