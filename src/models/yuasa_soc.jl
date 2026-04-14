@@ -26,7 +26,7 @@ function _dynamics_soc(x, u, p, t)
 
     vrc⁺ = exp(-Ts / τ1) * vrc + i * r1 * (1 - exp(-Ts / τ1))
     q⁺ = q + i * Ts / (3600)
-    SA[q⁺, vrc⁺]
+    return SA[q⁺, vrc⁺]
 end
 
 function _measurement_soc(x, u, p, t)
@@ -41,7 +41,7 @@ function _measurement_soc(x, u, p, t)
 
     ocv = measurement_gp(kf.p.ocv, kfx.ocv, q)
     r0 = measurement_gp(kf.p.r0, kfx.r0, q) * kT
-    ocv + i * r0 + vrc |> SVector{1}
+    return ocv + i * r0 + vrc |> SVector{1}
 end
 
 function _R2_soc(x, u, p, t)
@@ -53,7 +53,7 @@ function _R2_soc(x, u, p, t)
     q = x[1]
     ocv = uncertainty_gp(kf.p.ocv, q)
     r0 = uncertainty_gp(kf.p.r0, q) * kT
-    ocv + i^2 * r0 + kf.p.vσ² |> SMatrix{1,1}
+    return ocv + i^2 * r0 + kf.p.vσ² |> SMatrix{1, 1}
 end
 
 
@@ -69,11 +69,11 @@ function _build_soc_kf(kf1; q0, Ts, θ)
     τ1 = abs(xc.rc.τ)
     k = abs(xc.arr.k)
 
-    p = (; kf=kf1, Ts, r1, τ1, k, T0, vσ²)
+    p = (; kf = kf1, Ts, r1, τ1, k, T0, vσ²)
 
     x0 = SA[q0, 0.0]
     Σ = @SMatrix [θ.q.σ0^2 0; 0 θ.rc.σ0^2]
     d0 = LLPF.SimpleMvNormal(x0, Σ)
     R1 = @SMatrix [θ.q.σ1^2 0; 0 θ.rc.σ1^2]
-    ExtendedKalmanFilter(_dynamics_soc, _measurement_soc, R1, _R2_soc, d0; nx=2, nu=1, ny=1, p)
+    return ExtendedKalmanFilter(_dynamics_soc, _measurement_soc, R1, _R2_soc, d0; nx = 2, nu = 1, ny = 1, p)
 end

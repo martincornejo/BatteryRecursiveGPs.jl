@@ -34,7 +34,7 @@ end
 
 # let m = 2
 for m in 1:9
-    df = transform(data, All() .=> x -> coalesce.(x, NaN), renamecols=false)
+    df = transform(data, All() .=> x -> coalesce.(x, NaN), renamecols = false)
 
     fig = Figure()
     ax = [Axis(fig[i, 1]) for i in 1:3]
@@ -66,12 +66,13 @@ vlim = (3.5, 4.0)
 # plot_ecms_norm(models, sols, f.ocv⁻¹, f.ocv; vlim)
 
 # model, sol = fit_model(data, ti, (;m=1, c=1))
-param_cells = Dict(id =>
-    Dict(
-        :Q => calc_Q(models[id], sols[id], f.ocv⁻¹; v=vlim),
-        :soc => calc_soc0(models[id], sols[id], f.ocv⁻¹; v=vlim),
-        :soh => calc_soh(models[id], sols[id], f.ocv⁻¹, 100; v=vlim),
-    ) for id in ids
+param_cells = Dict(
+    id =>
+        Dict(
+            :Q => calc_Q(models[id], sols[id], f.ocv⁻¹; v = vlim),
+            :soc => calc_soc0(models[id], sols[id], f.ocv⁻¹; v = vlim),
+            :soh => calc_soh(models[id], sols[id], f.ocv⁻¹, 100; v = vlim),
+        ) for id in ids
 )
 
 Qs = [param_cells[id][:Q] for id in ids]
@@ -85,7 +86,7 @@ let
     fig = Figure()
     ax = Axis(fig[1, 1])
     barplot!(ax, x, Qμ)
-    errorbars!(ax, x, Qμ, Qσ; whiskerwidth=10, color=:black)
+    errorbars!(ax, x, Qμ, Qσ; whiskerwidth = 10, color = :black)
     # ylims!(ax, 70, 80)
     # ax.yticks = 70:80
     ax.xticks = x
@@ -98,12 +99,12 @@ fig1 = let
     # ax = [Axis(fig[i, 1]) for i in 1:2]
     ax = [Axis(fig[i, 1]) for i in 1:3]
 
-    df = transform(data, All() .=> x -> coalesce.(x, NaN), renamecols=false)
+    df = transform(data, All() .=> x -> coalesce.(x, NaN), renamecols = false)
 
     # lines!(ax[1], data.timestamp_utc, -data.tek_m_cur_ref)
     for i in 1:9
-        lines!(ax[1], df.timestamp_utc, df.mb_SystemSignedActivePowerSetPointAC * 1e-3)
-        lines!(ax[2], df.timestamp_utc, df[!, "m$(i)_current"], alpha=0.5)
+        lines!(ax[1], df.timestamp_utc, df.mb_SystemSignedActivePowerSetPointAC * 1.0e-3)
+        lines!(ax[2], df.timestamp_utc, df[!, "m$(i)_current"], alpha = 0.5)
         # lines!(ax[1], df.timestamp_utc, -df[!, "m$(i)_current_rms"], alpha=0.5)
     end
 
@@ -121,4 +122,3 @@ fig1 = let
     linkxaxes!(ax...)
     fig
 end
-

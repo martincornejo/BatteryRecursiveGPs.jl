@@ -1,5 +1,5 @@
-function ColoumbCounting(; q0=0.0, σ0=0.0, σ1)
-    μ0 = ComponentVector(q=q0)
+function ColoumbCounting(; q0 = 0.0, σ0 = 0.0, σ1)
+    μ0 = ComponentVector(q = q0)
     Σ0 = false .* μ0 * μ0'
     Σ0[:q, :q] = σ0
 
@@ -12,12 +12,12 @@ function dynamics_cc(x, u, p)
     (; Ts) = p
     (; q) = x.cc
     (; i) = u
-    q + i * Ts / (3600)
+    return q + i * Ts / (3600)
 end
 
 function Arrhenius(; T0, k0, σ0_k, σ1_k)
     μ0 = ComponentVector(;
-        k=k0
+        k = k0
     )
 
     Σ0 = false .* μ0 * μ0'
@@ -35,12 +35,12 @@ function arrhenius_factor(x, T, p)
     T0_K = T0 + 273.15 # convert to Kelvin
     T_K = T + 273.15
     k = abs(x.k)
-    exp(k * (1 / T_K - 1 / T0_K))
+    return exp(k * (1 / T_K - 1 / T0_K))
 end
 
 function R0(; r0, σ0, σ1)
     μ0 = ComponentVector(;
-        r=r0
+        r = r0
     )
 
     Σ0 = false .* μ0 * μ0'
@@ -53,9 +53,9 @@ end
 
 function RC(; v0, r0, τ0, σ0_v, σ0_r, σ0_τ, σ1_v, σ1_r, σ1_τ)
     μ0 = ComponentVector(
-        v=v0,
-        r=r0,
-        τ=τ0,
+        v = v0,
+        r = r0,
+        τ = τ0,
     )
     Σ0 = false .* μ0 * μ0'
     Σ0[:v, :v] = σ0_v^2
@@ -76,5 +76,5 @@ function dynamics_rc(x, u, p)
 
     r = abs(r) * kT # force positive values
     τ = abs(τ)
-    exp(-Ts / τ) * v + i * r * (1 - exp(-Ts / τ))
+    return exp(-Ts / τ) * v + i * r * (1 - exp(-Ts / τ))
 end

@@ -65,8 +65,10 @@ fit_osc = fit_composite_ocv(cells_osc)
 v_ref_osc = let
     V_lab_lo = minimum(f.ocv.u)
     V_lab_hi = maximum(f.ocv.u)
-    (clamp(fit_osc.v_grid[1], V_lab_lo, V_lab_hi),
-     clamp(fit_osc.v_grid[end], V_lab_lo, V_lab_hi))
+    (
+        clamp(fit_osc.v_grid[1], V_lab_lo, V_lab_hi),
+        clamp(fit_osc.v_grid[end], V_lab_lo, V_lab_hi),
+    )
 end
 soc_ref_osc = (f.ocv⁻¹(v_ref_osc[1]), f.ocv⁻¹(v_ref_osc[2]))
 rescaled_osc = rescale_composite_ocv(fit_osc; v_ref = v_ref_osc, soc_ref = soc_ref_osc)
