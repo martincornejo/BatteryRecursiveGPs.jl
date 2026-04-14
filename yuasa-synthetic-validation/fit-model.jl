@@ -29,6 +29,7 @@ function fit_model(df::DataFrame, cell_id::Int, θ; n = 21, pad = 0.05)
     stats = @timed begin
         sol = run_kf!(model, u, y)
     end
+    sol = reduce_sol(model, sol)
 
     @info "Cell $(cell_id): complete" stats.time
 
@@ -56,7 +57,7 @@ function refine_model(data::DataFrame, cell_id::Int, model, sol; Ts = 1.0, σ1_c
     u, y = cell_dataset(data, cell_id; Ts)
 
     model_new = deepcopy(model)
-    reinit_kf!(model_new.kf; x = sol.xt[end], R = sol.Rt[end])
+    reinit_kf!(model_new.kf; x = sol.x_end, R = sol.R_end)
 
     if σ1_cc !== nothing
         model_new.kf.R1[:cc, :cc] .= [σ1_cc^2;;]
@@ -65,6 +66,7 @@ function refine_model(data::DataFrame, cell_id::Int, model, sol; Ts = 1.0, σ1_c
     stats = @timed begin
         sol_new = run_kf!(model_new, u, y)
     end
+    sol_new = reduce_sol(model_new, sol_new)
 
     @info "Cell $(cell_id): refined" stats.time
     return (; model = model_new, sol = sol_new)
@@ -90,8 +92,7 @@ end
 function extract_posterior(model, sol; n_grid = 200)
     kf = model.kf
     zt = kf.p.zt
-    xs = ComponentVector.(sol.xt, kf.p.xid)
-    q̂min, q̂max = extrema([x.cc.q for x in xs])
+    q̂min, q̂max = extrema(sol.qμ)
     q̂ = collect(range(q̂min, q̂max, n_grid))
     q = StatsBase.reconstruct(zt.q, q̂)
     ocv = predict_gp(kf, q̂, :ocv)
@@ -229,7 +230,7 @@ function ecm_params_to_df(models, sols, params_real)
     rows = map(ids) do id
         zt = models[id].kf.p.zt
         xid = models[id].kf.p.xid
-        xs = ComponentVector(sols[id].xt[end], xid)
+        xs = ComponentVector(sols[id].x_end, xid)
         r = StatsBase.reconstruct(zt.r, [abs(xs.rc.r)]) |> first  # Ω
         τ = abs(xs.rc.τ)                                           # s
         k = abs(xs.arr.k)
@@ -264,7 +265,7 @@ function voltage_accuracy_to_df(models, sols, data)
             id => Threads.@spawn begin
                     u, y = cell_dataset(data, id)
                     m = deepcopy(models[id])
-                    reinit_kf!(m.kf; x = sols[id].xt[end], R = sols[id].Rt[end])
+                    reinit_kf!(m.kf; x = sols[id].x_end, R = sols[id].R_end)
                     run_kf!(m, u, y; tt = 0)
                 end for id in batch
         )

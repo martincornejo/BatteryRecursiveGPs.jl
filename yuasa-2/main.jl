@@ -6,7 +6,7 @@ using DataInterpolations
 using StatsBase
 
 # using GLMakie
-# using CairoMakie
+using CairoMakie
 
 using BatteryDigitalTwin
 using StaticArrays
@@ -45,6 +45,26 @@ fig2 = plot_ecms(models, sols)
 # 115.219986 seconds (603.27 M allocations: 989.625 GiB, 45.33% gc time, 85 lock conflicts, 0.26% compilation time)
 
 # now more allocations? 195.934984 seconds (894.08 M allocations: 1.032 TiB, 35.99% gc time, 55 lock conflicts, 268.37% compilation time: 4% of which was recompilation)
+
+for p in 1:3, m in 1:9
+    ids = [(; p, m, c) for c in 1:12] |> vec |> sort
+    mod = Dict(id => models[id] for id in ids)
+    sol = Dict(id => sols[id] for id in ids)
+    fig = plot_ecms(mod, sol)
+    fig.content[1].title = "Phase $p Module $m"
+    fig |> display
+end
+
+# phase 1 module 6
+for c in 1:12
+    id = [(; p, m, c) for c in 1:12] |> vec |> sort
+    mod = Dict(id => models[id] for id in ids)
+    sol = Dict(id => sols[id] for id in ids)
+    fig = plot_ecm(mod, sol)
+    fig.content[1].title = "Phase $p Module $m"
+    fig |> display
+end
+
 
 ids2 = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
 (models2, sols2) = fit_modules(data, ti, ids2)

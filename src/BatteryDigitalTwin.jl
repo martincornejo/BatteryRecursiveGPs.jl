@@ -33,7 +33,7 @@ export AbstractBatteryModel
 export YuasaModel, FeneconModel, YuasaStateModel
 
 # runner
-export run_kf!, reinit_kf!
+export run_kf!, reduce_sol, reinit_kf!
 
 # model components
 export ColoumbCounting, dynamics_cc

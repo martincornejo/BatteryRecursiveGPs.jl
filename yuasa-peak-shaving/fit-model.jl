@@ -101,13 +101,13 @@ function fit_model(data, ti, id)
         stats = @timed begin
             sol = run_kf!(model, u, y)
         end
+        sol = reduce_sol(model, sol)
+        @info "Cell m:$(m), c:$(c) complete" stats.time
+        return (; model, sol)
     catch e
-        @error "Cell m:$(m), c:$(c) failed: $e"
+        @error "Cell m:$(m), c:$(c) failed"
+        return (; model = nothing, sol = nothing)
     end
-
-    @info "Cell m:$(m), c:$(c) complete" stats.time
-
-    return (; model, sol)
 end
 
 function fit_models_spawn(data, ti, ids)

@@ -176,7 +176,7 @@ function fit_model(data, ti, id)
             τ0 = 250.0, σ0_τ = 1.0, σ1_τ = 0.0,
         ),
         cc = (; σ1 = 0.1e-5),
-        arr = (; T0 = 25, k0 = 2000, σ0_k = 0.0, σ1_k = 0.0),
+        arr = (; T0 = 25, k0 = 2000, σ0_k = 20.0, σ1_k = 0.0),
     )
     θ = ComponentVector(; θ0..., ϑ...)
 
@@ -188,6 +188,7 @@ function fit_model(data, ti, id)
     stats = @timed begin
         sol = run_kf!(model, u, y)
     end
+    sol = reduce_sol(model, sol)
 
     @info "Cell p:$(p), m:$(m), c:$(c) complete" stats.time
 
@@ -224,6 +225,7 @@ function fit_module(data, ti, id)
     stats = @timed begin
         sol = run_kf!(model, u, y)
     end
+    sol = reduce_sol(model, sol)
 
     @info "Module p:$(p), m:$(m), complete" stats.time
 

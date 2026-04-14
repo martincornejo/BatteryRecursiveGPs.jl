@@ -16,6 +16,9 @@ import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
 using CairoMakie
 
 include("fit-model.jl")
+include("../yuasa-ocv/ocv.jl")
+include("../yuasa-ocv/analysis.jl")
+include("../yuasa-ocv/plot.jl")
 
 # === load data ===
 dateformat = dateformat"y-m-dTHH:MM:SS.sss+00:00"
@@ -132,7 +135,35 @@ end
 ti = Interval(DateTime("2026-03-27T08:43:00"), DateTime("2026-03-27T19:13:00"))
 ids = [(; m, c) for m in 1:9, c in 1:12] |> vec |> sort
 # ids = [(; m, c) for m in 1:1, c in 1:12] |> vec |> sort
-(; models, sols) = fit_models_spawn(data, ti, ids)
-
+(; models, sols) = fit_models_spawn(data, ti, ids);
 
 plot_ecms(models, sols) |> display
+
+# === Composite OCV from GP posteriors ===
+
+cells = map(ids) do id
+    gp_ocv(models[id], sols[id])
+end
+
+fit = fit_composite_ocv(cells; n_v_grid = 100)
+
+composite = LinearInterpolation(
+    fit.v_grid, fit.soc_grid;
+    extrapolation = ExtrapolationType.Constant,
+)
+
+eval_fit_parameters(fit)
+eval_cell_parameters(fit; v_ref = (3.5, 4.05), soc_ref = (0.1, 0.85))
+
+ocvs = map(cells) do c
+    LinearInterpolation(c.μ, c.q; extrapolation = ExtrapolationType.Constant)
+end
+eval_ocv_residuals(composite, ocvs, fit.params)
+eval_soc_range(composite)
+
+let fig = plot_composite_ocv(fit, cells)
+    fig.content[1].title = "Composite OCV from GP posteriors (Module 1)"
+    fig |> display
+end
+
+plot_ocv_residuals(fit, cells) |> display
