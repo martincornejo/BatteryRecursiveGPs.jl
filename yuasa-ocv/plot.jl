@@ -77,9 +77,18 @@ function plot_composite_ocv(fit, cells; xaxis = :soc)
         lines!(ax2, x[2:end], diff(v) ./ diff(x); color = (:gray, 0.3))
     end
 
+    order = sortperm(soc_grid)
+    itp = PCHIPInterpolation(v_grid[order], soc_grid[order])
+    soc_dense = range(soc_grid[order[1]], soc_grid[order[end]]; length = 500)
+    dv_dx_raw = [DataInterpolations.derivative(itp, s) / xscale for s in soc_dense]
+    hw = 15
+    n = length(dv_dx_raw)
+    dv_dx = [mean(dv_dx_raw[max(1, i - hw):min(n, i + hw)]) for i in 1:n]
+
     x_comp = soc_grid .* xscale
     lines!(ax1, x_comp, v_grid; color = :black, linewidth = 2, label = "Composite OCV")
-    lines!(ax2, x_comp[2:end], diff(v_grid) ./ diff(x_comp); color = :black, linewidth = 2)
+    lines!(ax2, collect(soc_dense) .* xscale, dv_dx; color = :black, linewidth = 2)
+    ylims!(ax2, 0, nothing)
 
     axislegend(ax1; position = :cb, merge = true)
     linkxaxes!(ax1, ax2)
@@ -89,8 +98,9 @@ end
 
 function plot_ocv_residuals(fit, cells)
     (; soc_grid, v_grid, Q_cell, s0) = fit
+    order = sortperm(soc_grid)
     composite = LinearInterpolation(
-        v_grid, soc_grid;
+        v_grid[order], soc_grid[order];
         extrapolation = ExtrapolationType.Constant,
     )
 

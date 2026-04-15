@@ -73,9 +73,9 @@ end
 eval_ocv_residuals(composite, ocvs, fit.params)
 eval_soc_range(composite)
 
-let fig = plot_composite_ocv(fit, cells)
+fig1 = let fig = plot_composite_ocv(fit, cells)
     fig.content[1].title = "Composite OCV from GP posteriors (Module 1)"
-    fig |> display
+    fig
 end
 
 plot_ocv_residuals(fit, cells) |> display
