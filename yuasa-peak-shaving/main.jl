@@ -8,6 +8,9 @@ using StatsBase
 using DataInterpolations
 using StaticArrays
 using Measurements
+import ComponentArrays: ComponentVector
+using Statistics
+using JSON
 
 using CairoMakie
 
@@ -79,3 +82,52 @@ fig1 = let fig = plot_composite_ocv(fit, cells)
 end
 
 plot_ocv_residuals(fit, cells) |> display
+
+# === Export cell parameters to JSON ===
+#
+# Per-cell OCV curves from GP posteriors, mapped to the normalized SOC gauge.
+# The mapping from raw charge q to normalized SOC is: soc = q / Q_cell + s0,
+# where Q_cell and s0 are from fit_composite_ocv (normalized gauge, 0-1 over
+# the data voltage range). This ensures focv_i(soc) is evaluated consistently
+# with D(soc) = i/(Q*3600).
+#
+battery_params = Dict{String, Any}()
+
+for (i, id) in enumerate(ids)
+    kf = models[id].kf
+    zt = kf.p.zt
+    xid = kf.p.xid
+    xs = ComponentVector(sols[id].x_end, xid)
+
+    r1 = StatsBase.reconstruct(zt.r, [abs(xs.rc.r)]) |> first
+    tau1 = abs(xs.rc.τ)
+    r0 = mean(gp_r0(models[id], sols[id]).μ)
+
+    bat_key = "battery_$(id.m)"
+    cell_key = "cell_$(id.c)"
+    haskey(battery_params, bat_key) || (battery_params[bat_key] = Dict{String, Any}())
+    k = abs(xs.arr.k)
+
+    Q_i = Measurements.value(fit.Q_cell[i])
+    s0_i = Measurements.value(fit.s0[i])
+
+    # Per-cell OCV in normalized SOC gauge: soc = q / Q_cell + s0
+    ocv_soc = cells[i].q ./ Q_i .+ s0_i
+    ocv_v = cells[i].μ
+    ocv_order = sortperm(ocv_soc)
+
+    battery_params[bat_key][cell_key] = Dict(
+        "Q" => Q_i,
+        "soc" => s0_i,
+        "R1" => r1,
+        "tau1" => tau1,
+        "R0" => r0,
+        "k" => k,
+        "ocv_soc" => ocv_soc[ocv_order],
+        "ocv_v" => ocv_v[ocv_order],
+    )
+end
+
+open(joinpath(homedir(), "code/DigitalTwinBatteryMMC/data/battery-params-yuasa-individual-ocv-relaxed.json"), "w") do io
+    JSON.print(io, battery_params, 2)
+end
