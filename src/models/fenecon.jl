@@ -12,13 +12,15 @@ FeneconModel(θ, u, zt; n = 21) = FeneconModel(_build_fenecon_kf(θ, u, zt; n))
 # === private dynamics / measurement / R2
 
 function _cr0_dynamics!(x⁺, x⁻, u, p, t)
-    (; xid) = p
+    (; xid, Ts) = p
+    (; i, T) = u
     xc⁻ = ComponentVector(x⁻, xid)
     xc⁺ = ComponentVector(x⁺, xid)
     xc⁺ .= xc⁻ # forward previous values
 
-    xc⁺.rc.v = dynamics_rc(xc⁻, u, p)
-    xc⁺.cc.q = dynamics_cc(xc⁻, u, p)
+    kT = arrhenius_factor(xc⁻.arr, T, p.arr)
+    xc⁺.rc.v = dynamics_rc(xc⁻.rc, i, Ts; kT)
+    xc⁺.cc.q = dynamics_cc(xc⁻.cc, i, Ts)
     return nothing # IPD
 end
 

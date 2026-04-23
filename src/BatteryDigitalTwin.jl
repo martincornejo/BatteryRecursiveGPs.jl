@@ -21,6 +21,7 @@ abstract type AbstractBatteryModel end
 
 include("models/components.jl")
 include("models/yuasa.jl")
+include("models/yuasa2rc.jl")
 include("models/fenecon.jl")
 include("models/yuasa_soc.jl")
 include("runner.jl")
@@ -30,7 +31,7 @@ include("plot.jl")
 
 # model types
 export AbstractBatteryModel
-export YuasaModel, FeneconModel, YuasaStateModel
+export YuasaModel, Yuasa2RCModel, FeneconModel, YuasaStateModel
 
 # runner
 export run_kf!, reduce_sol, reinit_kf!

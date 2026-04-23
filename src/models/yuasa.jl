@@ -11,18 +11,20 @@ YuasaModel(θ, u, zt; n = 21, pad = 0.05) = YuasaModel(_build_yuasa_kf(θ, u, zt
 
 # === private dynamics / measurement / R2
 
-function _gpmodel_dynamics!(x⁺, x⁻, u, p, t)
-    (; xid) = p
+function _yuasa_dynamics!(x⁺, x⁻, u, p, t)
+    (; xid, Ts) = p
+    (; i, T) = u
     xc⁻ = ComponentVector(x⁻, xid)
     xc⁺ = ComponentVector(x⁺, xid)
     xc⁺ .= xc⁻ # forward previous values
 
-    xc⁺.rc.v = dynamics_rc(xc⁻, u, p)
-    xc⁺.cc.q = dynamics_cc(xc⁻, u, p)
+    kT = arrhenius_factor(xc⁻.arr, T, p.arr)
+    xc⁺.rc.v = dynamics_rc(xc⁻.rc, i, Ts; kT)
+    xc⁺.cc.q = dynamics_cc(xc⁻.cc, i, Ts)
     return nothing # IPD
 end
 
-function _gpmodel_measurement(x, u, p, t)
+function _yuasa_measurement(x, u, p, t)
     (; xid) = p
     (; i, T) = u
     xc = ComponentVector(x, xid)
@@ -36,7 +38,7 @@ function _gpmodel_measurement(x, u, p, t)
     return ocv + i * r0 + vrc |> SVector{1}
 end
 
-function _gpmodel_R2(x, u, p, t)
+function _yuasa_R2(x, u, p, t)
     (; vσ², xid) = p
     (; i, T) = u
     xc = ComponentVector(x, xid)
@@ -91,12 +93,12 @@ function _build_yuasa_kf(θ, u, zt; n = 21, pad = 0.05)
     p = (; arr = arr.p, Ts = θ.Ts, vσ², zt)
     rgps = (; ocv = rgp1, r0 = rgp2, rc, arr, cc)
 
-    return ExtendedKalmanFilter(rgps, _gpmodel_dynamics!, _gpmodel_measurement, _gpmodel_R2; p)
+    return ExtendedKalmanFilter(rgps, _yuasa_dynamics!, _yuasa_measurement, _yuasa_R2; p)
 end
 
 
 """
-    reinit_kf!(kf; x=kf.x, R=kf.R)
+    reinit_kf!(model::YuasaModel; x=model.kf.x, R=model.kf.R)
 
 Reinitialize the KF for a second pass on the same data, warm-starting the GP
 posterior from a previous run.
@@ -104,7 +106,8 @@ posterior from a previous run.
 Keeps: GP (ocv, r0) state and covariance, RC parameters (r, τ), Arrhenius state.
 Resets: CC charge to q=0, RC voltage to 0, CC cross-correlations to 0.
 """
-function reinit_kf!(kf; x = kf.x, R = kf.R)
+function reinit_kf!(model::YuasaModel; x = model.kf.x, R = model.kf.R)
+    kf = model.kf
     (; xid, Σid) = kf.p
 
     x_new = ComponentVector(copy(x), xid)
@@ -118,7 +121,7 @@ function reinit_kf!(kf; x = kf.x, R = kf.R)
     Σ_new[:cc, :cc] .= 0.0
     kf.R .= Σ_new
 
-    return kf
+    return model
 end
 
 

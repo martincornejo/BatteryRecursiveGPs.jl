@@ -8,10 +8,8 @@ function ColoumbCounting(; q0 = 0.0, σ0 = 0.0, σ1)
     return (; μ0, Σ0, R1)
 end
 
-function dynamics_cc(x, u, p)
-    (; Ts) = p
-    (; q) = x.cc
-    (; i) = u
+function dynamics_cc(cc, i, Ts)
+    (; q) = cc
     return q + i * Ts / (3600)
 end
 
@@ -68,11 +66,8 @@ function RC(; v0, r0, τ0, σ0_v, σ0_r, σ0_τ, σ1_v, σ1_r, σ1_τ)
 end
 
 
-function dynamics_rc(x, u, p)
-    (; Ts) = p
-    (; i, T) = u
-    (; v, r, τ) = x.rc
-    kT = arrhenius_factor(x.arr, T, p.arr)
+function dynamics_rc(rc, i, Ts; kT = 1.0)
+    (; v, r, τ) = rc
 
     r = abs(r) * kT # force positive values
     τ = abs(τ)
