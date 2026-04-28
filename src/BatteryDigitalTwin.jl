@@ -5,6 +5,7 @@ using AbstractGPs
 using LowLevelParticleFilters
 import LowLevelParticleFilters as LLPF
 using LinearAlgebra
+using Distributed: WorkerPool, workers, remotecall
 
 using StatsBase
 using StaticArrays
@@ -25,6 +26,7 @@ include("models/yuasa2rc.jl")
 include("models/fenecon.jl")
 include("models/yuasa_soc.jl")
 include("runner.jl")
+include("fit_model.jl")
 include("analysis.jl")
 include("composite_ocv.jl")
 include("plot.jl")
@@ -35,6 +37,7 @@ export YuasaModel, Yuasa2RCModel, FeneconModel, YuasaStateModel
 
 # runner
 export run_kf!, reduce_sol, reinit_kf!
+export fit_model, fit_models_threaded, fit_models_distributed
 
 # model components
 export ColoumbCounting, dynamics_cc

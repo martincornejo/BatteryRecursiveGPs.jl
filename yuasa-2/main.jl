@@ -12,8 +12,8 @@ using BatteryDigitalTwin
 using StaticArrays
 import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
 
-# include("model_yuasa.jl")
 include("fit-model.jl")
+include("parallel.jl")
 
 # dataset
 datadir = "data/data-yuasa-cycles-2/"
@@ -32,14 +32,15 @@ data = Dict(id => CSV.File(file; dateformat) |> DataFrame for (id, file) in file
 ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
 
-ids = [(; p, m, c) for p in 1:3, m in 1:9, c in 1:12] |> vec |> sort
+# ids = [(; p, m, c) for p in 1:3, m in 1:9, c in 1:12] |> vec |> sort
+ids = [(; p=1, m=6, c) for c in 1:12] |> vec |> sort
 # @time (; kfs, sols) = fit_models(data, ti, ids);
 # begin
 #     kfs = nothing
 #     sols = nothing
 #     GC.gc(true)
 # end
-@time (; models, sols) = fit_models_spawn(data, ti, ids);
+@time (; models, sols) = fit_cells(data, ti, ids; distributed = false);
 fig2 = plot_ecms(models, sols)
 # 566.760578 seconds (661.42 M allocations: 992.396 GiB, 17.62% gc time, 4.43% compilation time: 4% of which was recompilation)
 # 115.219986 seconds (603.27 M allocations: 989.625 GiB, 45.33% gc time, 85 lock conflicts, 0.26% compilation time)
@@ -57,7 +58,7 @@ end
 
 # phase 1 module 6
 for c in 1:12
-    id = [(; p, m, c) for c in 1:12] |> vec |> sort
+    id = [(; p=1, m=6, c) for c in 1:12] |> vec |> sort
     mod = Dict(id => models[id] for id in ids)
     sol = Dict(id => sols[id] for id in ids)
     fig = plot_ecm(mod, sol)
@@ -67,7 +68,7 @@ end
 
 
 ids2 = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
-(models2, sols2) = fit_modules(data, ti, ids2)
+(models2, sols2) = fit_modules(data, ti, ids2; distributed = false)
 fig3 = plot_ecms(models2, sols2; n = 12)
 
 for id in ids

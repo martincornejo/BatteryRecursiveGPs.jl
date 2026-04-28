@@ -17,13 +17,10 @@ using CairoMakie
 # Worker setup for distributed fitting (run only once)
 using Distributed
 addprocs(Sys.CPU_THREADS ÷ 2)
-@everywhere begin
-    using BatteryDigitalTwin
-    include("fit-model.jl")
-end
-include("parallel.jl") # for threaded and distributed fit
+@everywhere using BatteryDigitalTwin
 
 include("dataset.jl")
+include("parallel.jl")
 include("../yuasa-ocv/ocv.jl")
 include("../yuasa-ocv/analysis.jl")
 include("../yuasa-ocv/plot.jl")
@@ -41,7 +38,7 @@ ids = [(; m, c) for m in 1:9, c in 1:12] |> vec |> sort
 # ids = [(; m, c) for m in 1:1, c in 1:12] |> vec |> sort
 
 
-@time (; models, sols) = fit_models_distributed(data, ti, ids);
+@time (; models, sols) = fit_cells(data, ti, ids);
 rmprocs(workers()) # free processes
 # begin
 #     models = sols = nothing
