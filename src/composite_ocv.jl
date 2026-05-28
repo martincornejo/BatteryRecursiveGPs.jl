@@ -1,5 +1,5 @@
 """
-    fit_composite_ocv(cells; n_v_grid=50, n_v_pair=50)
+    fit_composite_ocv(cells; n_v_grid=50, n_v_pair=50, uq=true)
 
 Pairwise-OLS composite OCV identification.  Instead of building a single
 voltage grid on the intersection of all cells (where one narrow cell shrinks
@@ -17,7 +17,7 @@ Returns `(; Q_cell, s0, params, soc_grid, v_grid)`.
 `soc_grid` and `v_grid` define the composite OCV curve on the union voltage range.
 Use `rescale_composite_ocv` with a voltage–SOC reference to convert to absolute Ah.
 """
-function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50)
+function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50, uq::Bool = true)
     N = length(cells)
     N >= 2 || error("Need at least 2 cells for pairwise fit")
     fqs = [_as_v_frame_function(collect(c.q), collect(c.μ)) for c in cells]
@@ -41,35 +41,39 @@ function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50)
     isempty(pair_grids) && error("No pair has voltage overlap — cannot align.")
     n_total += 2 * N
 
-    A = zeros(n_total, n_free)
-    b = zeros(n_total)
+    # Normal-equations accumulation: G = AᵀA (n_free×n_free), d = Aᵀb, s = bᵀb.
+    # Each row of the design matrix A is sparse (≤4 nonzeros), so we stream the
+    # contributions instead of materialising A — which is multi-GB at fleet
+    # scale (N(N-1)/2 pairs × n_v_pair rows). θ = G \ d is the identical OLS
+    # solution to A \ b; G also gives inv(AᵀA) for UQ and RSS = bᵀb − θᵀd.
+    G = zeros(n_free, n_free)
+    d = zeros(n_free)
+    s = 0.0
 
-    row = 0
-    for (i, j, vg) in pair_grids
+    @inbounds for (i, j, vg) in pair_grids
+        cols = (2 * i - 1, 2 * i, 2 * j - 1, 2 * j)
         for v in vg
-            row += 1
-            qi_v = fqs[i](v)
-            qj_v = fqs[j](v)
-
-            A[row, 2 * i - 1] = 1.0
-            A[row, 2 * i] = qi_v
-            A[row, 2 * j - 1] = -1.0
-            A[row, 2 * j] = -qj_v
+            vals = (1.0, fqs[i](v), -1.0, -fqs[j](v))  # b row = 0
+            for p in 1:4, r in 1:4
+                G[cols[p], cols[r]] += vals[p] * vals[r]
+            end
         end
     end
 
-    for i in 1:N
-        row += 1
-        A[row, 2 * i - 1] = 1.0
-        A[row, 2 * i] = fqs[i](v_anchor_lo)
-
-        row += 1
-        A[row, 2 * i - 1] = 1.0
-        A[row, 2 * i] = fqs[i](v_anchor_hi)
-        b[row] = 1.0
+    @inbounds for i in 1:N
+        cols = (2 * i - 1, 2 * i)
+        for (v, b_rhs) in ((v_anchor_lo, 0.0), (v_anchor_hi, 1.0))
+            vals = (1.0, fqs[i](v))
+            for p in 1:2, r in 1:2
+                G[cols[p], cols[r]] += vals[p] * vals[r]
+            end
+            d[cols[1]] += vals[1] * b_rhs
+            d[cols[2]] += vals[2] * b_rhs
+            s += b_rhs^2
+        end
     end
 
-    θ = A \ b
+    θ = G \ d  # A \ b → solution without materialising A
 
     params = Vector{Vector{Float64}}(undef, N)
     for i in 1:N
@@ -84,23 +88,29 @@ function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50)
     Q_full = last(Q_common) - Q_at_Vmin
     soc_grid = (Q_common .- Q_at_Vmin) ./ Q_full
 
-    # uncertainty quantification
-    pairwise_rss = sum(abs2, A * θ - b)
-    σ²_hat = pairwise_rss / (n_total - n_free)
-    Σθ = σ²_hat .* inv(A' * A)
-
     Q_cell = Vector{Measurement{Float64}}(undef, N)
     s0 = Vector{Measurement{Float64}}(undef, N)
-    for i in 1:N
-        Σ_block = Σθ[[2 * i - 1, 2 * i], [2 * i - 1, 2 * i]]
-        si_val = params[i][2]
-        J = [
-            0.0 -Q_full / si_val^2
-            1.0 / Q_full 0.0
-        ]
-        Σ_out = J * Σ_block * J'
-        Q_cell[i] = Q_full / si_val ± sqrt(max(Σ_out[1, 1], 0.0))
-        s0[i] = (params[i][1] - Q_at_Vmin) / Q_full ± sqrt(max(Σ_out[2, 2], 0.0))
+    if uq
+        pairwise_rss = s - θ' * d   # = ‖Aθ − b‖² at the OLS solution (Gθ = d)
+        σ²_hat = pairwise_rss / (n_total - n_free)
+        Σθ = σ²_hat .* inv(G)
+        for i in 1:N
+            Σ_block = Σθ[[2 * i - 1, 2 * i], [2 * i - 1, 2 * i]]
+            si_val = params[i][2]
+            J = [
+                0.0 -Q_full / si_val^2
+                1.0 / Q_full 0.0
+            ]
+            Σ_out = J * Σ_block * J'
+            Q_cell[i] = Q_full / si_val ± sqrt(max(Σ_out[1, 1], 0.0))
+            s0[i] = (params[i][1] - Q_at_Vmin) / Q_full ± sqrt(max(Σ_out[2, 2], 0.0))
+        end
+    else
+        for i in 1:N
+            si_val = params[i][2]
+            Q_cell[i] = measurement(Q_full / si_val, NaN)
+            s0[i] = measurement((params[i][1] - Q_at_Vmin) / Q_full, NaN)
+        end
     end
 
     return (; Q_cell, s0, params, soc_grid, v_grid, Q_full)
