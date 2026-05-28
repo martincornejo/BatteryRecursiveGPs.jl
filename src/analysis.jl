@@ -3,15 +3,23 @@
 # === Private helpers for multi-model dispatch ===
 
 # Returns the KF that holds the GP posterior (OCV/R0 hyperparameters).
-# For YuasaStateModel the GP lives in the inner YuasaModel KF, not the 2-state EKF.
+# For state-only models the GP lives in the inner full-model KF, not the 2-state EKF.
 _gp_kf(model::AbstractBatteryModel) = model.kf
 _gp_kf(model::YuasaStateModel) = model.kf.p.kf
+_gp_kf(model::FeneconStateModel) = model.kf.p.kf
+_gp_kf(model::Fenecon2RCStateModel) = model.kf.p.kf
+_gp_kf(model::RCGPStateModel) = model.kf.p.kf
+_gp_kf(model::RCGP2RCStateModel) = model.kf.p.kf
 
 # Returns the normalised charge range (q̂min, q̂max) from a KF solution.
 _charge_range(::AbstractBatteryModel, sol) = extrema(sol.qμ)
 
-# YuasaStateModel state is SA[q̂, vrc] — charge is the first element.
+# State-only models store SA[q̂, vrc, ...] — charge is the first element.
 _charge_range(::YuasaStateModel, sol) = extrema(first.(sol.xt))
+_charge_range(::FeneconStateModel, sol) = extrema(first.(sol.xt))
+_charge_range(::Fenecon2RCStateModel, sol) = extrema(first.(sol.xt))
+_charge_range(::RCGPStateModel, sol) = extrema(first.(sol.xt))
+_charge_range(::RCGP2RCStateModel, sol) = extrema(first.(sol.xt))
 
 
 function calc_deltaq(model::AbstractBatteryModel, sol; v = (3.85, 4.0), n = 1)
@@ -240,6 +248,43 @@ function gp_r0(model::AbstractBatteryModel, sol)
     r0 = predict_gp(kf, q̂, :r0)
     μ = StatsBase.reconstruct(zt.r, r0.μ)
     σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r0.Σ)))
+
+    return (; q, μ, σ)
+end
+
+"""
+    gp_r1(model, sol)
+
+Return the GP R1 posterior over the observed charge range as `(; q, μ, σ)`
+in physical units (Ah, Ω, Ω). For models with a 2-RC layout, `gp_r2` returns
+the second branch's posterior.
+"""
+function gp_r1(model::AbstractBatteryModel, sol)
+    kf = _gp_kf(model)
+    zt = kf.p.zt
+
+    q̂min, q̂max = _charge_range(model, sol)
+    q̂ = collect(q̂min:0.01:q̂max)
+    q = StatsBase.reconstruct(zt.q, q̂)
+
+    r1 = predict_gp(kf, q̂, :r1)
+    μ = StatsBase.reconstruct(zt.r, r1.μ)
+    σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ)))
+
+    return (; q, μ, σ)
+end
+
+function gp_r2(model::AbstractBatteryModel, sol)
+    kf = _gp_kf(model)
+    zt = kf.p.zt
+
+    q̂min, q̂max = _charge_range(model, sol)
+    q̂ = collect(q̂min:0.01:q̂max)
+    q = StatsBase.reconstruct(zt.q, q̂)
+
+    r2 = predict_gp(kf, q̂, :r2)
+    μ = StatsBase.reconstruct(zt.r, r2.μ)
+    σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r2.Σ)))
 
     return (; q, μ, σ)
 end

@@ -73,3 +73,30 @@ function dynamics_rc(rc, i, Ts; kT = 1.0)
     τ = abs(τ)
     return exp(-Ts / τ) * v + i * r * (1 - exp(-Ts / τ))
 end
+
+
+function RC_VTau(; v0, τ0, σ0_v, σ0_τ, σ1_v, σ1_τ)
+    μ0 = ComponentVector(
+        v = v0,
+        τ = τ0,
+    )
+    Σ0 = false .* μ0 * μ0'
+    Σ0[:v, :v] = σ0_v^2
+    Σ0[:τ, :τ] = σ0_τ^2
+
+    R1 = diagm([σ1_v, σ1_τ]) .^ 2
+
+    return (; μ0, Σ0, R1)
+end
+
+# Sibling of `dynamics_rc` for the case where R1 lives in a GP and is
+# supplied externally per step. No abs on r: the EKF residual gradient
+# punishes wrong-sign R1 directly, instead of the abs trick which masks
+# sign and creates a stable negative-basin attractor.
+function dynamics_rc_vτ(rc, r, i, Ts; kT = 1.0)
+    (; v, τ) = rc
+
+    r = r * kT
+    τ = abs(τ)
+    return exp(-Ts / τ) * v + i * r * (1 - exp(-Ts / τ))
+end
