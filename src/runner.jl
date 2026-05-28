@@ -109,3 +109,39 @@ function reduce_sol(model::AbstractBatteryModel, sol)
         x_end, R_end,
     )
 end
+
+function run_kf_smoother!(kf, u, y)
+    T = length(u)
+    x = Vector{particletype(kf)}(undef, T)
+    xt = Vector{particletype(kf)}(undef, T)
+    R = Vector{LLPF.covtype(kf)}(undef, T)
+    Rt = Vector{LLPF.covtype(kf)}(undef, T)
+
+    llt = zero(eltype(particletype(kf)))
+
+    for i in 1:T
+        x[i] = state(kf) |> copy
+        R[i] = covariance(kf) |> copy
+
+        if !any(y[i] .=== missing)
+            (; ll) = correct!(kf, u[i], y[i])
+            llt += ll
+        end
+
+        xt[i] = state(kf) |> copy
+        Rt[i] = covariance(kf) |> copy
+
+        predict!(kf, u[i])
+    end
+
+    return (; x, xt, R, Rt, u, y, ll = llt)
+end
+
+run_kf_smoother!(model::AbstractBatteryModel, u, y) = run_kf_smoother!(model.kf, u, y)
+
+function smooth_kf!(kf, u, y)
+    sol = run_kf_smoother!(kf, u, y)
+    return LLPF.smooth(sol, kf, u, y)
+end
+
+smooth_kf!(model::AbstractBatteryModel, u, y) = smooth_kf!(model.kf, u, y)
