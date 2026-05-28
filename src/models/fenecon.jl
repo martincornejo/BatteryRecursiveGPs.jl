@@ -95,6 +95,35 @@ function _build_fenecon_kf(θ, u, zt; n = 21)
 end
 
 
+"""
+    reinit_kf!(model::FeneconModel; x=model.kf.x, R=model.kf.R)
+
+Reinitialize the KF for a second pass on the same data, warm-starting the
+posterior from a previous run.
+
+Keeps: GP OCV state and covariance, scalar R0 state, RC parameters (r, τ),
+Arrhenius state.
+Resets: CC charge to q=0, RC voltage to 0, CC cross-correlations to 0.
+"""
+function reinit_kf!(model::FeneconModel; x = model.kf.x, R = model.kf.R)
+    kf = model.kf
+    (; xid, Σid) = kf.p
+
+    x_new = ComponentVector(copy(x), xid)
+    x_new.cc.q = 0.0
+    x_new.rc.v = 0.0
+    kf.x .= x_new
+
+    Σ_new = ComponentMatrix(copy(R), Σid)
+    Σ_new[:cc, :] .= 0
+    Σ_new[:, :cc] .= 0
+    Σ_new[:cc, :cc] .= 0.0
+    kf.R .= Σ_new
+
+    return model
+end
+
+
 # === model-specific plots
 
 function plot_ecm!(ax, model::FeneconModel, sol = nothing)
