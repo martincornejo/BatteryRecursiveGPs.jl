@@ -143,6 +143,71 @@ function rescale_composite_ocv(fit; v_ref, soc_ref)
 end
 
 
+"""
+    rescaled_ocv_curve(fit; v_ref, soc_ref)
+
+Return the composite OCV curve in absolute SOC gauge as `(v_grid, soc_grid)`.
+Mirrors `rescale_composite_ocv` but returns the curve, not per-cell params.
+Use as a portable reference OCV across experiments.
+"""
+function rescaled_ocv_curve(fit; v_ref, soc_ref)
+    v_of_s = LinearInterpolation(fit.soc_grid, fit.v_grid)
+    soc_at_ref = v_of_s.(v_ref)
+    soc_span = (soc_ref[2] - soc_ref[1]) / (soc_at_ref[2] - soc_at_ref[1])
+    soc_zero = soc_ref[1] - soc_span * soc_at_ref[1]
+    soc_grid = soc_span .* fit.soc_grid .+ soc_zero
+    return (; v_grid = fit.v_grid, soc_grid)
+end
+
+
+"""
+    fit_cells_to_reference(cells, ref_soc_of_v, v_range; n_v_grid = 200)
+
+Per-cell `(Q_cell, s0)` from least-squares alignment to a fixed external
+reference OCV `ref_soc_of_v(v) → SOC`, valid over `v_range = (v_lo, v_hi)`.
+
+Each cell is fit independently — no pairwise coupling, no gauge to fix.
+Working in v-frame: `q_i(v) ≈ Q_i · ref_soc_of_v(v) − Q_i · s0_i`, linear
+in `(Q_i, Q_i·s0_i)`. The reference fixes the absolute gauge, so
+`(Q_cell, s0)` come back in the reference's units.
+
+Returns `(; Q_cell, s0)` as `Measurement{Float64}` vectors with OLS 1σ.
+"""
+function fit_cells_to_reference(
+        cells, ref_soc_of_v, v_range::Tuple{<:Real, <:Real};
+        n_v_grid::Int = 200,
+    )
+    N = length(cells)
+    Q_cell = Vector{Measurement{Float64}}(undef, N)
+    s0 = Vector{Measurement{Float64}}(undef, N)
+
+    for i in 1:N
+        fq = _as_v_frame_function(collect(cells[i].q), collect(cells[i].μ))
+        v_lo = max(minimum(fq.t), v_range[1]) + 1.0e-3
+        v_hi = min(maximum(fq.t), v_range[2]) - 1.0e-3
+        v_lo >= v_hi && error("Cell $i has no v overlap with the reference.")
+
+        v_grid = collect(range(v_lo, v_hi; length = n_v_grid))
+        A = hcat(ref_soc_of_v.(v_grid), ones(n_v_grid))
+        b = [fq(v) for v in v_grid]
+        β = A \ b
+
+        rss = sum(abs2, A * β - b)
+        σ²_hat = rss / (n_v_grid - 2)
+        Σβ = σ²_hat .* inv(A' * A)
+
+        # (Q, s0) = (β1, -β2/β1); J = [1 0; β2/β1² -1/β1]
+        J = [1.0 0.0; β[2] / β[1]^2 -1.0 / β[1]]
+        Σ_out = J * Σβ * J'
+
+        Q_cell[i] = β[1] ± sqrt(max(Σ_out[1, 1], 0.0))
+        s0[i] = -β[2] / β[1] ± sqrt(max(Σ_out[2, 2], 0.0))
+    end
+
+    return (; Q_cell, s0)
+end
+
+
 function _as_v_frame_function(q::AbstractVector, μ::AbstractVector)
     order = sortperm(μ)
     v_sorted = μ[order]

@@ -48,7 +48,7 @@ export R0, RC, dynamics_rc
 export calc_deltaq, calc_Q, calc_soc0, calc_soh # single cell
 export gls_fit, calc_wls, gp_ocv, gp_r0 # improved GLS-based estimation
 export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
-export fit_composite_ocv, rescale_composite_ocv # composite OCV from cell posteriors
+export fit_composite_ocv, rescale_composite_ocv, rescaled_ocv_curve, fit_cells_to_reference # composite OCV from cell posteriors
 
 # plotting — model-agnostic
 export plot_sim
