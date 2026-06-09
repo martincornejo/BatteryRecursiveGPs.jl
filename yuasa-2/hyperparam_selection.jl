@@ -14,33 +14,16 @@ using Distributed
 nprocs() == 1 && addprocs(Sys.CPU_THREADS ÷ 2)
 @everywhere using BatteryDigitalTwin
 
-include("fit-model.jl") # cell_dataset, fit_zscore
-include("parallel.jl")   # default_cell_θ_rcgp (master-only; θ is built here and shipped per fit)
+include("fit-model.jl") # cell_dataset, fit_zscore, scale_θ
 
 using CairoMakie   # master-only: figures are built in memory, not persisted
 
 # Slim worker payload: KF fit at a fully-specified θ, return only the GP-OCV curve.
-# θ is built on the master (see cell_θ, called from fit_cells_init / escalate_cells),
-# so workers need nothing from parallel.jl.
+# θ is built on the master via scale_θ before remotecall.
 @everywhere function fit_ocv_curve(u, y, θ, zt)
     res = fit_model(RCGPModel, u, y, θ, zt)
     ocv = gp_ocv(res.model, res.sol)
     return (; q = collect(ocv.q), μ = collect(ocv.μ))
-end
-
-# Per-cell θ: scale the nominal ℓ and σ to the cell's normalized Δv̂/Δq̂ spans, the rest
-# from the rcgp default — no physical-unit round-trip, no anchor. ℓ_ocv ∝ q̂/v̂ (flatter
-# cells → wider ℓ); ℓ_r1 ∝ q̂; σ_ocv, σ_r1 ∝ v̂ (prior amplitude tracks the voltage swing).
-# The exported nominal ℓ/σ are reconstructed back to θ through THIS same function.
-function cell_θ(ℓ_ocv_nom, ℓ_r1_nom, u, y)
-    θ_base = default_cell_θ_rcgp()
-    vlo, vhi = extrema(skipmissing(first(v) for v in y))
-    qlo, qhi = extrema(x.q for x in u)
-    v̂_span = vhi - vlo
-    q̂_span = qhi - qlo
-    ocv = (; σ = θ_base.ocv.σ * v̂_span, ℓ = ℓ_ocv_nom * q̂_span / v̂_span)
-    r1 = (; σ = θ_base.r1.σ * v̂_span, ℓ = ℓ_r1_nom * q̂_span)
-    return merge(θ_base, (; ocv, r1))
 end
 
 # ---- Selection logic: clean composite reference + keep-best per-cell escalation ----
@@ -53,7 +36,7 @@ function make_scorer(comp_ref)
     soc_of_v = LinearInterpolation(comp_ref.soc_grid[o_v], comp_ref.v_grid[o_v]; extrapolation = ExtrapolationType.Constant)
     v_range = extrema(comp_ref.v_grid)
     soc_lo, soc_hi = first(comp_ref.soc_grid[o_s]), last(comp_ref.soc_grid[o_s])
-    return function (ocv)
+    function score(ocv)
         aligned = fit_cells_to_reference([(; ocv.q, ocv.μ)], soc_of_v, v_range)
         Q = Measurements.value(aligned.Q_cell[1])
         s0 = Measurements.value(aligned.s0[1])
@@ -61,15 +44,17 @@ function make_scorer(comp_ref)
         mask = (soc .>= soc_lo) .& (soc .<= soc_hi)
         return sqrt(mean(abs2, (ocv.μ[mask] .- v_of_soc.(soc[mask])) .* 1000))
     end
+    return score
 end
 
-# Stage 1: fit every cell at `ℓ_ocv_init` (r1.ℓ from run-constant `ℓ_r1`). Any worker
-# failure crashes — init is a known-good config, so a failure here is a real bug.
-function fit_cells_init(pool, ids, ℓ_ocv_init, cell_data, zt; ℓ_r1)
+# Stage 1: fit every cell at ϑ_init. Any worker failure crashes — init is a known-good
+# config, so a failure here is a real bug.
+function fit_cells_init(pool, ids, ϑ_init, cell_data, zt)
     tasks = Dict(
         id => remotecall(
-                fit_ocv_curve, pool, cell_data[id].u, cell_data[id].y,
-                cell_θ(ℓ_ocv_init, ℓ_r1, cell_data[id].u, cell_data[id].y), zt
+                fit_ocv_curve, pool,
+                cell_data[id].u, cell_data[id].y,
+                scale_θ(cell_data[id].u, cell_data[id].y, ϑ_init), zt
             )
             for id in ids
     )
@@ -83,7 +68,7 @@ end
 # Returns Dict{id, (; ℓ_ocv, rmse_mV, rmse_init, curve, escalated)} for every cell in `ids`.
 function escalate_cells(
         curves_init, comp_ref, pool, cell_data, zt;
-        ℓ_ocv_init, ℓ_ocv_grid, thresh_mV, ℓ_r1
+        ϑ, ℓ_ocv_grid, thresh_mV
     )
     score = make_scorer(comp_ref)
 
@@ -91,16 +76,17 @@ function escalate_cells(
     picks = Dict(
         id => begin
                 r = score(curve)
-                (; ℓ_ocv = ℓ_ocv_init, rmse_mV = r, rmse_init = r, curve, escalated = false)
+                (; ℓ_ocv = ϑ.ocv.ℓ, rmse_mV = r, rmse_init = r, curve, escalated = false)
             end for (id, curve) in curves_init
     )
 
     # misfit cells: fit each grid ℓ in parallel, keep argmin vs current pick
     misfits = [id for (id, p) in picks if p.rmse_mV > thresh_mV]
     tasks = Dict(
-        (id, ℓ_ocv) => remotecall(
+        (id, ℓ_ocv) =>
+            remotecall(
                 fit_ocv_curve, pool, cell_data[id].u, cell_data[id].y,
-                cell_θ(ℓ_ocv, ℓ_r1, cell_data[id].u, cell_data[id].y), zt
+                scale_θ(cell_data[id].u, cell_data[id].y, merge(ϑ, (; ocv = (; ℓ = ℓ_ocv)))), zt
             )
             for id in misfits, ℓ_ocv in ℓ_ocv_grid
     )
@@ -126,13 +112,12 @@ function escalate_cells(
     return picks
 end
 
-# cell id → the GP hyperparameters (nominal ℓ + σ) needed to rebuild θ via cell_θ
-function build_hyperparam_export(picks; ℓ_r1)
-    θ_base = default_cell_θ_rcgp()
+# cell id → nominal ℓ/σ stored in JSON; scale_θ reconstructs the full θ from these
+function build_hyperparam_export(picks, ϑ)
     return Dict(
         "$(id.p)_$(id.m)_$(id.c)" => Dict(
-                "ocv_ell" => p.ℓ_ocv, "ocv_sigma" => θ_base.ocv.σ,
-                "r1_ell" => ℓ_r1, "r1_sigma" => θ_base.r1.σ,
+                "ocv_ell" => p.ℓ_ocv, "ocv_sigma" => ϑ.ocv.σ,
+                "r1_ell" => ϑ.r1.ℓ, "r1_sigma" => ϑ.r1.σ,
             )
             for (id, p) in picks
     )
@@ -201,7 +186,7 @@ function plot_hyperparam_hist(; picks, cell_data, ℓ_r1)
     ocv_ℓ = Float64[]; r1_ℓ = Float64[]
     for (id, p) in picks
         cd = cell_data[id]
-        θ = cell_θ(p.ℓ_ocv, ℓ_r1, cd.u, cd.y)
+        θ = scale_θ(cd.u, cd.y, (; ocv = (; ℓ = p.ℓ_ocv), r1 = (; ℓ = ℓ_r1)))
         push!(ocv_ℓ, θ.ocv.ℓ); push!(r1_ℓ, θ.r1.ℓ)
     end
     fig = Figure(size = (950, 380))
@@ -225,19 +210,20 @@ function load_data(datadir)
 end
 
 # ================================ script: config + run ================================
-# Two-stage distributed selection from a generic init. Stage 1: fit every cell at
-# `(ℓ_ocv_init, ℓ_r1)` and build a clean composite reference from the cells ≤thresh_mV.
-# Stage 2: re-fit the misfit cells (>thresh_mV) over `ℓ_ocv_grid` (escalation grid,
-# excluding the init) and keep, per cell, the ocv.ℓ minimizing the composite-OCV residual
-# across `(ℓ_ocv_init, ℓ_ocv_grid...)`. Only the per-cell hyperparam JSON is persisted —
-# curves, composites and figures stay in memory at top-level for REPL inspection.
+# Two-stage distributed selection from a generic init. Stage 1: fit every cell at ϑ_init
+# and build a clean composite reference from the cells ≤thresh_mV. Stage 2: re-fit the
+# misfit cells over ℓ_ocv_grid and keep, per cell, the ocv.ℓ minimising the composite-OCV
+# residual. Only the per-cell hyperparam JSON is persisted — curves, composites and figures
+# stay in memory at top-level for REPL inspection.
 
 # ---- Config ----
 datadir = "data/data-yuasa-cycles-2/"
 out_json = joinpath(datadir, "cell_hyperparams.json")
 
-ℓ_ocv_init = 0.5
-ℓ_r1 = 0.5
+ϑ_init = (;
+    ocv = (; σ = 0.5, ℓ = 0.5),
+    r1 = (; σ = 0.1, ℓ = 0.5),
+)
 thresh_mV = 4.0
 ℓ_ocv_grid = [0.6, 0.85, 1.0, 1.5, 3.0, 7.0, 15.0]  # escalation grid (challengers to the init)
 
@@ -250,7 +236,7 @@ cell_data = Dict(id => cell_dataset(data, ti, id.p, id.m, id.c; zt) for id in id
 pool = WorkerPool(workers())
 
 # ---- Stage 1: init fit for every cell ----
-curves_init = fit_cells_init(pool, ids, ℓ_ocv_init, cell_data, zt; ℓ_r1)
+curves_init = fit_cells_init(pool, ids, ϑ_init, cell_data, zt)
 
 # ---- Reference composite: coarse → outlier-filter → refit ----
 comp_coarse = fit_composite_ocv(values(curves_init); uq = false, n_v_pair = 20)
@@ -261,7 +247,7 @@ comp_ref = fit_composite_ocv(inliers; uq = false, n_v_pair = 20)
 # ---- Stage 2: per-cell pick (init for all; escalation grid for misfits) ----
 picks = escalate_cells(
     curves_init, comp_ref, pool, cell_data, zt;
-    ℓ_ocv_init, ℓ_ocv_grid, thresh_mV, ℓ_r1,
+    ϑ = ϑ_init, ℓ_ocv_grid, thresh_mV,
 )
 
 # ---- Final composite from cells passing the threshold after adaptation ----
@@ -269,11 +255,11 @@ final_keep = [picks[id].curve for id in ids if picks[id].rmse_mV <= thresh_mV]
 comp_final = fit_composite_ocv(final_keep; uq = false, n_v_pair = 20)
 
 # ---- Export ----
-hyperparams = build_hyperparam_export(picks; ℓ_r1)
+hyperparams = build_hyperparam_export(picks, ϑ_init)
 write(out_json, JSON.json(hyperparams, 2))
 @info @sprintf("wrote %s (%d cells, %d escalated)", out_json, length(picks), count(p -> p.escalated, values(picks))); flush(stdout)
 
 # ---- Figures (in memory only; save manually if needed) ----
-fig_adaptation  = plot_adaptation(; curves_init, picks, comp_ref, comp_final, ids, ℓ_ocv_init, thresh_mV)
-fig_rmse_shift  = plot_rmse_shift(; picks, ids, thresh_mV)
-fig_hyperparams = plot_hyperparam_hist(; picks, cell_data, ℓ_r1)
+fig_adaptation = plot_adaptation(; curves_init, picks, comp_ref, comp_final, ids, ℓ_ocv_init = ϑ_init.ocv.ℓ, thresh_mV)
+fig_rmse_shift = plot_rmse_shift(; picks, ids, thresh_mV)
+fig_hyperparams = plot_hyperparam_hist(; picks, cell_data, ℓ_r1 = ϑ_init.r1.ℓ)

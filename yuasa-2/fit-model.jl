@@ -145,35 +145,6 @@ function cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore())
     return (; u, y)
 end
 
-
-"""
-    fit_model_eval(make_model, u, y, θ, zt)
-
-Closed-loop fit + open-loop evaluation in one go.  Returns a small payload
-suitable for parallel sweeps: per-cell GP-OCV plus closed/open-loop residual
-RMSEs. Open-loop run reuses the learned GP via `reinit_kf!` followed by
-`run_kf!(...; tt=0)` which skips all `correct!` steps.
-"""
-function fit_model_eval(make_model, u, y, θ, zt)
-    model = make_model(θ, u, zt)
-
-    # Closed-loop fit: learns OCV/R0 GP
-    sol_cl = run_kf!(model, u, y)
-    cl_rmse = sqrt(mean(abs2, sol_cl.et))
-
-    # Snapshot the GP-derived OCV before reinit/open-loop changes model.kf
-    sol_cl_red = reduce_sol(model, sol_cl)
-    cell = gp_ocv(model, sol_cl_red)
-
-    # Open-loop sim using the learned GP (no voltage feedback)
-    reinit_kf!(model)
-    sol_ol = run_kf!(model, u, y; tt = 0)
-    ol_rmse = sqrt(mean(abs2, sol_ol.et))
-
-    return (; cell, cl_rmse, ol_rmse)
-end
-
-
 function extract_ocv(model::YuasaModel)
     kf = model.kf
     zt = kf.p.zt
@@ -190,4 +161,95 @@ function extract_ocv(model::YuasaModel)
     focv⁻¹ = LinearInterpolation(soc, ocvμ)
 
     return (; ocv = focv, ocv⁻¹ = focv⁻¹)
+end
+
+
+function load_hyperparams(file, ids)
+    hyperparams = JSON.parsefile(file, Dict{String, Dict{String, Any}})
+    θ = map(ids) do id
+        id_str = "$(id.p)_$(id.m)_$(id.c)"
+        params = hyperparams[id_str]
+        (;
+            ocv = (; ℓ = params["ocv_ell"], σ = params["ocv_sigma"]),
+            r1 = (; ℓ = params["r1_ell"], σ = params["r1_sigma"]),
+        )
+    end
+    return Dict(ids .=> θ)
+end
+
+function default_θ()
+    return (;
+        ocv = (; σ = 0.5, ℓ = 0.5),
+        r1 = (; σ = 0.1, ℓ = 0.5),
+        r1μ = n * 1.0e-3,
+        r0 = (; σ0 = n * 5.0e-4, σ1 = 0.0),  # scalar R0 random-walk
+        r0μ = n * 1.0e-3,
+        vσ = n * 3.0e-3,
+        Ts = 1.0,
+        rc = (;
+            v0 = n * 0.0, σ0_v = n * 1.0e-4, σ1_v = n * 5.0e-5,
+            τ0 = 800.0, σ0_τ = 5.0, σ1_τ = 0.0,
+        ),
+        cc = (; σ1 = 0.1e-5),
+        arr = (; T0 = 25, k0 = 2000, σ0_k = 100.0, σ1_k = 0.0),
+    )
+end
+
+function _scale_θ(u, y, θ)
+    vlo, vhi = extrema(skipmissing(first(v) for v in y))
+    qlo, qhi = extrema(x.q for x in u)
+    v̂_span = vhi - vlo
+    q̂_span = qhi - qlo
+    ocv = (; σ = θ.ocv.σ * v̂_span, ℓ = θ.ocv.ℓ * q̂_span / v̂_span)
+    r1 = (; σ = θ.r1.σ * v̂_span, ℓ = θ.r1.ℓ * q̂_span)
+    return merge(θ, (; ocv, r1))
+end
+
+function scale_θ(u, y, ϑ; n = 1)
+    θ = merge(default_θ(), ϑ)
+    return _scale_θ(u, y, θ)
+end
+
+
+function fit_cells(data, ϑ, ti, ids)
+    zt = fit_zscore()
+    make_uy = id -> cell_dataset(data, ti, id.p, id.m, id.c; zt)
+    make_θ = (u, y, id) -> scale_θ(u, y, ϑ[id])
+    (; models, sols) = fit_models_thread(RCGPModel, make_uy, make_θ, ids, zt)
+    return (; cell_models = models, cell_sols = sols)
+end
+
+function fit_modules(data, ϑ, ti, ids)
+    zt = fit_zscore(12)
+    make_uy = id -> module_dataset(data, ti, id.p, id.m; zt)
+    make_θ = (u, y, _id) -> scale_θ(u, y, ϑ)
+    (; models, sols) = fit_models_thread(RCGPModel, make_uy, make_θ, ids, zt)
+    return (; module_models = models, module_sols = sols)
+end
+
+function fit_models_thread(make_model, make_uy, make_θ, ids, zt)
+    models = Dict()
+    sols = Dict()
+
+    for batch in Iterators.partition(ids, Threads.nthreads())
+        tasks = Dict(
+            id => Threads.@spawn begin
+                    (; u, y) = make_uy(id)
+                    θ = make_θ(u, y, id)
+                    fit_model(make_model, u, y, θ, zt)
+                end for id in batch
+        )
+        for (id, task) in tasks
+            try
+                (; model, sol) = fetch(task)
+                models[id] = model
+                sols[id] = sol
+                @info "id=$id complete"
+            catch e
+                @error "id=$id failed" exception = e
+            end
+        end
+    end
+
+    return (; models, sols)
 end
