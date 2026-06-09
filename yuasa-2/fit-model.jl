@@ -164,11 +164,10 @@ function extract_ocv(model::YuasaModel)
 end
 
 
-function load_hyperparams(file, ids)
+function load_hyperparams(file, ids, id_str)
     hyperparams = JSON.parsefile(file, Dict{String, Dict{String, Any}})
     θ = map(ids) do id
-        id_str = "$(id.p)_$(id.m)_$(id.c)"
-        params = hyperparams[id_str]
+        params = hyperparams[id_str(id)]
         (;
             ocv = (; ℓ = params["ocv_ell"], σ = params["ocv_sigma"]),
             r1 = (; ℓ = params["r1_ell"], σ = params["r1_sigma"]),
@@ -177,7 +176,7 @@ function load_hyperparams(file, ids)
     return Dict(ids .=> θ)
 end
 
-function default_θ()
+function default_θ(; n = 1)
     return (;
         ocv = (; σ = 0.5, ℓ = 0.5),
         r1 = (; σ = 0.1, ℓ = 0.5),
@@ -206,7 +205,7 @@ function _scale_θ(u, y, θ)
 end
 
 function scale_θ(u, y, ϑ; n = 1)
-    θ = merge(default_θ(), ϑ)
+    θ = merge(default_θ(; n), ϑ)
     return _scale_θ(u, y, θ)
 end
 
@@ -222,7 +221,7 @@ end
 function fit_modules(data, ϑ, ti, ids)
     zt = fit_zscore(12)
     make_uy = id -> module_dataset(data, ti, id.p, id.m; zt)
-    make_θ = (u, y, _id) -> scale_θ(u, y, ϑ)
+    make_θ = (u, y, id) -> scale_θ(u, y, ϑ[id])
     (; models, sols) = fit_models_thread(RCGPModel, make_uy, make_θ, ids, zt)
     return (; module_models = models, module_sols = sols)
 end

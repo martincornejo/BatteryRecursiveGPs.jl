@@ -86,7 +86,7 @@ function escalate_cells(
         (id, ℓ_ocv) =>
             remotecall(
                 fit_ocv_curve, pool, cell_data[id].u, cell_data[id].y,
-                scale_θ(cell_data[id].u, cell_data[id].y, merge(ϑ, (; ocv = (; ℓ = ℓ_ocv)))), zt
+                scale_θ(cell_data[id].u, cell_data[id].y, merge(ϑ, (; ocv = merge(ϑ.ocv, (; ℓ = ℓ_ocv))))), zt
             )
             for id in misfits, ℓ_ocv in ℓ_ocv_grid
     )
@@ -112,10 +112,10 @@ function escalate_cells(
     return picks
 end
 
-# cell id → nominal ℓ/σ stored in JSON; scale_θ reconstructs the full θ from these
-function build_hyperparam_export(picks, ϑ)
+# cell/module id → nominal ℓ/σ stored in JSON; scale_θ reconstructs the full θ from these
+function build_hyperparam_export(picks, ϑ, id_key)
     return Dict(
-        "$(id.p)_$(id.m)_$(id.c)" => Dict(
+        id_key(id) => Dict(
                 "ocv_ell" => p.ℓ_ocv, "ocv_sigma" => ϑ.ocv.σ,
                 "r1_ell" => ϑ.r1.ℓ, "r1_sigma" => ϑ.r1.σ,
             )
@@ -141,8 +141,8 @@ function align_cells(curves_by_id, ids, comp)
 end
 
 # 2×2: OCV (top) and dV/dSOC (bottom), before (stage 1) vs after (stage 1+2)
-function plot_adaptation(; curves_init, picks, comp_ref, comp_final, ids, ℓ_ocv_init, thresh_mV)
-    cellcolor(r) = r > thresh_mV ? (:crimson, 0.3) : (:steelblue, 0.08)
+function plot_adaptation(; curves_init, picks, comp_ref, comp_final, ids, ℓ_ocv_init, thresh_mV, n = 1)
+    cellcolor(r) = r > thresh_mV ? (:crimson, 0.8) : (:steelblue, 0.8)
     curves_final = Dict(id => picks[id].curve for id in ids)
     before = align_cells(curves_init, ids, comp_ref)
     after = align_cells(curves_final, ids, comp_final)
@@ -152,14 +152,14 @@ function plot_adaptation(; curves_init, picks, comp_ref, comp_final, ids, ℓ_oc
     for (col, (cells, rmv, comp, ttl)) in enumerate([(before, rb, comp_ref, "before (init)"), (after, ra, comp_final, "after (adapted)")])
         axo = Axis(fig[1, col]; title = "OCV — $ttl", xlabel = "SOC", ylabel = "V")
         for k in eachindex(cells)
-            lines!(axo, cells[k].soc, cells[k].μ; color = cellcolor(rmv[k]), linewidth = 0.5)
+            lines!(axo, cells[k].soc, cells[k].μ; color = cellcolor(rmv[k]))
         end
-        sc, vc = compcurve(comp); lines!(axo, sc, vc; color = :black, linewidth = 2); xlims!(axo, 0, 1); ylims!(axo, 3.4, 4.15)
+        sc, vc = compcurve(comp); lines!(axo, sc, vc; color = :black, linewidth = 2); xlims!(axo, 0, 1); ylims!(axo, n * 3.4, n * 4.15)
         axd = Axis(fig[2, col]; title = "dV/dSOC — $ttl", xlabel = "SOC", ylabel = "dV/dSOC")
         for k in eachindex(cells)
-            sm, dv = dvdsoc(cells[k].soc, cells[k].μ); lines!(axd, sm, dv; color = cellcolor(rmv[k]), linewidth = 0.4)
+            sm, dv = dvdsoc(cells[k].soc, cells[k].μ); lines!(axd, sm, dv; color = cellcolor(rmv[k]))
         end
-        sc, vc = compcurve(comp); sm, dv = dvdsoc(sc, vc); lines!(axd, sm, dv; color = :black, linewidth = 2); xlims!(axd, 0, 1); ylims!(axd, -0.5, 3)
+        sc, vc = compcurve(comp); sm, dv = dvdsoc(sc, vc); lines!(axd, sm, dv; color = :black, linewidth = 2); xlims!(axd, 0, 1); ylims!(axd, n * (-0.5), n * 3)
     end
     Label(fig[0, :], @sprintf("Stage-2 adaptation (init %.2g, %.1f mV trigger) — blue ≤%.1f mV, red >%.1f mV, black = composite", ℓ_ocv_init, thresh_mV, thresh_mV, thresh_mV), fontsize = 13)
     return fig
@@ -169,7 +169,8 @@ end
 function plot_rmse_shift(; picks, ids, thresh_mV)
     rb = [picks[id].rmse_init for id in ids]
     ra = [picks[id].rmse_mV   for id in ids]
-    clip(v) = filter(<=(8), v)
+    clip_mV = 2 * thresh_mV
+    clip(v) = filter(<=(clip_mV), v)
     fig = Figure(size = (660, 470))
     ax = Axis(fig[1, 1]; title = "Per-cell composite-OCV RMSE: before vs after stage 2", xlabel = "RMSE (mV)", ylabel = "density")
     density!(ax, clip(rb); color = (:steelblue, 0.25), strokecolor = :steelblue, strokewidth = 2, label = "before (init)")
@@ -177,16 +178,16 @@ function plot_rmse_shift(; picks, ids, thresh_mV)
     vlines!(ax, [median(rb)]; color = :steelblue, linestyle = :dash)
     vlines!(ax, [median(ra)]; color = :crimson, linestyle = :dash)
     vlines!(ax, [thresh_mV]; color = :gray, linestyle = :dot, label = "threshold")
-    xlims!(ax, 0, 8); axislegend(ax)
+    xlims!(ax, 0, clip_mV); axislegend(ax)
     return fig
 end
 
 # 2 panels: distribution of the final absolute (z-q) length scales the GP actually uses
-function plot_hyperparam_hist(; picks, cell_data, ℓ_r1)
+function plot_hyperparam_hist(; picks, cell_data, ϑ)
     ocv_ℓ = Float64[]; r1_ℓ = Float64[]
     for (id, p) in picks
         cd = cell_data[id]
-        θ = scale_θ(cd.u, cd.y, (; ocv = (; ℓ = p.ℓ_ocv), r1 = (; ℓ = ℓ_r1)))
+        θ = scale_θ(cd.u, cd.y, merge(ϑ, (; ocv = merge(ϑ.ocv, (; ℓ = p.ℓ_ocv)))))
         push!(ocv_ℓ, θ.ocv.ℓ); push!(r1_ℓ, θ.r1.ℓ)
     end
     fig = Figure(size = (950, 380))
@@ -200,6 +201,7 @@ end
 function load_data(datadir)
     files = Dict(
         :cell_voltage => datadir * "cell_voltages.csv",
+        :module_voltage => datadir * "module_voltage.csv",
         :module_current => datadir * "module_current_average.csv",
         :battery_temperature => datadir * "battery_temperature.csv",
     )
@@ -255,11 +257,50 @@ final_keep = [picks[id].curve for id in ids if picks[id].rmse_mV <= thresh_mV]
 comp_final = fit_composite_ocv(final_keep; uq = false, n_v_pair = 20)
 
 # ---- Export ----
-hyperparams = build_hyperparam_export(picks, ϑ_init)
+hyperparams = build_hyperparam_export(picks, ϑ_init, id -> "$(id.p)_$(id.m)_$(id.c)")
 write(out_json, JSON.json(hyperparams, 2))
 @info @sprintf("wrote %s (%d cells, %d escalated)", out_json, length(picks), count(p -> p.escalated, values(picks))); flush(stdout)
 
 # ---- Figures (in memory only; save manually if needed) ----
 fig_adaptation = plot_adaptation(; curves_init, picks, comp_ref, comp_final, ids, ℓ_ocv_init = ϑ_init.ocv.ℓ, thresh_mV)
 fig_rmse_shift = plot_rmse_shift(; picks, ids, thresh_mV)
-fig_hyperparams = plot_hyperparam_hist(; picks, cell_data, ℓ_r1 = ϑ_init.r1.ℓ)
+fig_hyperparams = plot_hyperparam_hist(; picks, cell_data, ϑ = ϑ_init)
+
+# ================================ modules ================================
+
+out_json_mod = joinpath(datadir, "module_hyperparams.json")
+ϑ_init_mod = (; ocv = (; σ = 0.5, ℓ = 0.5), r1 = (; σ = 0.1, ℓ = 0.5))
+module_ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
+thresh_mV_mod = 50.0
+
+zt_mod = fit_zscore(12)
+module_data = Dict(id => module_dataset(data, ti, id.p, id.m; zt = zt_mod) for id in module_ids)
+
+# ---- Stage 1 ----
+curves_init_mod = fit_cells_init(pool, module_ids, ϑ_init_mod, module_data, zt_mod)
+
+# ---- Reference composite: coarse → outlier-filter → refit ----
+comp_coarse_mod = fit_composite_ocv(values(curves_init_mod); uq = false, n_v_pair = 20)
+coarse_score_mod = make_scorer(comp_coarse_mod)
+inliers_mod = [c for c in values(curves_init_mod) if coarse_score_mod(c) <= thresh_mV_mod]
+comp_ref_mod = fit_composite_ocv(inliers_mod; uq = false, n_v_pair = 20)
+
+# ---- Stage 2 ----
+picks_mod = escalate_cells(
+    curves_init_mod, comp_ref_mod, pool, module_data, zt_mod;
+    ϑ = ϑ_init_mod, ℓ_ocv_grid, thresh_mV = thresh_mV_mod,
+)
+
+# ---- Final composite ----
+final_keep_mod = [picks_mod[id].curve for id in module_ids if picks_mod[id].rmse_mV <= thresh_mV_mod]
+comp_final_mod = fit_composite_ocv(final_keep_mod; uq = false, n_v_pair = 20)
+
+# ---- Export ----
+hyperparams_mod = build_hyperparam_export(picks_mod, ϑ_init_mod, id -> "$(id.p)_$(id.m)")
+write(out_json_mod, JSON.json(hyperparams_mod, 2))
+@info @sprintf("wrote %s (%d modules, %d escalated)", out_json_mod, length(picks_mod), count(p -> p.escalated, values(picks_mod))); flush(stdout)
+
+# ---- Figures ----
+fig_adaptation_mod = plot_adaptation(; curves_init = curves_init_mod, picks = picks_mod, comp_ref = comp_ref_mod, comp_final = comp_final_mod, ids = module_ids, ℓ_ocv_init = ϑ_init_mod.ocv.ℓ, thresh_mV = thresh_mV_mod, n = 12)
+fig_rmse_shift_mod = plot_rmse_shift(; picks = picks_mod, ids = module_ids, thresh_mV = thresh_mV_mod)
+fig_hyperparams_mod = plot_hyperparam_hist(; picks = picks_mod, cell_data = module_data, ϑ = ϑ_init_mod)
