@@ -26,14 +26,18 @@ function plot_cell_voltage(data, p, m, c)
     return fig
 end
 
-for p in 1:3, m in 1:9
-    fig = plot_cell_voltage(data, p, m, 1:12)
-    fig |> display
-end
+# for p in 1:3, m in 1:9
+#     fig = plot_cell_voltage(data, p, m, 1:12)
+#     fig |> display
+# end
 
-function plot_cell_voltage_system(data)
+function plot_cell_voltage_system(
+        data; panel_tags = false,
+        # highlight the outlier modules discussed in the text
+        highlights = Dict((3, 5) => :firebrick, (1, 6) => :firebrick),
+    )
     df = copy(data[:cell_voltage])
-    fig = Figure(size = (650, 600))
+    fig = Figure(size = (700, 600))
     ax = [Axis(fig[i, j]) for i in 1:9, j in 1:3]
 
     t0 = first(df._time)
@@ -56,11 +60,22 @@ function plot_cell_voltage_system(data)
         hidexdecorations!(ax[i, j], ticks = false)
     end
 
+    for ((p, m), color) in highlights
+        for spine in (:topspinecolor, :bottomspinecolor, :leftspinecolor, :rightspinecolor)
+            setproperty!(ax[m, p], spine, color)
+        end
+        ax[m, p].spinewidth = 2
+    end
+
+    for p in phases, m in modules
+        hlines!(ax[m, p], [3.4, 4.07]; color = (:black, 0.3), linestyle = :dash, linewidth = 0.8)
+    end
+
     for i in modules, j in phases
-        ylims!(ax[i, j], 3.35, 4.2)
+        ylims!(ax[i, j], 3.35, 4.15)
         xlims!(ax[i, j], first(df.t) / 3600, last(df.t) / 3600)
-        # ax[i, j].yticks = [3.4, 3.8, 4.2]
-        ax[i, j].yticks = [3.6, 4.0]
+        ax[i, j].xticks = 0:4:12
+        ax[i, j].yticks = [3.5, 4.0]
         ax[i, j].xminorticks = IntervalsBetween(5)
         ax[i, j].xminorticksvisible = true
         ax[i, j].yminorticks = IntervalsBetween(2)
@@ -69,18 +84,27 @@ function plot_cell_voltage_system(data)
         ax[i, j].ygridvisible = false
     end
 
-    for i in 1:9
-        Label(fig[i, 4], "Module $i", font = :bold, fontsize = 11, rotation = pi / 2, tellheight = false)
+    if panel_tags
+        for p in phases, m in modules
+            text!(
+                ax[m, p], 0.97, 0.06; text = "P$(p)M$(m)",
+                space = :relative, align = (:right, :bottom), font = :bold, fontsize = 12,
+                color = get(highlights, (p, m), :gray40),  # tag matches the frame color
+            )
+        end
+    else
+        for i in 1:9
+            Label(fig[i, 4], "Module $i", font = :bold, fontsize = 11, rotation = pi / 2, tellheight = false)
+        end
+        for j in 1:3
+            Label(fig[0, j], "Phase $j", font = :bold, fontsize = 11, tellwidth = false)
+        end
     end
     for j in 1:3
-        Label(fig[0, j], "Phase $j", font = :bold, fontsize = 11, tellwidth = false)
-        ax[end, j].xlabel = "Time (h)"
+        ax[end, j].xlabel = "Time / h"
     end
-    # Label(fig[:, 0], "Cell voltages", rotation=-pi / 2)
 
-    ax[5, 1].ylabel = "Cell voltages (V)"
-
-    Label(fig[-1, :], "Cell voltage data for all 27 modules", fontsize = 18, font = :bold, tellwidth = false)
+    ax[5, 1].ylabel = "Cell voltages / V"
 
     rowgap!(fig.layout, 2.5)
     colgap!(fig.layout, 2.5)
@@ -320,27 +344,77 @@ function plot_data_resolution(data, p, m; yscale = identity)
     # p = 1, m = 9, yscale = log10 # identity # log10
     df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => "value")
     df_v = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
+    df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
     df_c = select(data[:cell_voltage], "_time" => "time", "cell_voltage_$(p)_$(m)_1_1" => "value")
 
     fig = Figure()
-    ax = [Axis(fig[i, 1]; yscale) for i in 1:3]
-    bins = 1:80
+    ax = [Axis(fig[i, 1]; yscale) for i in 1:4]
+    bins = 1:60
 
     hist!(ax[1], Dates.value.(diff(df_i.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
     hist!(ax[2], Dates.value.(diff(df_v.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
-    hist!(ax[3], Dates.value.(diff(df_c.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
+    hist!(ax[3], Dates.value.(diff(df_T.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
+    hist!(ax[4], Dates.value.(diff(df_c.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
 
-
-    xlims!(ax[1], 0, 80)
-    xlims!(ax[2], 0, 80)
-    xlims!(ax[3], 0, 80)
+    xlims!(ax[1], 0, 60)
+    xlims!(ax[2], 0, 60)
+    xlims!(ax[3], 0, 60)
+    xlims!(ax[4], 0, 60)
 
 
     ax[1].title = "Measurement time resolution"
     ax[1].ylabel = "Module current"
     ax[2].ylabel = "Module voltage"
-    ax[3].ylabel = "Cell voltage"
-    ax[3].xlabel = "Time step / s"
+    ax[3].ylabel = "Module\n temperature"
+    ax[4].ylabel = "Cell voltage"
+    ax[4].xlabel = "Time step / s"
+
+    return fig
+end
+
+function plot_data_resolution(data, ids; yscale = identity)
+
+    fig = Figure()
+    ax = [Axis(fig[i, 1]; yscale) for i in 1:4]
+    bins = 0:60
+
+    Δt_i = Float64[]
+    Δt_v = Float64[]
+    Δt_T = Float64[]
+    Δt_c = Float64[]
+    for id in ids
+        p, m = id
+        df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => "value")
+        df_v = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
+        df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
+        df_c = select(data[:cell_voltage], "_time" => "time", "cell_voltage_$(p)_$(m)_1_1" => "value")
+
+        append!(Δt_i, Dates.value.(diff(df_i.time)) * 1.0e-3)
+        append!(Δt_v, Dates.value.(diff(df_v.time)) * 1.0e-3)
+        append!(Δt_T, Dates.value.(diff(df_T.time)) * 1.0e-3)
+        append!(Δt_c, Dates.value.(diff(df_c.time)) * 1.0e-3)
+    end
+
+    hist!(ax[1], Δt_i; strokewidth = 1, strokecolor = :black, bins)
+    hist!(ax[2], Δt_v; strokewidth = 1, strokecolor = :black, bins)
+    hist!(ax[3], Δt_T; strokewidth = 1, strokecolor = :black, bins)
+    hist!(ax[4], Δt_c; strokewidth = 1, strokecolor = :black, bins)
+
+    xlims!(ax[1], 0, 60)
+    xlims!(ax[2], 0, 60)
+    xlims!(ax[3], 0, 60)
+    xlims!(ax[4], 0, 60)
+
+
+    ax[1].title = "Measurement time resolution"
+    ax[1].ylabel = "Module current"
+    ax[2].ylabel = "Module voltage"
+    ax[3].ylabel = "Module\n temperature"
+    ax[4].ylabel = "Cell voltage"
+    ax[4].xlabel = "Time step / s"
+
+    linkxaxes!(ax...)
+    linkyaxes!(ax...)
 
     return fig
 end
@@ -424,4 +498,84 @@ function plot_module_dataset(data, p, m)
     rowgap!(fig.layout, 10)
 
     return fig
+end
+
+
+function plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5))
+    fig = Figure(size = (700, 500))
+    colors = Makie.wong_colors()
+
+    df_v = copy(data[:cell_voltage])
+    t0 = first(df_v._time)
+    df_v[!, :t] = Dates.value.(df_v._time .- t0) * 1.0e-3 / 3600 # time in hours
+
+    df_dr = coalesce.(data[:derating_current], NaN)
+    t_dr = Dates.value.(df_dr._time .- t0) * 1.0e-3 / 3600
+
+    axs = [Axis(fig[i, j]) for i in 1:4, j in 1:2]
+    for (j, (p, m)) in enumerate((id_norm, id_out))
+        for i in 1:12
+            lines!(axs[1, j], df_v.t, df_v[:, "cell_voltage_$(p)_$(m)_1_$(i)"])
+        end
+
+        df_V = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
+        df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => ByRow(x -> -x) => "value")
+        df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
+        N = 5
+        for (k, df) in enumerate((df_V, df_i, df_T))
+            df[!, :t] = Dates.value.(df.time .- t0) * 1.0e-3 / 3600
+            lines!(axs[1 + k, j], df.t[1:N:end], df.value[1:N:end]; color = colors[[3, 2, 4][k]])
+        end
+        # BMS limits: cell/module voltage window and derating current envelope
+        hlines!(axs[1, j], [3.4, 4.07]; color = (:black, 0.6), linestyle = :dash)
+        hlines!(axs[2, j], 12 .* [3.4, 4.07]; color = (:black, 0.6), linestyle = :dash)
+        lines!(axs[3, j], t_dr, df_dr[:, "dr_ch_p$(p)_m$(m)"]; color = (:black, 0.6), linestyle = :dash)
+        lines!(axs[3, j], t_dr, -df_dr[:, "dr_dch_p$(p)_m$(m)"]; color = (:black, 0.6), linestyle = :dash)
+
+        axs[1, j].title = "Phase $p, Module $m" * (j == 2 ? " (outlier)" : "")
+        axs[4, j].xlabel = "Time / h"
+        for k in 1:4
+            xlims!(axs[k, j], first(df_v.t), last(df_v.t))
+            axs[k, j].xticks = 0:4:12
+        end
+    end
+
+    # same voltage range and 0.25 V/cell tick lattice as the ECM comparison figure
+    ylims!.(axs[1, :], 3.35, 4.15)
+    ylims!.(axs[2, :], 12 * 3.35, 12 * 4.15)
+    ylims!.(axs[3, :], -110, 110)  # full derating range: no-limit level is ±100 A
+    ylims!.(axs[4, :], 18, 33)
+    for j in 1:2
+        axs[1, j].yticks = 3.5:0.25:4.0
+        axs[2, j].yticks = 42:3:48
+        axs[3, j].yticks = -100:50:100
+        axs[4, j].yticks = 20:5:30
+    end
+    axs[1, 1].ylabel = "Cell\nvoltages / V"
+    axs[2, 1].ylabel = "Module\nvoltage / V"
+    axs[3, 1].ylabel = "Module\ncurrent / A"
+    axs[4, 1].ylabel = "Module\ntemp. / °C"
+
+    for i in 1:4
+        hideydecorations!(axs[i, 2], ticks = false, grid = false)
+        i < 4 && hidexdecorations!.(axs[i, :], ticks = false, grid = false)
+        for j in 1:2
+            axs[i, j].xgridvisible = false
+            axs[i, j].ygridvisible = false
+            axs[i, j].xminorticks = IntervalsBetween(5)
+            axs[i, j].xminorticksvisible = true
+            axs[i, j].yminorticks = IntervalsBetween(2)
+            axs[i, j].yminorticksvisible = true
+        end
+    end
+    rowgap!(fig.layout, 8)
+    colgap!(fig.layout, 10)
+    return fig
+end
+
+
+function calc_throughput(data, p, m)
+    df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => "value")
+    dt = [Dates.value.(diff(df_i.time)) * 1.0e-3; 0]
+    return sum(abs, df_i.value .* dt) / 3600
 end
