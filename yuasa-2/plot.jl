@@ -36,10 +36,10 @@ function plot_ecms_comparison(
             plot_ecm!(ax, model, sols[id]; color = colors[id.m])
         end
 
-        ylims!(ax[1], n * 3.2, n * 4.2)
+        ylims!(ax[1], n * 3.35, n * 4.15)
         ylims!(ax[2], n * 0.0, n * 15)
-        # 0.25 V/cell steps so module ticks (×12) land on integers (39, 42, 45, 48)
-        ax[1].yticks = (n * 3.25):(n * 0.25):(n * 4.0)
+        # 0.25 V/cell steps so module ticks (×12) land on integers (42, 45, 48)
+        ax[1].yticks = (n * 3.5):(n * 0.25):(n * 4.0)
         ax[2].yticks = (0):(n * 5):(n * 15)
         linkxaxes!(ax...)
     end
