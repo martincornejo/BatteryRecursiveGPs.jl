@@ -68,7 +68,7 @@ end
 # Returns Dict{id, (; ℓ_ocv, rmse_mV, rmse_init, curve, escalated)} for every cell in `ids`.
 function escalate_cells(
         curves_init, comp_ref, pool, cell_data, zt;
-        ϑ, ℓ_ocv_grid, thresh_mV
+        ϑ, ℓ_ocv_grid, ℓ_r1_grid = Float64[], thresh_mV
     )
     score = make_scorer(comp_ref)
 
@@ -76,34 +76,48 @@ function escalate_cells(
     picks = Dict(
         id => begin
                 r = score(curve)
-                (; ℓ_ocv = ϑ.ocv.ℓ, rmse_mV = r, rmse_init = r, curve, escalated = false)
+                (; ℓ_ocv = ϑ.ocv.ℓ, ℓ_r1 = ϑ.r1.ℓ, rmse_mV = r, rmse_init = r, curve, escalated = false)
             end for (id, curve) in curves_init
     )
 
-    # misfit cells: fit each grid ℓ in parallel, keep argmin vs current pick
+    # misfit cells: joint (ocv.ℓ, r1.ℓ) grid, keep argmin vs current pick
     misfits = [id for (id, p) in picks if p.rmse_mV > thresh_mV]
+    ℓ_ocv_all = [ϑ.ocv.ℓ; ℓ_ocv_grid]
+    ℓ_r1_all = [ϑ.r1.ℓ;  ℓ_r1_grid]
+    challengers = [
+        (lo, lr) for lo in ℓ_ocv_all, lr in ℓ_r1_all
+            if !(lo == ϑ.ocv.ℓ && lr == ϑ.r1.ℓ)
+    ]
     tasks = Dict(
-        (id, ℓ_ocv) =>
+        (id, ℓ_ocv, ℓ_r1) =>
             remotecall(
                 fit_ocv_curve, pool, cell_data[id].u, cell_data[id].y,
-                scale_θ(cell_data[id].u, cell_data[id].y, merge(ϑ, (; ocv = merge(ϑ.ocv, (; ℓ = ℓ_ocv))))), zt
+                scale_θ(
+                    cell_data[id].u, cell_data[id].y,
+                    merge(
+                        ϑ, (;
+                            ocv = merge(ϑ.ocv, (; ℓ = ℓ_ocv)),
+                            r1 = merge(ϑ.r1, (; ℓ = ℓ_r1)),
+                        )
+                    )
+                ), zt
             )
-            for id in misfits, ℓ_ocv in ℓ_ocv_grid
+            for id in misfits, (ℓ_ocv, ℓ_r1) in challengers
     )
     for id in misfits
         current = picks[id]
-        for ℓ_ocv in ℓ_ocv_grid
+        for (ℓ_ocv, ℓ_r1) in challengers
             try
-                curve = fetch(tasks[(id, ℓ_ocv)])
+                curve = fetch(tasks[(id, ℓ_ocv, ℓ_r1)])
                 rmse = score(curve)
                 if rmse < current.rmse_mV
                     current = (;
-                        ℓ_ocv, rmse_mV = rmse,
+                        ℓ_ocv, ℓ_r1, rmse_mV = rmse,
                         current.rmse_init, curve, escalated = true,
                     )
                 end
             catch e
-                @warn "escalation fit failed: id=$id ℓ_ocv=$ℓ_ocv" exception = e
+                @warn "escalation fit failed: id=$id ℓ_ocv=$ℓ_ocv ℓ_r1=$ℓ_r1" exception = e
             end
         end
         picks[id] = current
@@ -117,7 +131,7 @@ function build_hyperparam_export(picks, ϑ, id_key)
     return Dict(
         id_key(id) => Dict(
                 "ocv_ell" => p.ℓ_ocv, "ocv_sigma" => ϑ.ocv.σ,
-                "r1_ell" => ϑ.r1.ℓ, "r1_sigma" => ϑ.r1.σ,
+                "r1_ell" => p.ℓ_r1, "r1_sigma" => ϑ.r1.σ,
             )
             for (id, p) in picks
     )
@@ -222,44 +236,47 @@ end
 datadir = "data/data-yuasa-cycles-2/"
 out_json = joinpath(datadir, "cell_hyperparams.json")
 
-ϑ_init = (;
-    ocv = (; σ = 0.5, ℓ = 0.5),
-    r1 = (; σ = 0.1, ℓ = 0.5),
-)
-thresh_mV = 4.0
-ℓ_ocv_grid = [0.6, 0.85, 1.0, 1.5, 3.0, 7.0, 15.0]  # escalation grid (challengers to the init)
+begin
+    ϑ_init = (;
+        ocv = (; σ = 0.5, ℓ = 0.5),
+        r1 = (; σ = 0.5, ℓ = 0.5),
+    )
+    thresh_mV = 4.0
+    ℓ_ocv_grid = [0.6, 0.85, 1.0, 1.5, 3.0, 7.0, 15.0]  # escalation grid (challengers to the init)
+    ℓ_r1_grid = [0.3, 1.0]                              # r1 length-scale challengers
 
-ids = [(; p, m, c) for p in 1:3, m in 1:9, c in 1:12] |> vec |> sort
+    ids = [(; p, m, c) for p in 1:3, m in 1:9, c in 1:12] |> vec |> sort
 
-# ---- Setup ----
-data, ti = load_data(datadir)
-zt = fit_zscore()
-cell_data = Dict(id => cell_dataset(data, ti, id.p, id.m, id.c; zt) for id in ids)
-pool = WorkerPool(workers())
+    # ---- Setup ----
+    data, ti = load_data(datadir)
+    zt = fit_zscore()
+    cell_data = Dict(id => cell_dataset(data, ti, id.p, id.m, id.c; zt) for id in ids)
+    pool = WorkerPool(workers())
 
-# ---- Stage 1: init fit for every cell ----
-curves_init = fit_cells_init(pool, ids, ϑ_init, cell_data, zt)
+    # ---- Stage 1: init fit for every cell ----
+    curves_init = fit_cells_init(pool, ids, ϑ_init, cell_data, zt)
 
-# ---- Reference composite: coarse → outlier-filter → refit ----
-comp_coarse = fit_composite_ocv(values(curves_init); uq = false, n_v_pair = 20)
-coarse_score = make_scorer(comp_coarse)
-inliers = [c for c in values(curves_init) if coarse_score(c) <= thresh_mV]
-comp_ref = fit_composite_ocv(inliers; uq = false, n_v_pair = 20)
+    # ---- Reference composite: coarse → outlier-filter → refit ----
+    comp_coarse = fit_composite_ocv(values(curves_init); uq = false, n_v_pair = 20)
+    coarse_score = make_scorer(comp_coarse)
+    inliers = [c for c in values(curves_init) if coarse_score(c) <= thresh_mV]
+    comp_ref = fit_composite_ocv(inliers; uq = false, n_v_pair = 20)
 
-# ---- Stage 2: per-cell pick (init for all; escalation grid for misfits) ----
-picks = escalate_cells(
-    curves_init, comp_ref, pool, cell_data, zt;
-    ϑ = ϑ_init, ℓ_ocv_grid, thresh_mV,
-)
+    # ---- Stage 2: per-cell pick (init for all; escalation grid for misfits) ----
+    picks = escalate_cells(
+        curves_init, comp_ref, pool, cell_data, zt;
+        ϑ = ϑ_init, ℓ_ocv_grid, ℓ_r1_grid, thresh_mV,
+    )
 
-# ---- Final composite from cells passing the threshold after adaptation ----
-final_keep = [picks[id].curve for id in ids if picks[id].rmse_mV <= thresh_mV]
-comp_final = fit_composite_ocv(final_keep; uq = false, n_v_pair = 20)
+    # ---- Final composite from cells passing the threshold after adaptation ----
+    final_keep = [picks[id].curve for id in ids if picks[id].rmse_mV <= thresh_mV]
+    comp_final = fit_composite_ocv(final_keep; uq = false, n_v_pair = 20)
 
-# ---- Export ----
-hyperparams = build_hyperparam_export(picks, ϑ_init, id -> "$(id.p)_$(id.m)_$(id.c)")
-write(out_json, JSON.json(hyperparams, 2))
-@info @sprintf("wrote %s (%d cells, %d escalated)", out_json, length(picks), count(p -> p.escalated, values(picks))); flush(stdout)
+    # ---- Export ----
+    hyperparams = build_hyperparam_export(picks, ϑ_init, id -> "$(id.p)_$(id.m)_$(id.c)")
+    write(out_json, JSON.json(hyperparams, 2))
+    @info @sprintf("wrote %s (%d cells, %d escalated)", out_json, length(picks), count(p -> p.escalated, values(picks))); flush(stdout)
+end
 
 # ---- Figures (in memory only; save manually if needed) ----
 fig_adaptation = plot_adaptation(; curves_init, picks, comp_ref, comp_final, ids, ℓ_ocv_init = ϑ_init.ocv.ℓ, thresh_mV)
@@ -268,37 +285,39 @@ fig_hyperparams = plot_hyperparam_hist(; picks, cell_data, ϑ = ϑ_init)
 
 # ================================ modules ================================
 
-out_json_mod = joinpath(datadir, "module_hyperparams.json")
-ϑ_init_mod = (; ocv = (; σ = 0.5, ℓ = 0.5), r1 = (; σ = 0.1, ℓ = 0.5))
-module_ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
-thresh_mV_mod = 50.0
+begin
+    out_json_mod = joinpath(datadir, "module_hyperparams.json")
+    ϑ_init_mod = (; ocv = (; σ = 0.5, ℓ = 0.5), r1 = (; σ = 0.5, ℓ = 0.5))
+    module_ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
+    thresh_mV_mod = 50.0
 
-zt_mod = fit_zscore(12)
-module_data = Dict(id => module_dataset(data, ti, id.p, id.m; zt = zt_mod) for id in module_ids)
+    zt_mod = fit_zscore(12)
+    module_data = Dict(id => module_dataset(data, ti, id.p, id.m; zt = zt_mod) for id in module_ids)
 
-# ---- Stage 1 ----
-curves_init_mod = fit_cells_init(pool, module_ids, ϑ_init_mod, module_data, zt_mod)
+    # ---- Stage 1 ----
+    curves_init_mod = fit_cells_init(pool, module_ids, ϑ_init_mod, module_data, zt_mod)
 
-# ---- Reference composite: coarse → outlier-filter → refit ----
-comp_coarse_mod = fit_composite_ocv(values(curves_init_mod); uq = false, n_v_pair = 20)
-coarse_score_mod = make_scorer(comp_coarse_mod)
-inliers_mod = [c for c in values(curves_init_mod) if coarse_score_mod(c) <= thresh_mV_mod]
-comp_ref_mod = fit_composite_ocv(inliers_mod; uq = false, n_v_pair = 20)
+    # ---- Reference composite: coarse → outlier-filter → refit ----
+    comp_coarse_mod = fit_composite_ocv(values(curves_init_mod); uq = false, n_v_pair = 20)
+    coarse_score_mod = make_scorer(comp_coarse_mod)
+    inliers_mod = [c for c in values(curves_init_mod) if coarse_score_mod(c) <= thresh_mV_mod]
+    comp_ref_mod = fit_composite_ocv(inliers_mod; uq = false, n_v_pair = 20)
 
-# ---- Stage 2 ----
-picks_mod = escalate_cells(
-    curves_init_mod, comp_ref_mod, pool, module_data, zt_mod;
-    ϑ = ϑ_init_mod, ℓ_ocv_grid, thresh_mV = thresh_mV_mod,
-)
+    # ---- Stage 2 ----
+    picks_mod = escalate_cells(
+        curves_init_mod, comp_ref_mod, pool, module_data, zt_mod;
+        ϑ = ϑ_init_mod, ℓ_ocv_grid, ℓ_r1_grid, thresh_mV = thresh_mV_mod,
+    )
 
-# ---- Final composite ----
-final_keep_mod = [picks_mod[id].curve for id in module_ids if picks_mod[id].rmse_mV <= thresh_mV_mod]
-comp_final_mod = fit_composite_ocv(final_keep_mod; uq = false, n_v_pair = 20)
+    # ---- Final composite ----
+    final_keep_mod = [picks_mod[id].curve for id in module_ids if picks_mod[id].rmse_mV <= thresh_mV_mod]
+    comp_final_mod = fit_composite_ocv(final_keep_mod; uq = false, n_v_pair = 20)
 
-# ---- Export ----
-hyperparams_mod = build_hyperparam_export(picks_mod, ϑ_init_mod, id -> "$(id.p)_$(id.m)")
-write(out_json_mod, JSON.json(hyperparams_mod, 2))
-@info @sprintf("wrote %s (%d modules, %d escalated)", out_json_mod, length(picks_mod), count(p -> p.escalated, values(picks_mod))); flush(stdout)
+    # ---- Export ----
+    hyperparams_mod = build_hyperparam_export(picks_mod, ϑ_init_mod, id -> "$(id.p)_$(id.m)")
+    write(out_json_mod, JSON.json(hyperparams_mod, 2))
+    @info @sprintf("wrote %s (%d modules, %d escalated)", out_json_mod, length(picks_mod), count(p -> p.escalated, values(picks_mod))); flush(stdout)
+end
 
 # ---- Figures ----
 fig_adaptation_mod = plot_adaptation(; curves_init = curves_init_mod, picks = picks_mod, comp_ref = comp_ref_mod, comp_final = comp_final_mod, ids = module_ids, ℓ_ocv_init = ϑ_init_mod.ocv.ℓ, thresh_mV = thresh_mV_mod, n = 12)
