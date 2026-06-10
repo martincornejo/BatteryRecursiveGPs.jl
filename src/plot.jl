@@ -28,9 +28,9 @@ function plot_ecms(models::AbstractDict, sols; n = 1)
     end
 
     ylims!(ax[1], n * 3.2, n * 4.2)
-    ylims!(ax[2], n * 0.0, n * 3.0)
+    ylims!(ax[2], n * 0.0, n * 15)
     ax[1].yticks = (n * 3.2):(n * 0.3):(n * 4.2)
-    ax[2].yticks = (0):(n):(n * 3)
+    ax[2].yticks = (0):(n * 5):(n * 15)
     linkxaxes!(ax...)
     return fig
 end

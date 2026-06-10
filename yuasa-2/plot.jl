@@ -1,3 +1,59 @@
+function plot_ecms_comparison(
+        cell_models, cell_sols, module_models, module_sols;
+        n_cell = 1, n_mod = 12, tags = true,
+        # color = module ID M1–M9 (same across phases);
+        # Wong palette extended to 9 with black + gray
+        colors = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)]),
+    )
+    fig = Figure(size = (700, 440))
+    gl1 = GridLayout(fig[1, 1])
+    gl2 = GridLayout(fig[1, 2])
+
+    scenarios = [
+        (; title = "Cell level", gl = gl1, models = cell_models, sols = cell_sols, n = n_cell, tags = ("A", "C")),
+        (; title = "Module level", gl = gl2, models = module_models, sols = module_sols, n = n_mod, tags = ("B", "D")),
+    ]
+
+    for args in scenarios
+        (; title, gl, models, sols, n) = args
+        ax = [Axis(gl[i, 1]) for i in 1:2]
+        if tags
+            for i in 1:2  # tags inside the axes: no layout space needed
+                text!(ax[i], 0.02, 0.98; text = args.tags[i], space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
+            end
+        end
+        ax[1].title = title
+        ax[1].ylabel = "OCV / V"
+        ax[2].ylabel = rich("R", subscript("DC"), " / mΩ")
+        ax[2].xlabel = "Charge / Ah"
+        ax[1].xgridvisible = false
+        ax[1].ygridvisible = false
+        ax[2].xgridvisible = false
+        ax[2].ygridvisible = false
+        hidexdecorations!(ax[1], ticks = false)
+
+        for (id, model) in models
+            plot_ecm!(ax, model, sols[id]; color = colors[id.m])
+        end
+
+        ylims!(ax[1], n * 3.2, n * 4.2)
+        ylims!(ax[2], n * 0.0, n * 15)
+        # 0.25 V/cell steps so module ticks (×12) land on integers (39, 42, 45, 48)
+        ax[1].yticks = (n * 3.25):(n * 0.25):(n * 4.0)
+        ax[2].yticks = (0):(n * 5):(n * 15)
+        linkxaxes!(ax...)
+    end
+
+    mod_elems = [LineElement(color = colors[m], linewidth = 3) for m in 1:9]
+    Legend(
+        fig[2, 1:2], mod_elems, ["M$m" for m in 1:9], "Module ID";
+        orientation = :horizontal, titleposition = :left, framevisible = false
+    )
+
+    return fig
+end
+
+
 function plot_soh_heatmap(comp_fit)
     fig = Figure(size = (300, 400))
     gl = GridLayout(fig[1, 1])
@@ -115,10 +171,3 @@ function plot_cell_soh(comp_fit, cells)
     Label(fig[1, 2, TopLeft()], "B"; fontsize = 20, font = :bold, padding = (0, 0, 5, 0))
     return fig
 end
-
-fig1 = plot_composite_ocv(comp_ocv_scaled, cell_ocvs)
-fig2 = plot_soh_heatmap(comp_ocv_scaled)
-
-fig3 = plot_cell_soh(comp_ocv_scaled, cell_ocvs)
-
-plot_soh_hist(comp_ocv_scaled)
