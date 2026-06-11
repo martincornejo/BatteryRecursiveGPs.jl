@@ -86,6 +86,19 @@ function plot_soh_heatmap!(layout, comp_fit)
     return nothing
 end
 
+function module_id_xticks!(ax)
+    ax.xtickformat = values -> begin
+        map(values) do value
+            p, m = divrem(Int(value), 9)
+            "P$(p + 1)M$m"
+        end
+    end
+    ax.xticks = [1, 6, 10, 15, 19, 24]
+    ax.xminorticks = 1:27
+    ax.xminorticksvisible = true
+    return
+end
+
 function plot_composite_ocv(comp_fit, cells; xaxis = :soc)
     fig = Figure(size = (400, 400))
     gl = GridLayout(fig[1, 1])
@@ -161,7 +174,7 @@ function plot_soh_hist!(fig, comp_fit)
 end
 
 function plot_cell_soh(comp_fit, cells)
-    fig = Figure(size = (700, 370))
+    fig = Figure(size = (700, 400))
     gl1 = GridLayout(fig[1, 1])
     gl2 = GridLayout(fig[1, 2])
     plot_composite_ocv!(gl1, comp_fit, cells; vertical = true)
@@ -169,5 +182,133 @@ function plot_cell_soh(comp_fit, cells)
     colsize!(fig.layout, 2, Relative(0.4))
     Label(fig[1, 1, TopLeft()], "A"; fontsize = 20, font = :bold, padding = (0, 0, 5, 0))
     Label(fig[1, 2, TopLeft()], "B"; fontsize = 20, font = :bold, padding = (0, 0, 5, 0))
+    return fig
+end
+
+function plot_module_soh(df_soh; whiskers = true)
+    fig = Figure(size = (700, 360))
+    gl = GridLayout(fig[1, 1])
+    plot_module_soh!(gl, df_soh; whiskers)
+    return fig
+end
+
+function plot_module_soh!(
+        layout, df_soh;
+        whiskers = true, legend = true,
+        # (module-based, cell-based)
+        colors = Makie.wong_colors()[[2, 1]],
+    )
+    ax = Axis(layout[1, 1])
+
+    soh_μ = Measurements.value.(df_soh.soh) * 100
+    soh_σ = Measurements.uncertainty.(df_soh.soh) * 100
+
+    m_soh_μ = Measurements.value.(df_soh.soh_module) * 100
+    m_soh_σ = Measurements.uncertainty.(df_soh.soh_module) * 100
+
+    ids = 1:27
+
+    # dumbbell: gray connector emphasizes the module-vs-cell gap
+    linesegments!(ax, repeat(ids; inner = 2), collect(Iterators.flatten(zip(m_soh_μ, soh_μ))); color = (:gray, 0.6), linewidth = 2)
+    if whiskers
+        errorbars!(ax, ids, m_soh_μ, 2 .* m_soh_σ; color = (colors[1], 0.6), whiskerwidth = 6)
+        errorbars!(ax, ids, soh_μ, 2 .* soh_σ; color = (colors[2], 0.6), whiskerwidth = 6)
+    end
+    scatter!(ax, ids, m_soh_μ; color = colors[1], markersize = 10, label = "Module-based")
+    scatter!(ax, ids, soh_μ; color = colors[2], markersize = 10, label = "Cell-based")
+
+    vlines!(ax, [9.5, 18.5]; color = (:black, 0.3), linewidth = 1)
+
+    ylims!(ax, 38, 100)
+    xlims!(ax, 0.3, 27.7)
+    ax.yticks = 40:10:100
+    ax.xgridvisible = false
+    ax.ygridvisible = false
+    ax.rightspinevisible = false
+    ax.topspinevisible = false
+    ax.ylabel = "Module SOH / %"
+    ax.xlabel = "Module ID"
+    module_id_xticks!(ax)
+
+    if legend
+        Legend(layout[2, 1], ax; orientation = :horizontal, framevisible = false)
+    end
+    return ax
+end
+
+function plot_module_inhomogeneity(df_soh; whiskers = true)
+    fig = Figure(size = (700, 360))
+    gl = GridLayout(fig[1, 1])
+    plot_module_inhomogeneity!(gl, df_soh; whiskers)
+    return fig
+end
+
+function plot_module_inhomogeneity!(
+        layout, df_soh;
+        whiskers = true, legend = true,
+        # (irreversible, reversible)
+        bar_colors = Makie.wong_colors()[[3, 4]],
+    )
+    ax = Axis(layout[1, 1])
+
+    total = (df_soh.loss_soh .+ df_soh.loss_soc) * 100
+    irrev_μ = Measurements.value.(df_soh.loss_soh) * 100
+    rev_μ = Measurements.value.(df_soh.loss_soc) * 100
+    total_μ = Measurements.value.(total)
+    total_σ = Measurements.uncertainty.(total)
+
+    ids = 1:27
+
+    barplot!(ax, ids, irrev_μ; width = 0.6, color = bar_colors[1], label = "Irreversible")
+    barplot!(ax, ids, rev_μ; offset = irrev_μ, width = 0.6, color = bar_colors[2], label = "Reversible")
+    if whiskers
+        errorbars!(ax, ids, total_μ, 2 .* total_σ; color = (:black, 0.5), linewidth = 1.2, whiskerwidth = 5)
+    end
+
+    vlines!(ax, [9.5, 18.5]; color = (:black, 0.3), linewidth = 1)
+
+    ylims!(ax, 0, 35)
+    xlims!(ax, 0.3, 27.7)
+    ax.yticks = 0:10:30
+    ax.yminorticks = 0:5:35
+    ax.yminorticksvisible = true
+    ax.xgridvisible = false
+    ax.ygridvisible = false
+    ax.rightspinevisible = false
+    ax.topspinevisible = false
+    ax.ylabel = "SOH loss / %"
+    ax.xlabel = "Module ID"
+    module_id_xticks!(ax)
+
+    if legend
+        Legend(layout[2, 1], ax; orientation = :horizontal, framevisible = false)
+    end
+    return ax
+end
+
+
+function plot_module_summary(
+        df_soh; whiskers = true,
+        soh_colors = Makie.wong_colors()[[1, 2]],
+        bar_colors = Makie.wong_colors()[[4, 3]],
+    )
+    fig = Figure(size = (700, 400))
+    gl = GridLayout(fig[1, 1])
+    gl1 = GridLayout(gl[1, 1])
+    gl2 = GridLayout(gl[2, 1])
+    ax1 = plot_module_soh!(gl1, df_soh; whiskers, legend = false, colors = soh_colors)
+    ax2 = plot_module_inhomogeneity!(gl2, df_soh; whiskers, legend = false, bar_colors)
+
+    hidexdecorations!(ax1, ticks = false, minorticks = false)
+    linkxaxes!(ax1, ax2)
+    rowsize!(gl, 1, Auto(1.4))
+    rowgap!(gl, 1, 8)
+
+    axislegend(ax1; position = :cb, framevisible = false)
+    axislegend(ax2; position = :ct, framevisible = false, patchsize = (12, 12), padding = (0, 0, 0, 0))
+
+    for (ax, tag) in zip((ax1, ax2), ("A", "B"))
+        text!(ax, 0.01, 0.98; text = tag, space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
+    end
     return fig
 end
