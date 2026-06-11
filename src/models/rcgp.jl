@@ -52,72 +52,6 @@ end
 # === builder
 
 function _build_rcgp_kf(θ, u, zt; n = 21, pad = 0.05)
-    # basis vectors — extend pad*Δq past each observed edge so boundary
-    # basis points are inside the observed range, not at its edge.
-    qmin, qmax = extrema([x.q for x in u])
-    Δq = qmax - qmin
-    b0 = range(qmin - pad * Δq, qmax + pad * Δq, n) |> collect
-
-    # OCV GP — `θ.ocv.ℓ` is the absolute lengthscale at the nominal voltage
-    # coverage `θ.ocv.Δv_nom` (raw V). Cells with narrower observed V window
-    # get a wider absolute ℓ via inverse-sqrt scaling. ΔV (not Δq) is the
-    # right discriminator: clipped cells lose OCV coverage, while degraded
-    # cells with full V range have more curvature to fit, not less.
-    Δv_nom_n = θ.ocv.Δv_nom / zt.v.scale[1]
-    ℓ_ocv = θ.ocv.ℓ * sqrt(Δv_nom_n / θ.ocv.Δv_obs)
-    kernel1 = θ.ocv.σ * with_lengthscale(SEKernel(), ℓ_ocv)
-    rgp1 = RGP(kernel1, b0)
-
-    # R1 GP — `θ.r1.ℓ` is a fraction of the cell's normalized q range,
-    # so smaller-capacity cells get a proportionally tighter lengthscale
-    # and the same number of features-per-Δq.
-    r1μ̂ = StatsBase.transform(zt.r, [θ.r1μ]) |> first
-    ℓ_r1 = θ.r1.ℓ * Δq
-    kernel2 = θ.r1.σ * with_lengthscale(SEKernel(), ℓ_r1)
-    rgp2 = RGP(r1μ̂, kernel2, b0)
-
-    # R0 scalar component
-    r0 = R0(;
-        r0 = StatsBase.transform(zt.r, [θ.r0μ]) |> first,
-        σ0 = StatsBase.transform(zt.r, [θ.r0.σ0]) |> first,
-        σ1 = StatsBase.transform(zt.r, [θ.r0.σ1]) |> first,
-    )
-
-    # RC (no r state — R1 lives in the GP)
-    rc = RC_VTau(;
-        v0 = StatsBase.transform(zt.σ, [θ.rc.v0]) |> first,
-        σ0_v = StatsBase.transform(zt.σ, [θ.rc.σ0_v]) |> first,
-        σ1_v = StatsBase.transform(zt.σ, [θ.rc.σ1_v]) |> first,
-        τ0 = θ.rc.τ0,
-        σ0_τ = θ.rc.σ0_τ,
-        σ1_τ = θ.rc.σ1_τ,
-    )
-
-    # Arrhenius
-    arr = Arrhenius(; θ.arr...)
-
-    # coulomb counting
-    cc = ColoumbCounting(; θ.cc...)
-
-    # measurement noise
-    vσ² = StatsBase.transform(zt.σ, [θ.vσ]) |> first |> abs2
-
-    p = (; arr = arr.p, Ts = θ.Ts, vσ², zt)
-    components = (; ocv = rgp1, r1 = rgp2, r0, rc, arr, cc)
-
-    return ExtendedKalmanFilter(components, _rcgp_dynamics!, _rcgp_measurement, _rcgp_R2; p)
-end
-
-
-"""
-    _build_rcgp_kf_absolute(θ, u, zt; n=21, pad=0.05)
-
-Sweep-only builder: interprets `θ.ocv.ℓ`, `θ.ocv.σ`, `θ.r1.ℓ`, `θ.r1.σ` as
-absolute values in z-scored space (no `sqrt(Δv_nom/Δv_obs)` factor on the OCV
-side, no `* Δq` factor on the R1 side). Lets us sweep raw hyperparam axes
-without confounding from v14's per-cell scaling rule. To be cleaned up later.
-"""
-function _build_rcgp_kf_absolute(θ, u, zt; n = 21, pad = 0.05)
     qmin, qmax = extrema([x.q for x in u])
     Δq = qmax - qmin
     b0 = range(qmin - pad * Δq, qmax + pad * Δq, n) |> collect
@@ -155,8 +89,6 @@ function _build_rcgp_kf_absolute(θ, u, zt; n = 21, pad = 0.05)
 
     return ExtendedKalmanFilter(components, _rcgp_dynamics!, _rcgp_measurement, _rcgp_R2; p)
 end
-
-RCGPModel_absolute(θ, u, zt; n = 21, pad = 0.05) = RCGPModel(_build_rcgp_kf_absolute(θ, u, zt; n, pad))
 
 
 """
@@ -237,7 +169,8 @@ end
 
 # === model-specific plots
 
-function plot_ecm!(ax, model::RCGPModel, sol = nothing)
+function plot_ecm!(ax, model::RCGPModel, sol = nothing; color = nothing)
+    kw = isnothing(color) ? (;) : (; color)
     kf = model.kf
     zt = kf.p.zt
 
@@ -253,23 +186,29 @@ function plot_ecm!(ax, model::RCGPModel, sol = nothing)
     ocv = predict_gp(kf, q̂, :ocv)
     ocvμ = StatsBase.reconstruct(zt.v, ocv.μ)
     ocvσ = StatsBase.reconstruct(zt.σ, sqrt.(diag(ocv.Σ)))
-    lines!(ax[1], q, ocvμ)
-    band!(ax[1], q, ocvμ + 2ocvσ, ocvμ - 2ocvσ, alpha = 0.8)
+    lines!(ax[1], q, ocvμ; kw...)
+    band!(ax[1], q, ocvμ + 2ocvσ, ocvμ - 2ocvσ; alpha = 0.8, kw...)
 
     # R0 scalar: horizontal band from final state estimate
     x_last = sol === nothing ? state(kf) : sol.x_end
     xc = ComponentVector(x_last, kf.p.xid)
     R_last = sol === nothing ? covariance(kf) : sol.R_end
     Σ = ComponentMatrix(R_last, kf.p.Σid)
-    rμ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
-    rσ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) |> first
-    hlines!(ax[2], rμ * 1.0e3; color = Cycled(1))
-    hspan!(ax[2], (rμ - 2rσ) * 1.0e3, (rμ + 2rσ) * 1.0e3; color = (Cycled(1), 0.3))
+    r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
+    r0σ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) |> first
+    # hlines!(ax[2], r0μ * 1.0e3; color = Cycled(1))
+    # hspan!(ax[2], (r0μ - 2r0σ) * 1.0e3, (r0μ + 2r0σ) * 1.0e3)
 
     # R1 GP curve overlaid on the R0 panel
     r1 = predict_gp(kf, q̂, :r1)
     r1μ = StatsBase.reconstruct(zt.r, r1.μ) * 1.0e3
     r1σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ))) * 1.0e3
-    lines!(ax[2], q, r1μ; color = Cycled(2))
-    return band!(ax[2], q, r1μ + 2r1σ, r1μ - 2r1σ; color = (Cycled(2), 0.3))
+
+    rμ = r0μ .+ r1μ
+    rσ = r0σ .+ r1σ
+
+    lines!(ax[2], q, rμ; kw...)
+    band!(ax[2], q, rμ + 2rσ, rμ - 2rσ; alpha = 0.8, kw...)
+
+    return nothing
 end
