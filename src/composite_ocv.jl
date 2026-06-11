@@ -1,23 +1,21 @@
 """
-    fit_composite_ocv(cells; n_v_grid=50, n_v_pair=50, uq=true)
+    fit_composite_ocv(cells; n_v_grid=50, n_v_pair=50, uq=true, n_v_uq=80, ℓ_uq=nothing)
 
-Pairwise-OLS composite OCV identification.  Instead of building a single
-voltage grid on the intersection of all cells (where one narrow cell shrinks
-the grid for everyone), this formulation works with per-pair voltage overlaps.
+Pairwise-OLS composite OCV identification: the aligned curves of every cell
+pair must agree on their mutual voltage overlap,
+`s_i·q_i(v) + Q0_i ≈ s_j·q_j(v) + Q0_j`. Anchor rows at the common boundary
+voltages fix the gauge: `q*(V_lo) = 0`, `q*(V_hi) = 1`.
 
-For each pair `(i, j)` the aligned curves must agree on their mutual overlap:
-`s_i·q_i(v) + Q0_i ≈ s_j·q_j(v) + Q0_j`.  The gauge degeneracy (additive +
-multiplicative) is broken by anchor constraints at the intersection-boundary
-voltages V_lo and V_hi where all cells have data: the composite is normalised
-to `q*(V_lo) = 0`, `q*(V_hi) = 1`.  Every cell contributes two anchor rows,
-so no cell is special and `A'A` is full rank — standard OLS covariance applies.
-
-Returns `(; Q_cell, s0, params, soc_grid, v_grid)`.
-`Q_cell` and `s0` are `Measurement{Float64}` vectors with OLS-based 1σ bars.
-`soc_grid` and `v_grid` define the composite OCV curve on the union voltage range.
-Use `rescale_composite_ocv` with a voltage–SOC reference to convert to absolute Ah.
+Returns `(; Q_cell, s0, params, soc_grid, v_grid, Q_full)` with `Q_cell`/`s0`
+as `Measurement` vectors. The 1σ bars treat each cell's residual against the
+composite as a correlated curve (SE kernel; length scale `ℓ_uq`, estimated
+from the residual autocorrelation when `nothing`).
+Use `rescale_composite_ocv` to convert to absolute Ah.
 """
-function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50, uq::Bool = true)
+function fit_composite_ocv(
+        cells; n_v_grid = 50, n_v_pair = 50,
+        uq = true, n_v_uq = 80, ℓ_uq = nothing,
+    )
     N = length(cells)
     N >= 2 || error("Need at least 2 cells for pairwise fit")
     fqs = [_as_v_frame_function(collect(c.q), collect(c.μ)) for c in cells]
@@ -29,26 +27,22 @@ function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50, uq::Bo
     v_anchor_lo >= v_anchor_hi && error("No voltage overlap across cells — cannot align.")
 
     pair_grids = Tuple{Int, Int, Vector{Float64}}[]
-    n_total = 0
     for i in 1:N, j in (i + 1):N
         v_lo = max(minimum(fqs[i].t), minimum(fqs[j].t)) + 1.0e-3
         v_hi = min(maximum(fqs[i].t), maximum(fqs[j].t)) - 1.0e-3
         v_lo >= v_hi && continue
         vg = collect(range(v_lo, v_hi; length = n_v_pair))
         push!(pair_grids, (i, j, vg))
-        n_total += n_v_pair
     end
     isempty(pair_grids) && error("No pair has voltage overlap — cannot align.")
-    n_total += 2 * N
 
-    # Normal-equations accumulation: G = AᵀA (n_free×n_free), d = Aᵀb, s = bᵀb.
+    # Normal-equations accumulation: G = AᵀA (n_free×n_free), d = Aᵀb.
     # Each row of the design matrix A is sparse (≤4 nonzeros), so we stream the
     # contributions instead of materialising A — which is multi-GB at fleet
     # scale (N(N-1)/2 pairs × n_v_pair rows). θ = G \ d is the identical OLS
-    # solution to A \ b; G also gives inv(AᵀA) for UQ and RSS = bᵀb − θᵀd.
+    # solution to A \ b.
     G = zeros(n_free, n_free)
     d = zeros(n_free)
-    s = 0.0
 
     @inbounds for (i, j, vg) in pair_grids
         cols = (2 * i - 1, 2 * i, 2 * j - 1, 2 * j)
@@ -69,7 +63,6 @@ function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50, uq::Bo
             end
             d[cols[1]] += vals[1] * b_rhs
             d[cols[2]] += vals[2] * b_rhs
-            s += b_rhs^2
         end
     end
 
@@ -91,11 +84,34 @@ function fit_composite_ocv(cells; n_v_grid::Int = 50, n_v_pair::Int = 50, uq::Bo
     Q_cell = Vector{Measurement{Float64}}(undef, N)
     s0 = Vector{Measurement{Float64}}(undef, N)
     if uq
-        pairwise_rss = s - θ' * d   # = ‖Aθ − b‖² at the OLS solution (Gθ = d)
-        σ²_hat = pairwise_rss / (n_total - n_free)
-        Σθ = σ²_hat .* inv(G)
+        # Composite (consensus) curve, interpolable at any voltage.
+        v_dense = collect(range(v_min, v_max; length = 400))
+        qstar = LinearInterpolation(_mean_aligned_qv(fqs, params, v_dense), v_dense)
+
+        # Per-cell residual curves e_i(v) = s_i·q_i(v) + Q0_i − q*(v), sampled
+        # on each cell's own window with one global step (median window width
+        # / (n_v_uq - 1), i.e. scale-free in voltage). The shared step makes
+        # lag-k pairs exactly k·Δv apart for every cell.
+        Δv = median(maximum(fq.t) - minimum(fq.t) for fq in fqs) / (n_v_uq - 1)
+        residuals = map(1:N) do i
+            Q0_i, s_i = params[i]
+            v_lo, v_hi = extrema(fqs[i].t)
+            vg = collect((v_lo + 1.0e-3):Δv:(v_hi - 1.0e-3))
+            e = [s_i * fqs[i](v) + Q0_i - qstar(v) for v in vg]
+            (; vg, e)
+        end
+
+        ℓ = something(ℓ_uq, _estimate_lengthscale(residuals))
+        kernel = with_lengthscale(SEKernel(), ℓ)
+
         for i in 1:N
-            Σ_block = Σθ[[2 * i - 1, 2 * i], [2 * i - 1, 2 * i]]
+            (; vg, e) = residuals[i]
+            A = hcat(ones(length(vg)), fqs[i].(vg))    # design of the local fit: [1  q_i(v)]
+            H = (A' * A) \ A'                          # sensitivity of (Q0_i, s_i) to e_i
+            P = I - A * H                              # projects onto the visible residual
+            K0 = kernelmatrix(kernel, vg)
+            c = sum(abs2, e) / tr(P * K0 * P)          # amplitude: model matches observed residual
+            Σ_block = c .* (H * K0 * H')               # Cov(Q0_i, s_i) under e_i ~ (0, c·K0)
             si_val = params[i][2]
             J = [
                 0.0 -Q_full / si_val^2
@@ -222,4 +238,30 @@ function _mean_aligned_qv(fqs, params, v_grid)
         counts[k] > 0 && (Q_sum[k] /= counts[k])
     end
     return Q_sum
+end
+
+
+# Correlation length of the residual curves, from their pooled autocorrelation:
+# within-curve pairs k grid steps (= k·Δv exactly) apart, one correlation per
+# lag; the SE kernel exp(-d²/2ℓ²) crosses exp(-1/2) at d = ℓ, so ℓ is read off
+# where the measured decay passes that level.
+function _estimate_lengthscale(residuals; max_lag = 40)
+    Δv = residuals[1].vg[2] - residuals[1].vg[1]
+    ρ = map(1:max_lag) do k
+        xs = Float64[]
+        ys = Float64[]
+        for (; e) in residuals
+            n = length(e)
+            k < n || continue
+            append!(xs, @view e[1:(n - k)])
+            append!(ys, @view e[(1 + k):n])
+        end
+        cor(xs, ys)
+    end
+
+    target = exp(-0.5)
+    k = findfirst(<(target), ρ)
+    k === nothing && error("Residual autocorrelation never decays below exp(-1/2); increase max_lag.")
+    k == 1 && error("Residuals decorrelate within one grid step; increase n_v_uq to resolve ℓ.")
+    return Δv * ((k - 1) + (ρ[k - 1] - target) / (ρ[k - 1] - ρ[k]))
 end
