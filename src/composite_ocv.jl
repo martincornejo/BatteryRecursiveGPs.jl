@@ -139,24 +139,8 @@ function rescale_composite_ocv(fit; v_ref, soc_ref)
 
     Q_cell = fit.Q_cell ./ soc_span
     s0 = soc_span .* fit.s0 .+ soc_zero
-    return (; Q_cell, s0)
-end
-
-
-"""
-    rescaled_ocv_curve(fit; v_ref, soc_ref)
-
-Return the composite OCV curve in absolute SOC gauge as `(v_grid, soc_grid)`.
-Mirrors `rescale_composite_ocv` but returns the curve, not per-cell params.
-Use as a portable reference OCV across experiments.
-"""
-function rescaled_ocv_curve(fit; v_ref, soc_ref)
-    v_of_s = LinearInterpolation(fit.soc_grid, fit.v_grid)
-    soc_at_ref = v_of_s.(v_ref)
-    soc_span = (soc_ref[2] - soc_ref[1]) / (soc_at_ref[2] - soc_at_ref[1])
-    soc_zero = soc_ref[1] - soc_span * soc_at_ref[1]
     soc_grid = soc_span .* fit.soc_grid .+ soc_zero
-    return (; v_grid = fit.v_grid, soc_grid)
+    return (; Q_cell, s0, params = fit.params, soc_grid, v_grid = fit.v_grid, Q_full = fit.Q_full)
 end
 
 
