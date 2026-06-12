@@ -4,7 +4,7 @@ Built from a fitted RCGPModel: scalar R0, RC time constant τ1, and Arrhenius
 parameters are fixed; R1 stays as a GP function of charge (frozen weights from
 the parent KF). Only charge (q) and RC voltage (vrc) are estimated online.
 """
-struct RCGPStateModel <: AbstractBatteryModel
+struct RCGPStateModel <: AbstractBatteryStateModel
     kf::ExtendedKalmanFilter
 end
 

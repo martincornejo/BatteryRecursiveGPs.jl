@@ -3,7 +3,7 @@ Reduced 2-state model for SOC estimation with frozen ECM parameters.
 Built from a fitted YuasaModel: RC and Arrhenius parameters are fixed,
 only charge (q) and RC voltage (vrc) are estimated online.
 """
-struct YuasaStateModel <: AbstractBatteryModel
+struct YuasaStateModel <: AbstractBatteryStateModel
     kf::ExtendedKalmanFilter
 end
 

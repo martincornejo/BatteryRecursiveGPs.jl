@@ -3,7 +3,7 @@ Reduced 3-state model for SOC estimation with frozen 2RC ECM parameters.
 Built from a fitted Fenecon2RCModel: scalar R0, both RC branches, and Arrhenius
 parameters are fixed; only charge (q) and the two RC voltages are estimated online.
 """
-struct Fenecon2RCStateModel <: AbstractBatteryModel
+struct Fenecon2RCStateModel <: AbstractBatteryStateModel
     kf::ExtendedKalmanFilter
 end
 

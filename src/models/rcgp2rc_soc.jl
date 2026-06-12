@@ -5,7 +5,7 @@ Arrhenius parameters are fixed; R1 and R2 stay as GP functions of charge with
 weights frozen from the parent KF. Only charge (q) and the two RC voltages are
 estimated online.
 """
-struct RCGP2RCStateModel <: AbstractBatteryModel
+struct RCGP2RCStateModel <: AbstractBatteryStateModel
     kf::ExtendedKalmanFilter
 end
 
