@@ -32,7 +32,7 @@ end
 # end
 
 function plot_cell_voltage_system(
-        data; panel_tags = false,
+        data; panel_tags = true,
         # highlight the outlier modules discussed in the text
         highlights = Dict((3, 5) => :firebrick, (1, 6) => :firebrick),
     )
@@ -340,81 +340,41 @@ function plot_voltage_current_alignment(data, p, m, c)
     return fig
 end
 
-function plot_data_resolution(data, p, m; yscale = identity)
-    # p = 1, m = 9, yscale = log10 # identity # log10
-    df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => "value")
-    df_v = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
-    df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
-    df_c = select(data[:cell_voltage], "_time" => "time", "cell_voltage_$(p)_$(m)_1_1" => "value")
+# All tables share a single dense `_time` column, so the sampling intervals are a
+# property of each signal table, not of individual modules.
+function plot_data_resolution(data; yscale = log10)
+    colors = Makie.wong_colors()
+    # signal → color mapping matches plot_dataset_overview
+    signals = [
+        (:module_current, "Module current", colors[2]),
+        (:module_voltage, "Module voltage", colors[3]),
+        (:battery_temperature, "Module temperature", colors[4]),
+        (:cell_voltage, "Cell voltage", colors[1]),
+    ]
+    logscale = yscale === log10
 
-    fig = Figure()
-    ax = [Axis(fig[i, 1]; yscale) for i in 1:4]
-    bins = 1:60
+    fig = Figure(size = (550, 500))
+    ax = [
+        Axis(fig[i, 1]; yscale, ylabel = "Count", titlealign = :left, titlesize = 12,
+            xticks = 0:10:80, xminorticks = IntervalsBetween(10), xminorticksvisible = true)
+            for i in 1:4
+    ]
+    bins = 0.5:1:80.5  # integer-second timestamps, center bars on integers
 
-    hist!(ax[1], Dates.value.(diff(df_i.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
-    hist!(ax[2], Dates.value.(diff(df_v.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
-    hist!(ax[3], Dates.value.(diff(df_T.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
-    hist!(ax[4], Dates.value.(diff(df_c.time)) * 1.0e-3; strokewidth = 1, strokecolor = :black, bins)
-
-    xlims!(ax[1], 0, 60)
-    xlims!(ax[2], 0, 60)
-    xlims!(ax[3], 0, 60)
-    xlims!(ax[4], 0, 60)
-
-
-    ax[1].title = "Measurement time resolution"
-    ax[1].ylabel = "Module current"
-    ax[2].ylabel = "Module voltage"
-    ax[3].ylabel = "Module\n temperature"
-    ax[4].ylabel = "Cell voltage"
-    ax[4].xlabel = "Time step / s"
-
-    return fig
-end
-
-function plot_data_resolution(data, ids; yscale = identity)
-
-    fig = Figure()
-    ax = [Axis(fig[i, 1]; yscale) for i in 1:4]
-    bins = 0:60
-
-    Δt_i = Float64[]
-    Δt_v = Float64[]
-    Δt_T = Float64[]
-    Δt_c = Float64[]
-    for id in ids
-        p, m = id
-        df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => "value")
-        df_v = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
-        df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
-        df_c = select(data[:cell_voltage], "_time" => "time", "cell_voltage_$(p)_$(m)_1_1" => "value")
-
-        append!(Δt_i, Dates.value.(diff(df_i.time)) * 1.0e-3)
-        append!(Δt_v, Dates.value.(diff(df_v.time)) * 1.0e-3)
-        append!(Δt_T, Dates.value.(diff(df_T.time)) * 1.0e-3)
-        append!(Δt_c, Dates.value.(diff(df_c.time)) * 1.0e-3)
+    nmax = 0
+    for (i, (key, name, color)) in enumerate(signals)
+        Δt = Dates.value.(diff(data[key][!, "_time"])) * 1.0e-3
+        hist!(ax[i], Δt; strokewidth = 1, strokecolor = :black, color, bins,
+            fillto = logscale ? 0.5 : 0.0)
+        nmax = max(nmax, maximum(StatsBase.fit(Histogram, Δt, bins).weights))
+        ax[i].title = "$name  (median $(round(Int, median(Δt))) s)"
     end
 
-    hist!(ax[1], Δt_i; strokewidth = 1, strokecolor = :black, bins)
-    hist!(ax[2], Δt_v; strokewidth = 1, strokecolor = :black, bins)
-    hist!(ax[3], Δt_T; strokewidth = 1, strokecolor = :black, bins)
-    hist!(ax[4], Δt_c; strokewidth = 1, strokecolor = :black, bins)
-
-    xlims!(ax[1], 0, 60)
-    xlims!(ax[2], 0, 60)
-    xlims!(ax[3], 0, 60)
-    xlims!(ax[4], 0, 60)
-
-
-    ax[1].title = "Measurement time resolution"
-    ax[1].ylabel = "Module current"
-    ax[2].ylabel = "Module voltage"
-    ax[3].ylabel = "Module\n temperature"
-    ax[4].ylabel = "Cell voltage"
-    ax[4].xlabel = "Time step / s"
-
-    linkxaxes!(ax...)
-    linkyaxes!(ax...)
+    linkaxes!(ax...)
+    xlims!(ax[1], 0, 81)
+    logscale && ylims!(ax[1], 0.5, 2nmax)
+    foreach(a -> hidexdecorations!(a; grid = false, ticks = false, minorticks = false), ax[1:3])
+    ax[4].xlabel = "Sampling interval / s"
 
     return fig
 end
@@ -502,7 +462,7 @@ end
 
 
 function plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5))
-    fig = Figure(size = (700, 500))
+    fig = Figure(size = (700, 450))
     colors = Makie.wong_colors()
 
     df_v = copy(data[:cell_voltage])
