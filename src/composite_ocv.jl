@@ -10,7 +10,8 @@ Returns `(; Q_cell, s0, params, soc_grid, v_grid, Q_full)` with `Q_cell`/`s0`
 as `Measurement` vectors. The 1σ bars treat each cell's residual against the
 composite as a correlated curve (SE kernel; length scale `ℓ_uq`, estimated
 from the residual autocorrelation when `nothing`).
-Use `rescale_composite_ocv` to convert to absolute Ah.
+Use `rescale_composite_ocv` to convert to absolute Ah, or pass `refs`
+directly: `fit_composite_ocv(cells, refs)` fits and rescales in one step.
 """
 function fit_composite_ocv(
         cells; n_v_grid = 50, n_v_pair = 50,
@@ -134,24 +135,38 @@ end
 
 
 """
-    rescale_composite_ocv(fit; v_ref, soc_ref)
+    fit_composite_ocv(cells, refs; kwargs...)
+
+Fit the composite OCV and rescale it to absolute units in one step.
+`refs` holds two voltage–SOC reference points as a named tuple, e.g.
+`refs = (v_low = 3.45, soc_low = 0.15, v_high = 4.05, soc_high = 0.95)`
+means 3.45 V corresponds to 15 % SOC and 4.05 V to 95 %. Keyword
+arguments are forwarded to the normalised fit.
+"""
+function fit_composite_ocv(cells, refs; kwargs...)
+    fit = fit_composite_ocv(cells; kwargs...)
+    return rescale_composite_ocv(fit, refs)
+end
+
+"""
+    rescale_composite_ocv(fit, refs)
 
 Transform the normalised `(Q_cell, s0)` from `fit_composite_ocv` into
-absolute units given two voltage–SOC reference pairs.
+absolute units given two voltage–SOC reference points,
+`refs = (v_low = 3.3, soc_low = 0.05, v_high = 4.05, soc_high = 0.95)`.
+The composite OCV curve is interpolated at the reference voltages to
+determine the affine mapping.
 
-`v_ref` and `soc_ref` are 2-tuples: e.g. `v_ref = (3.3, 4.05)`,
-`soc_ref = (0.05, 0.95)` means 3.3 V corresponds to 5 % SOC and
-4.05 V to 95 %. The composite OCV curve is interpolated at the
-reference voltages to determine the affine mapping.
-
-Returns `(; Q_cell, s0)` as `Measurement{Float64}` vectors in the
-reference gauge (Q in Ah, s0 as absolute SOC fraction).
+Returns the fit with `Q_cell`, `s0` and `soc_grid` in the reference
+gauge (Q in Ah, s0 as absolute SOC fraction).
 """
-function rescale_composite_ocv(fit; v_ref, soc_ref)
+function rescale_composite_ocv(fit, refs)
+    (; v_low, soc_low, v_high, soc_high) = refs
     composite = LinearInterpolation(fit.soc_grid, fit.v_grid)
-    soc_at_ref = composite.(v_ref)
-    soc_span = (soc_ref[2] - soc_ref[1]) / (soc_at_ref[2] - soc_at_ref[1])
-    soc_zero = soc_ref[1] - soc_span * soc_at_ref[1]
+    soc_at_low = composite(v_low)
+    soc_at_high = composite(v_high)
+    soc_span = (soc_high - soc_low) / (soc_at_high - soc_at_low)
+    soc_zero = soc_low - soc_span * soc_at_low
 
     Q_cell = fit.Q_cell ./ soc_span
     s0 = soc_span .* fit.s0 .+ soc_zero
