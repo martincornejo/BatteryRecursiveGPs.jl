@@ -126,20 +126,28 @@ function cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore())
     df_v[!, :value] = StatsBase.transform(zt.v, df_v.value)
     df_v = fill_missings(df_v, Second(Ts))
 
+    # oscilloscope current: irregular ~1 Hz scope captures → averaged per second,
+    # then linearly interpolated onto the explicit ti grid (same path as the BMS
+    # current and temperature), so current, temperature and voltage share one grid
     df_î = CSV.File(datadir * "oscilloscope_p1_m9.csv"; dateformat = dateformat"y-m-dTH:M:S.sss+00:00") |> DataFrame
     df_î.timestamp_utc = floor.(df_î.timestamp_utc, Second(1))
     df_î = combine(groupby(df_î, :timestamp_utc), :MEAS1 => mean => :MEAS1)
-    select!(df_î, :timestamp_utc => :_time, :MEAS1 => ByRow(x -> -x) => :i)
-    subset!(df_î, :_time => ByRow(∈(ti)))
-    df_î = ffill(df_î, Second(1))
+    select!(df_î, :timestamp_utc => "time", :MEAS1 => ByRow(x -> -x) => "value")
+    df_î = interpolate(df_î, ti; Ts)
 
-    df_î.q = cumsum(df_î.i) * Ts / 3600
+    q = cumsum(df_î.value) * Ts / 3600
 
-    î = StatsBase.transform(zt.i, df_î.i)
-    q̂ = StatsBase.transform(zt.q, df_î.q)
+    # temperature — RCGPModel's measurement function reads u.T (Arrhenius factor)
+    df_T = copy(data[:battery_temperature])
+    select!(df_T, "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
+    df_T = interpolate(df_T, ti; Ts)
+
+    î = StatsBase.transform(zt.i, df_î.value)
+    q̂ = StatsBase.transform(zt.q, q)
+    T = df_T.value
     v̂ = df_v.value
 
-    u = [(; i, q) for (i, q) in zip(î, q̂)]
+    u = [(; i, q, T) for (i, q, T) in zip(î, q̂, T)]
     y = [SA[v] for v in v̂]
 
     return (; u, y)
