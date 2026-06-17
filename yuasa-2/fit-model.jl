@@ -226,29 +226,49 @@ function fit_modules(data, ϑ, ti, ids)
     return (; module_models = models, module_sols = sols)
 end
 
-function fit_models_thread(make_model, make_uy, make_θ, ids, zt)
-    models = Dict()
-    sols = Dict()
-
+function thread_map(f, ids)
+    out = Dict()
     for batch in Iterators.partition(ids, Threads.nthreads())
-        tasks = Dict(
-            id => Threads.@spawn begin
-                    (; u, y) = make_uy(id)
-                    θ = make_θ(u, y, id)
-                    fit_model(make_model, u, y, θ, zt)
-                end for id in batch
-        )
+        tasks = Dict(id => Threads.@spawn f(id) for id in batch)
         for (id, task) in tasks
             try
-                (; model, sol) = fetch(task)
-                models[id] = model
-                sols[id] = sol
+                out[id] = fetch(task)
                 @info "id=$id complete"
             catch e
                 @error "id=$id failed" exception = e
             end
         end
     end
+    return out
+end
 
+function fit_models_thread(make_model, make_uy, make_θ, ids, zt)
+    runs = thread_map(ids) do id
+        (; u, y) = make_uy(id)
+        θ = make_θ(u, y, id)
+        fit_model(make_model, u, y, θ, zt)
+    end
+    models = Dict(id => run.model for (id, run) in runs)
+    sols = Dict(id => run.sol for (id, run) in runs)
     return (; models, sols)
+end
+
+# open-loop run: frozen parameters, no correction (tt = 0) — pure voltage prediction
+function eval_models(models, sols, ids)
+    return thread_map(ids) do id
+        (; sol_eval) = eval_model(models[id], sols[id])
+        sol_eval
+    end
+end
+
+# closed-loop run: frozen ECM parameters, 2-state EKF estimates charge + RC voltage
+function fit_soc_models(models, sols, ids; q0 = 0.0, Ts = 1.0, θ)
+    runs = thread_map(ids) do id
+        sm = RCGPStateModel(models[id]; q0, Ts, θ)
+        sol = run_kf!(sm, sols[id].u, sols[id].y)
+        (; model = sm, sol)
+    end
+    soc_models = Dict(id => run.model for (id, run) in runs)
+    soc_sols = Dict(id => run.sol for (id, run) in runs)
+    return (; models = soc_models, sols = soc_sols)
 end
