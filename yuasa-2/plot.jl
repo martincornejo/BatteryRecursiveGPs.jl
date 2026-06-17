@@ -157,20 +157,24 @@ function plot_composite_ocv!(layout, comp_fit, cells; xaxis = :soc, vertical = t
     return
 end
 
-function plot_soh_hist(comp_fit)
-    fig = Figure()
-    plot_soh_hist!(fig, comp_fit)
-    return fig
-end
+# distribution of cell SOH (capacity relative to nominal) across the fleet
+function plot_cell_soh_hist(comp_fit; Q_nom = 100)
+    soh = Measurements.value.(comp_fit.Q_cell) ./ Q_nom .* 100
 
-function plot_soh_hist!(fig, comp_fit)
-    ax = Axis(fig[1, 1], xlabel = "Cell Capacity / Ah", ylabel = "Cell Count")
+    fig = Figure(size = (450, 400))
+    ax = Axis(fig[1, 1], xlabel = "Cell SOH / %", ylabel = "Cell count")
+
+    bins = 40:1:90
+    hist!(ax, soh; bins, color = :gray, strokewidth = 1)
+    xlims!(ax, first(bins), last(bins))
     ylims!(ax, 0, nothing)
 
-    bins = 40.5:85.5
-    Q_cell = Measurements.value.(comp_fit.Q_cell)
-    hist!(ax, Q_cell; bins, color = :gray, strokewidth = 1)
-    return
+    ax.xgridvisible = false
+    ax.ygridvisible = false
+    ax.rightspinevisible = false
+    ax.topspinevisible = false
+    ax.ytrimspine = (false, true)
+    return fig
 end
 
 function plot_cell_soh(comp_fit, cells)
