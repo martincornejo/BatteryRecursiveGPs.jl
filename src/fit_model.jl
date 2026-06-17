@@ -7,6 +7,14 @@ function fit_model(make_model, u, y, θ, zt)
     return (; model, sol, time = stats.time)
 end
 
+function eval_model(model, sol)
+    (; u, y) = sol
+    reinit_kf!(model)
+    stats = @timed begin
+        sol_eval = run_kf!(model, u, y; tt = 0)
+    end
+    return (;sol_eval, time = stats.time)
+end
 
 function fit_models_threaded(make_model, make_uy, ids, θ, zt)
     models = Dict()
@@ -39,9 +47,9 @@ function fit_models_distributed(make_model, make_uy, ids, θ, zt)
     pool = WorkerPool(workers())
     tasks = Dict(
         id => begin
-            (; u, y) = make_uy(id)
-            remotecall(fit_model, pool, make_model, u, y, θ, zt)
-        end for id in ids
+                (; u, y) = make_uy(id)
+                remotecall(fit_model, pool, make_model, u, y, θ, zt)
+            end for id in ids
     )
 
     models = Dict()
