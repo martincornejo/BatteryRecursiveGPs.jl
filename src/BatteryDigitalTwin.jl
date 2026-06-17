@@ -59,9 +59,9 @@ export R0, RC, dynamics_rc, RC_VTau, dynamics_rc_vτ
 
 # analysis
 export calc_deltaq, calc_Q, calc_soc0, calc_soh # single cell
-export gls_fit, calc_wls, gp_ocv, gp_r0, gp_r1, gp_r2, charge_trajectory # improved GLS-based estimation
+export gls_fit, calc_wls, gp_ocv, gp_r0, gp_r1, gp_r2, charge_trajectory, voltage_error # improved GLS-based estimation
 export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
-export fit_composite_ocv, rescale_composite_ocv, rescaled_ocv_curve, fit_cells_to_reference # composite OCV from cell posteriors
+export fit_composite_ocv, rescale_composite_ocv, fit_cells_to_reference # composite OCV from cell posteriors
 
 # plotting — model-agnostic
 export plot_sim
