@@ -410,6 +410,64 @@ function plot_module_v_rmse(df_v_module; colors = Makie.wong_colors()[[1, 2]])
     return fig
 end
 
+# charge-estimation accuracy on the reference module: time-resolved SOC error vs the oscilloscope
+# ground truth, one line per cell. Shows the error magnitude, its temporal structure, and the
+# cell-to-cell consistency in one view.
+function plot_charge_error(df; color = Makie.wong_colors()[1])
+    fig = Figure(size = (700, 320))
+    ax = Axis(fig[1, 1], xlabel = "Time / h", ylabel = "SOC error / %")
+    cols = filter(!=("t"), names(df))
+
+    hlines!(ax, [0]; color = :gray, linewidth = 0.5)
+    for c in cols
+        lines!(ax, df.t, df[!, c]; color = (color, 0.7), linewidth = 1.5)
+    end
+
+    xlims!(ax, extrema(df.t)...)
+    ax.xgridvisible = false
+    ax.ygridvisible = false
+    ax.yminorticksvisible = true
+    return fig
+end
+
+# fault-rejection diagnostic: per scenario (column), charge trajectory (top) and error (bottom) for
+# the oscilloscope reference, module-current Coulomb counting, and the EKF estimate (±2σ band).
+function plot_soc_diagnostic(diag; color = :dodgerblue)
+    fig = Figure(size = (700, 400))
+    ax = [Axis(fig[i, j]) for i in 1:2, j in 1:2]
+    for (col, d) in enumerate(diag)
+        e_cc, e = d.q_cc .- d.q_ref, d.q .- d.q_ref
+
+        xlims!(ax[1, col], d.t[begin], d.t[end])
+        lines!(ax[1, col], d.t, d.q_ref; color = :black, label = "Reference (oscilloscope CC)")
+        lines!(ax[1, col], d.t, d.q_cc; color = :red, linestyle = :dash, label = "Coulomb counting (module + faults)")
+        band!(ax[1, col], d.t, d.q .- 2d.qσ, d.q .+ 2d.qσ; color = (color, 0.5), label = "EKF estimate")
+        lines!(ax[1, col], d.t, d.q; color, label = "EKF estimate")
+        hidexdecorations!(ax[1, col]; ticks = false)
+
+        xlims!(ax[2, col], d.t[begin], d.t[end])
+        ax[2, col].yautolimitmargin = (0.1, 0.1)
+        hlines!(ax[2, col], 0; color = :black, linestyle = :dot)
+        lines!(ax[2, col], d.t, e_cc; color = :red, linestyle = :dash)
+        lines!(ax[2, col], d.t, e; color)
+        band!(ax[2, col], d.t, e .- 2d.qσ, e .+ 2d.qσ; color = (color, 0.5))
+        linkxaxes!(ax[1, col], ax[2, col])
+
+        ax[1, col].title = d.offset == 0 && d.bias == 0 ? "No faults" : "$(d.offset) Ah offset + $(d.bias) A current bias"
+        ax[2, col].xlabel = "Time / h"
+    end
+    for col in 1:2
+        ax[1, col].ylabel = "Charge / Ah"
+        ax[2, col].ylabel = "Error / Ah"
+    end
+    foreach(a -> (a.xgridvisible = false; a.ygridvisible = false), ax)
+    linkyaxes!(ax[1, 1], ax[1, 2])
+    linkyaxes!(ax[2, 1], ax[2, 2])
+    rowsize!(fig.layout, 2, Relative(0.3))
+    Legend(fig[3, 1:2], fig.content[1]; orientation = :horizontal, merge = true, framevisible = false)
+    return fig
+end
+
 # supplementary: time-resolved SOC error, module × time
 function plot_soc_discrepancy_heatmap(tg, soc_err)
     fig = Figure(size = (700, 340))
