@@ -125,6 +125,53 @@ function reinit_kf!(model::YuasaModel; x = model.kf.x, R = model.kf.R)
 end
 
 
+# === reduce_sol
+
+function reduce_sol(model::YuasaModel, sol)
+    kf = model.kf
+    (; xid, Σid) = kf.p
+    (; xt, Rt) = sol
+
+    T = length(xt)
+    qμ = Vector{Float64}(undef, T)
+    qσ = Vector{Float64}(undef, T)
+    rc_vμ = Vector{Float64}(undef, T)
+    rc_rμ = Vector{Float64}(undef, T)
+    rc_τμ = Vector{Float64}(undef, T)
+    rc_vσ = Vector{Float64}(undef, T)
+    rc_rσ = Vector{Float64}(undef, T)
+    rc_τσ = Vector{Float64}(undef, T)
+    arr_kμ = Vector{Float64}(undef, T)
+    arr_kσ = Vector{Float64}(undef, T)
+
+    for i in 1:T
+        x = ComponentVector(xt[i], xid)
+        Σ = ComponentMatrix(Rt[i], Σid)
+
+        qμ[i] = x.cc.q
+        rc_vμ[i] = x.rc.v
+        rc_rμ[i] = x.rc.r
+        rc_τμ[i] = x.rc.τ
+        arr_kμ[i] = x.arr.k
+
+        qσ[i] = Σ[:cc, :cc][:q, :q]
+        rc_vσ[i] = Σ[:rc, :rc][:v, :v]
+        rc_rσ[i] = Σ[:rc, :rc][:r, :r]
+        rc_τσ[i] = Σ[:rc, :rc][:τ, :τ]
+        arr_kσ[i] = Σ[:arr, :arr][:k, :k]
+    end
+
+    x_end = xt[end]
+    R_end = Rt[end]
+
+    return (;
+        sol.idx, sol.u, sol.y, sol.ut, sol.yt, sol.et, sol.yμ, sol.yΣ, sol.ll, sol.tt,
+        qμ, qσ, rc_vμ, rc_rμ, rc_τμ, rc_vσ, rc_rσ, rc_τσ, arr_kμ, arr_kσ,
+        x_end, R_end,
+    )
+end
+
+
 # === model-specific plots
 
 function plot_ecm!(ax, model::YuasaModel, sol = nothing)
