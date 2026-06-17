@@ -31,13 +31,13 @@ data_1 = CSV.File("data/data-yuasa-peak-shaving/combined_log_20260327_082612.csv
 data_2 = CSV.File("data/data-yuasa-peak-shaving/20260504_baseline.csv"; dateformat) |> DataFrame
 
 
-# === fit models on data_1 and data_2 ===
+# === fit 2RC models on data_1 and data_2 ===
 ti_1 = Interval(DateTime("2026-03-27T08:41:13"), DateTime("2026-03-27T19:12:38"))
 ti_2 = Interval(DateTime("2026-05-04T07:05:15"), DateTime("2026-05-04T19:36:56"))
 ids = [(; m, c) for m in 1:9, c in 1:12] |> vec |> sort
 
-@time (; models, sols) = fit_cells(data_1, ti_1, ids);
-@time res_d2 = fit_cells(data_2, ti_2, ids);
+@time (; models, sols) = fit_cells(data_1, ti_1, ids; model_type = Fenecon2RCModel, θ = default_θ_2rc());
+@time res_d2 = fit_cells(data_2, ti_2, ids; model_type = Fenecon2RCModel, θ = default_θ_2rc());
 models_d2 = res_d2.models
 sols_d2 = res_d2.sols
 
@@ -116,17 +116,19 @@ initial_1 = extract_initial_states(smoothed_1, abs_refined, ids)
 initial_2 = extract_initial_states(smoothed_2, abs_refined, ids)
 
 
-# === Filtered vs smoothed SOC and v_rc (single cell) ===
+# === Filtered vs smoothed SOC, individual and combined RC voltages (single cell) ===
 
 for i in eachindex(ids)
     id = ids[i]
     Q_i = Measurements.value(abs_refined.Q_cell[i])
     s0_i = Measurements.value(abs_refined.s0[i])
 
-    fig = Figure(size = (1100, 700))
+    fig = Figure(size = (1100, 1100))
     ax_soc = [Axis(fig[1, j]; ylabel = "SOC", title = j == 1 ? "Run 1" : "Run 2") for j in 1:2]
-    ax_rc = [Axis(fig[2, j]; ylabel = "v_rc / V", xlabel = "Time / h") for j in 1:2]
-    linkxaxes!(ax_soc..., ax_rc...)
+    ax_rc1 = [Axis(fig[2, j]; ylabel = "v_rc1 / V") for j in 1:2]
+    ax_rc2 = [Axis(fig[3, j]; ylabel = "v_rc2 / V") for j in 1:2]
+    ax_rc = [Axis(fig[4, j]; ylabel = "v_rc1 + v_rc2 / V", xlabel = "Time / h") for j in 1:2]
+    linkxaxes!(ax_soc..., ax_rc1..., ax_rc2..., ax_rc...)
 
     colors = Makie.wong_colors()
 
@@ -137,8 +139,12 @@ for i in eachindex(ids)
         zt = st.model.kf.p.kf.p.zt
         q_f = StatsBase.reconstruct(zt.q, first.(st.sol.xt))
         q_f_σ = StatsBase.reconstruct(zt.q, sqrt.(getindex.(st.sol.Rt, 1, 1)))
-        v_f = StatsBase.reconstruct(zt.σ, getindex.(st.sol.xt, 2))
-        v_f_σ = StatsBase.reconstruct(zt.σ, sqrt.(getindex.(st.sol.Rt, 2, 2)))
+        v1_f = StatsBase.reconstruct(zt.σ, getindex.(st.sol.xt, 2))
+        v1_f_σ = StatsBase.reconstruct(zt.σ, sqrt.(getindex.(st.sol.Rt, 2, 2)))
+        v2_f = StatsBase.reconstruct(zt.σ, getindex.(st.sol.xt, 3))
+        v2_f_σ = StatsBase.reconstruct(zt.σ, sqrt.(getindex.(st.sol.Rt, 3, 3)))
+        v_f = v1_f .+ v2_f
+        v_f_σ = StatsBase.reconstruct(zt.σ, sqrt.(getindex.(st.sol.Rt, 2, 2) .+ getindex.(st.sol.Rt, 3, 3) .+ 2 .* getindex.(st.sol.Rt, 2, 3)))
         soc_f = q_f ./ Q_i .+ s0_i
         soc_f_σ = q_f_σ ./ Q_i
         t_f = (st.sol.idx .- 1) ./ 3600
@@ -147,8 +153,12 @@ for i in eachindex(ids)
         zt_s = sm.model.kf.p.kf.p.zt
         q_s = StatsBase.reconstruct(zt_s.q, first.(sm.smoothed.xT))
         q_s_σ = StatsBase.reconstruct(zt_s.q, sqrt.(getindex.(sm.smoothed.RT, 1, 1)))
-        v_s = StatsBase.reconstruct(zt_s.σ, getindex.(sm.smoothed.xT, 2))
-        v_s_σ = StatsBase.reconstruct(zt_s.σ, sqrt.(getindex.(sm.smoothed.RT, 2, 2)))
+        v1_s = StatsBase.reconstruct(zt_s.σ, getindex.(sm.smoothed.xT, 2))
+        v1_s_σ = StatsBase.reconstruct(zt_s.σ, sqrt.(getindex.(sm.smoothed.RT, 2, 2)))
+        v2_s = StatsBase.reconstruct(zt_s.σ, getindex.(sm.smoothed.xT, 3))
+        v2_s_σ = StatsBase.reconstruct(zt_s.σ, sqrt.(getindex.(sm.smoothed.RT, 3, 3)))
+        v_s = v1_s .+ v2_s
+        v_s_σ = StatsBase.reconstruct(zt_s.σ, sqrt.(getindex.(sm.smoothed.RT, 2, 2) .+ getindex.(sm.smoothed.RT, 3, 3) .+ 2 .* getindex.(sm.smoothed.RT, 2, 3)))
         soc_s = q_s ./ Q_i .+ s0_i
         soc_s_σ = q_s_σ ./ Q_i
         t_s = (0:(length(q_s) - 1)) ./ 3600
@@ -157,6 +167,16 @@ for i in eachindex(ids)
         band!(ax_soc[j], t_f, soc_f .- 2soc_f_σ, soc_f .+ 2soc_f_σ; color = (colors[1], 0.2))
         lines!(ax_soc[j], t_s, soc_s; color = colors[2], label = "Smoothed")
         band!(ax_soc[j], t_s, soc_s .- 2soc_s_σ, soc_s .+ 2soc_s_σ; color = (colors[2], 0.2))
+
+        lines!(ax_rc1[j], t_f, v1_f; color = colors[1], alpha = 0.6)
+        band!(ax_rc1[j], t_f, v1_f .- 2v1_f_σ, v1_f .+ 2v1_f_σ; color = (colors[1], 0.2))
+        lines!(ax_rc1[j], t_s, v1_s; color = colors[2])
+        band!(ax_rc1[j], t_s, v1_s .- 2v1_s_σ, v1_s .+ 2v1_s_σ; color = (colors[2], 0.2))
+
+        lines!(ax_rc2[j], t_f, v2_f; color = colors[1], alpha = 0.6)
+        band!(ax_rc2[j], t_f, v2_f .- 2v2_f_σ, v2_f .+ 2v2_f_σ; color = (colors[1], 0.2))
+        lines!(ax_rc2[j], t_s, v2_s; color = colors[2])
+        band!(ax_rc2[j], t_s, v2_s .- 2v2_s_σ, v2_s .+ 2v2_s_σ; color = (colors[2], 0.2))
 
         lines!(ax_rc[j], t_f, v_f; color = colors[1], alpha = 0.6)
         band!(ax_rc[j], t_f, v_f .- 2v_f_σ, v_f .+ 2v_f_σ; color = (colors[1], 0.2))
@@ -169,12 +189,12 @@ end
 
 # === export results ===
 let dir = joinpath(homedir(), "code/DigitalTwinBatteryMMC/data")
-    JSON.json(joinpath(dir, "battery-params-yuasa-data1.json"), params_d1; pretty = 2)
-    JSON.json(joinpath(dir, "battery-params-yuasa-data2.json"), params_d2; pretty = 2)
-    JSON.json(joinpath(dir, "battery-params-yuasa-refined.json"), params_refined; pretty = 2)
+    JSON.json(joinpath(dir, "battery-params-yuasa-2rc-data1.json"), params_d1; pretty = 2)
+    JSON.json(joinpath(dir, "battery-params-yuasa-2rc-data2.json"), params_d2; pretty = 2)
+    JSON.json(joinpath(dir, "battery-params-yuasa-2rc-refined.json"), params_refined; pretty = 2)
 end
 
 let dir = joinpath(homedir(), "code/DigitalTwinBatteryMMC/data")
-    JSON.json(joinpath(dir, "initial-states-yuasa-data1.json"), initial_1; pretty = 2)
-    JSON.json(joinpath(dir, "initial-states-yuasa-data2.json"), initial_2; pretty = 2)
+    JSON.json(joinpath(dir, "initial-states-yuasa-2rc-data1.json"), initial_1; pretty = 2)
+    JSON.json(joinpath(dir, "initial-states-yuasa-2rc-data2.json"), initial_2; pretty = 2)
 end

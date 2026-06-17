@@ -27,21 +27,23 @@ function fill_missings(
     return df_time
 end
 
-function interpolate(df; Ts = 1, time_col = :time)
-    t0 = first(df[:, time_col])
+function interpolate(df; Ts = 1, time_col = :time, tref = first(df[:, time_col]))
     t1 = last(df[:, time_col])
-    t = Dates.value.(df[!, time_col] - t0) .÷ 1000
+    t = Dates.value.(df[!, time_col] - tref) .÷ 1000
     tr = 0:Ts:t[end]
     f = LinearInterpolation(df.value, t)
 
-    dt = t0:Second(Ts):t1
+    dt = tref:Second(Ts):t1
 
     return DataFrame(; time = dt, t = tr, value = f(tr))
 end
 
 function cell_dataset(data, ti, zt, m, c; Ts = 1.0)
-    df = subset(data, :timestamp_utc => ByRow(∈(ti)))
-    df = resample(df, Second(Ts); time_col = :timestamp_utc)
+    # 60-second pre-buffer so interpolation has data before t = 0
+    ti_ext = Interval(first(ti) - Second(60), last(ti))
+    df_ext = subset(data, :timestamp_utc => ByRow(∈(ti_ext)))
+    df_ext = resample(df_ext, Second(Ts); time_col = :timestamp_utc)
+    df = subset(df_ext, :timestamp_utc => ByRow(∈(ti)))
     t0 = first(df.timestamp_utc)
     t1 = last(df.timestamp_utc)
 
@@ -53,15 +55,15 @@ function cell_dataset(data, ti, zt, m, c; Ts = 1.0)
     df_v = fill_missings(df_v, Second(Ts); time_col = :timestamp_utc, t0, t1)
 
     # current
-    df_i = select(df, :timestamp_utc, Symbol("m$(m)_current") => ByRow(x -> -x) => :value)
-    df_i = interpolate(df_i; Ts, time_col = :timestamp_utc)
+    df_i = select(df_ext, :timestamp_utc, Symbol("m$(m)_current") => ByRow(x -> -x) => :value)
+    df_i = interpolate(df_i; Ts, time_col = :timestamp_utc, tref = t0)
 
     # coulomb counting
     q = cumsum(df_i.value) * Ts / 3600
 
     # temperature
-    df_T = select!(df, :timestamp_utc, Symbol("m$(m)_temp01") => :value) # also temp02 available
-    df_T = interpolate(df_T; Ts, time_col = :timestamp_utc)
+    df_T = select(df_ext, :timestamp_utc, Symbol("m$(m)_temp01") => :value) # also temp02 available
+    df_T = interpolate(df_T; Ts, time_col = :timestamp_utc, tref = t0)
 
     î = StatsBase.transform(zt.i, df_i.value)
     q̂ = StatsBase.transform(zt.q, q)
