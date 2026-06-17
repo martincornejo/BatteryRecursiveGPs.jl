@@ -5,7 +5,7 @@ function plot_ecms_comparison(
         # Wong palette extended to 9 with black + gray
         colors = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)]),
     )
-    fig = Figure(size = (700, 440))
+    fig = Figure(size = (700, 500))
     gl1 = GridLayout(fig[1, 1])
     gl2 = GridLayout(fig[1, 2])
 
@@ -310,5 +310,113 @@ function plot_module_summary(
     for (ax, tag) in zip((ax1, ax2), ("A", "B"))
         text!(ax, 0.01, 0.98; text = tag, space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
     end
+    return fig
+end
+
+function plot_soc_trajectories!(
+        layout, df;
+        title = "",
+        # (module-based, cell-based)
+        colors = Makie.wong_colors()[[1, 2]],
+    )
+    ax = Axis(layout[1, 1]; title)
+    th = df.t ./ 3600
+
+    for c in 1:12
+        lines!(ax, th, df[:, "soc_cell_$c"] .* 100; color = (:gray, 0.6), linewidth = 1)
+    end
+    lines!(ax, th, df.soc_module .* 100; color = colors[1], linewidth = 2)
+    lines!(ax, th, df.soc_pack .* 100; color = colors[2], linewidth = 2)
+
+    xlims!(ax, first(th), last(th))
+    ax.xlabel = "Time / h"
+    ax.ylabel = "SOC / %"
+    ax.xgridvisible = false
+    ax.ygridvisible = false
+    return ax
+end
+
+function plot_soc_comparison(df_norm, df_out; titles = ("", ""), colors = Makie.wong_colors()[[1, 2]])
+    fig = Figure(size = (700, 320))
+    gl = GridLayout(fig[1, 1])
+    ax1 = plot_soc_trajectories!(GridLayout(gl[1, 1]), df_norm; colors, title = titles[1])
+    ax2 = plot_soc_trajectories!(GridLayout(gl[1, 2]), df_out; colors, title = titles[2])
+    linkyaxes!(ax1, ax2)
+
+    elements = [
+        LineElement(color = (:gray, 0.6), linewidth = 1),
+        LineElement(color = colors[1], linewidth = 2),
+        LineElement(color = colors[2], linewidth = 2),
+    ]
+    Legend(
+        fig[2, 1], elements, ["Cells", "Module-based", "Cell-based"];
+        orientation = :horizontal, framevisible = false,
+    )
+    return fig
+end
+
+# per-module distribution of the SOC error trajectories
+function plot_soc_discrepancy(soc_err)
+    fig = Figure(size = (700, 300))
+    ax = Axis(fig[1, 1])
+    n_t, n_mod = size(soc_err)
+    xs = repeat(1:n_mod; inner = n_t)
+
+    boxplot!(ax, xs, vec(soc_err) .* 100; width = 0.6, color = (:gray, 0.6), whiskerwidth = 0.4, markersize = 3)
+    hlines!(ax, [0]; color = (:black, 0.4), linewidth = 1)
+    vlines!(ax, [9.5, 18.5]; color = (:black, 0.3), linewidth = 1)
+
+    xlims!(ax, 0.3, n_mod + 0.7)
+    ax.ylabel = "Module − cell SOC / %"
+    ax.xlabel = "Module ID"
+    module_id_xticks!(ax)
+    ax.xgridvisible = false
+    ax.ygridvisible = false
+    return fig
+end
+
+function plot_cell_v_rmse(df_v_cell)
+    fig = Figure(size = (700, 300))
+    ax = Axis(fig[1, 1], xlabel = "Cell voltage RMSE / mV", ylabel = "Cell count")
+    hist!(ax, df_v_cell.rmse; bins = 0:0.5:25, color = :gray, strokewidth = 1)
+    ylims!(ax, 0, nothing)
+    return fig
+end
+
+function plot_module_v_rmse(df_v_module; colors = Makie.wong_colors()[[1, 2]])
+    fig = Figure(size = (700, 300))
+    ax = Axis(fig[1, 1], xlabel = "Module ID", ylabel = "Module voltage RMSE / mV")
+    ids = 1:nrow(df_v_module)
+
+    linesegments!(
+        ax, repeat(ids; inner = 2),
+        collect(Iterators.flatten(zip(df_v_module.rmse_module, df_v_module.rmse_cells)));
+        color = (:gray, 0.6), linewidth = 2,
+    )
+    scatter!(ax, ids, df_v_module.rmse_module; color = colors[1], markersize = 10, label = "Module-based")
+    scatter!(ax, ids, df_v_module.rmse_cells; color = colors[2], markersize = 10, label = "Cell-based (Σ cells)")
+    vlines!(ax, [9.5, 18.5]; color = (:black, 0.3), linewidth = 1)
+
+    xlims!(ax, 0.3, last(ids) + 0.7)
+    ylims!(ax, 0, nothing)
+    module_id_xticks!(ax)
+    ax.xgridvisible = false
+    ax.ygridvisible = false
+    axislegend(ax; framevisible = false)
+    return fig
+end
+
+# supplementary: time-resolved SOC error, module × time
+function plot_soc_discrepancy_heatmap(tg, soc_err)
+    fig = Figure(size = (700, 340))
+    ax = Axis(fig[1, 1], xlabel = "Time / h", ylabel = "Module ID")
+    n_mod = size(soc_err, 2)
+
+    cr = maximum(abs, soc_err) * 100
+    hm = heatmap!(ax, tg ./ 3600, 1:n_mod, soc_err .* 100; colormap = :vik, colorrange = (-cr, cr))
+    hlines!(ax, [9.5, 18.5]; color = :black, linewidth = 1)
+    Colorbar(fig[1, 2], hm; label = "Module − cell SOC / %")
+
+    ax.yticks = ([1, 6, 10, 15, 19, 24], ["P1M1", "P1M6", "P2M1", "P2M6", "P3M1", "P3M6"])
     return fig
 end
