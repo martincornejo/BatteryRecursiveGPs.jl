@@ -123,3 +123,57 @@ function calc_module_soc_summary(soc_err, module_ids)
     end |> DataFrame
     return df_soc
 end
+
+# charge-estimation accuracy on the reference module (only P1M9 carries an oscilloscope current
+# probe → accurate ground-truth charge). The probe measures one shared string current, so q_ref is
+# common to all 12 cells and only the per-cell voltage differs: 12 estimates against one reference.
+# `ids` are the reference-module cells; `Qs` their capacities (aligned to `ids`). Error is reported
+# as SOC % (charge / capacity, the downstream quantity and field-standard metric); absolute Ah and
+# the module-current Coulomb-counting baseline are kept for reference.
+function calc_charge_accuracy(soc_models, soc_sols, data, ti, ids, Qs; zt = fit_zscore())
+    map(ids, Qs) do id, Q
+        sol = soc_sols[id]
+        (; q) = charge_trajectory(soc_models[id], sol)                                   # EKF estimate [Ah]
+        qref = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, id.c).u])[sol.idx]
+        q_cc = StatsBase.reconstruct(zt.q, [u.q for u in sol.ut])                         # module-current CC [Ah]
+        e, e_cc = q .- qref, q_cc .- qref
+        rmse = sqrt(mean(abs2, e))
+        (; id.p, id.m, id.c, Q,
+           rmse_soc = 100rmse / Q, max_soc = 100maximum(abs, e) / Q,                     # %SOC
+           rmse, max = maximum(abs, e), rmse_cc = sqrt(mean(abs2, e_cc)))                 # Ah
+    end |> DataFrame
+end
+
+# time-resolved charge error as SOC %, interpolated onto the common grid `tg` (one column per cell).
+function calc_charge_error(soc_models, soc_sols, data, ti, ids, Qs; tg, zt = fit_zscore())
+    df = DataFrame(t = collect(tg) ./ 3600)
+    for (id, Q) in zip(ids, Qs)
+        (; t, q) = charge_trajectory(soc_models[id], soc_sols[id])
+        qref = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, id.c).u])[soc_sols[id].idx]
+        f = LinearInterpolation(100 .* (q .- qref) ./ Q, t; extrapolation = ExtrapolationType.Constant)
+        df[!, "c$(id.c)"] = f.(tg)
+    end
+    return df
+end
+
+# fault-rejection diagnostic for one reference cell: run the SOC EKF under injected faults — an
+# initial-SOC error (`offset`, Ah) and a constant current-sensor bias (`bias`, A) — and return,
+# per scenario, the charge trajectories vs the oscilloscope reference and module-current Coulomb
+# counting. Faults are in physical units so the Coulomb-counting error reads directly off the axis.
+function calc_soc_diagnostic(model, sol, data, ti, c, scenarios; θ, Ts = 1.0, zt = model.kf.p.zt)
+    scale = only(zt.q.scale)  # shared i/q z-score scale → integrate current in z-scored units
+    q_ref = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, c).u])
+    map(scenarios) do (; offset, bias)
+        bias_z = bias / scale
+        # inject the bias into the input current and accumulate it into the charge channel so the
+        # module-current Coulomb-counting reference (sol.ut.q) drifts with it
+        u = [(; i = ui.i + bias_z, q = ui.q + bias_z * (k / 3600), ui.T) for (k, ui) in enumerate(sol.u)]
+        sm = RCGPStateModel(model; q0 = offset / scale, Ts, θ)
+        s = reduce_sol(sm, run_kf!(sm, u, sol.y))
+        t = s.idx
+        (; offset, bias, t = t ./ 3600, q_ref = q_ref[t],
+           q_cc = StatsBase.reconstruct(zt.q, [v.q for v in s.ut]) .+ offset,  # CC inherits the offset
+           q = StatsBase.reconstruct(zt.q, s.qμ),
+           qσ = sqrt.(s.qσ) .* scale)
+    end
+end
