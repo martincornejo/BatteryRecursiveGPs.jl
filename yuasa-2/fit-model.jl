@@ -269,6 +269,7 @@ function fit_soc_models(models, sols, ids; q0 = 0.0, Ts = 1.0, θ)
     runs = thread_map(ids) do id
         sm = RCGPStateModel(models[id]; q0, Ts, θ)
         sol = run_kf!(sm, sols[id].u, sols[id].y)
+        sol = reduce_sol(sm, sol)
         (; model = sm, sol)
     end
     soc_models = Dict(id => run.model for (id, run) in runs)
