@@ -1,3 +1,162 @@
+# === plotters migrated out of the package (BatteryRecursiveGPs no longer ships plotting) ===
+
+# terminal-voltage fit + innovation over time
+function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0, plot_Δv = true)
+    kf = model.kf
+    zt = kf.p.zt
+    (; idx, u, yt, yμ, yΣ) = sol
+
+    μ = StatsBase.reconstruct(zt.v, first.(yμ))
+    σ = StatsBase.reconstruct(zt.σ, sqrt.(first.(yΣ)))
+    t = (0:(length(u) - 1)) * Ts / 3600 |> collect
+
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+    colors = Makie.wong_colors()
+
+    v = StatsBase.reconstruct(zt.v, first.(yt))
+    lines!(ax[1], t[idx], v)
+    lines!(ax[1], t[idx], μ, color = colors[2])
+    band!(ax[1], t[idx], μ - 2σ, μ + 2σ, color = (colors[2], 0.5))
+
+    e = v - μ
+    lines!(ax[2], t[idx], e * 1.0e3, color = colors[2])
+    band!(ax[2], t[idx], (e - 2σ) * 1.0e3, (e + 2σ) * 1.0e3, color = (colors[2], 0.5))
+
+    if 0 < sol.tt < length(sol.u)
+        vlines!(ax[1], t[sol.tt]; color = :red)
+        vlines!(ax[2], t[sol.tt]; color = :red)
+    end
+
+    xlims!.(ax, t[begin], t[end])
+    ax[1].ylabel = "Voltage / V"
+    ax[2].ylabel = "Voltage error / mV"
+    ax[2].xlabel = "Time / h"
+    linkxaxes!(ax...)
+    return fig
+end
+
+# charge estimate vs reference (Coulomb counting + filtered Q) with error panel
+function plot_q_estimation(q_ref, sol, model::AbstractBatteryModel)
+    kf = model.kf
+    (; zt) = kf.p
+
+    t = sol.idx  # observation times only
+    q = StatsBase.reconstruct(zt.q, [u.q for u in sol.ut])
+    qμ = StatsBase.reconstruct(zt.q, sol.qμ)
+    qσ = StatsBase.reconstruct(zt.q, sqrt.(sol.qσ))
+    q_ref_t = q_ref[t]
+
+    fig = Figure()
+    ax = [Axis(fig[i, 1]) for i in 1:2]
+
+    lines!(ax[1], t / 3600, q_ref_t; color = :black, label = "Reference")
+    lines!(ax[1], t / 3600, q; color = :red, linestyle = :dash, label = "Coulomb counting")
+    lines!(ax[1], t / 3600, qμ; color = Cycled(2), label = "Estimated Q")
+    band!(ax[1], t / 3600, qμ - 2qσ, qμ + 2qσ; color = Cycled(2), alpha = 0.5, label = "Estimated Q")
+
+    lines!(ax[2], t / 3600, qμ - q_ref_t; color = Cycled(2), label = "Estimated Q")
+    band!(ax[2], t / 3600, (qμ - q_ref_t) - 2qσ, (qμ - q_ref_t) + 2qσ; color = Cycled(2), alpha = 0.5, label = "Estimated Q")
+    lines!(ax[2], t / 3600, q - q_ref_t; color = :red, linestyle = :dash, label = "Coulomb counting")
+
+    xlims!(ax[1], t[begin] / 3600, t[end] / 3600)
+    ax[1].ylabel = "Charge / Ah"
+    ax[2].ylabel = "Error / Ah"
+    ax[2].xlabel = "Time / h"
+    Legend(fig[3, 1], ax[1]; merge = true, orientation = :horizontal)
+    return fig
+end
+
+# Animate the RCGP ECM (OCV + R0/R1) as the filter learns over the dataset, next to the measured
+# voltage with a moving cursor. Adapted from the package's YuasaModel animate_model.
+# NOTE: pass the FULL sol from run_kf! BEFORE reduce_sol (needs per-timestep xt/Rt), e.g.
+#   sol = run_kf!(cell_models[id], cell_sols[id].u, cell_sols[id].y)
+function animate_model(file, model::RCGPModel, sol; step = 60)
+    kf = model.kf
+    zt = kf.p.zt
+    (; xt, Rt, yt) = sol
+
+    q̂ = collect(range(extrema(kf.p.r1.b0)...; step = 0.01))
+    q = StatsBase.reconstruct(zt.q, q̂)
+
+    # ECM curves at a given filter state (x, R)
+    ecm(x, R) = begin
+        ocv = predict_gp(kf, q̂, x, R, :ocv)
+        ocvμ = StatsBase.reconstruct(zt.v, ocv.μ)
+        ocvσ = StatsBase.reconstruct(zt.σ, sqrt.(diag(ocv.Σ)))
+        xc = ComponentVector(x, kf.p.xid)
+        r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
+        r1 = predict_gp(kf, q̂, x, R, :r1)
+        r1μ = StatsBase.reconstruct(zt.r, r1.μ) * 1.0e3
+        r1σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ))) * 1.0e3
+        (; ocvμ, ocvσ, rμ = r0μ .+ r1μ, rσ = r1σ)
+    end
+
+    fig = Figure(size = (900, 400))
+    axo = Axis(fig[1, 2]; ylabel = "OCV / V")
+    axr = Axis(fig[2, 2]; ylabel = "R / mΩ", xlabel = "Charge / Ah")
+    axv = Axis(fig[1:2, 1]; ylabel = "Voltage / V", xlabel = "Step")
+    linkxaxes!(axo, axr)
+    hidexdecorations!(axo; ticks = false, grid = false)
+
+    (; ocvμ, ocvσ, rμ, rσ) = ecm(xt[1], Rt[1])
+    lo = lines!(axo, q, ocvμ)
+    bo = band!(axo, q, ocvμ + 2ocvσ, ocvμ - 2ocvσ; alpha = 0.6)
+    lr = lines!(axr, q, rμ)
+    br = band!(axr, q, rμ + 2rσ, rμ - 2rσ; alpha = 0.6)
+
+    v = StatsBase.reconstruct(zt.v, first.(yt))
+    lines!(axv, v; color = :gray)
+    cursor = vlines!(axv, 1; color = :red)
+
+    return record(fig, file, 1:step:length(xt)) do i
+        (; ocvμ, ocvσ, rμ, rσ) = ecm(xt[i], Rt[i])
+        Makie.update!(lo, arg2 = ocvμ)
+        Makie.update!(bo, arg2 = ocvμ + 2ocvσ, arg3 = ocvμ - 2ocvσ)
+        Makie.update!(lr, arg2 = rμ)
+        Makie.update!(br, arg2 = rμ + 2rσ, arg3 = rμ - 2rσ)
+        Makie.update!(cursor, arg1 = i)
+    end
+end
+
+
+# ECM curves for one RCGP cell/module onto a 2-row axis (OCV top, R0+R1(q) bottom).
+# Helper for plot_ecms_comparison below.
+function plot_ecm!(ax, model::RCGPModel, sol = nothing; color = nothing)
+    kw = isnothing(color) ? (;) : (; color)
+    kf = model.kf
+    zt = kf.p.zt
+
+    q̂min, q̂max = sol === nothing ? extrema(kf.p.r1.b0) : extrema(sol.qμ)
+    q̂ = collect(q̂min:0.01:q̂max)
+    q = StatsBase.reconstruct(zt.q, q̂)
+
+    # OCV
+    ocv = predict_gp(kf, q̂, :ocv)
+    ocvμ = StatsBase.reconstruct(zt.v, ocv.μ)
+    ocvσ = StatsBase.reconstruct(zt.σ, sqrt.(diag(ocv.Σ)))
+    lines!(ax[1], q, ocvμ; kw...)
+    band!(ax[1], q, ocvμ + 2ocvσ, ocvμ - 2ocvσ; alpha = 0.8, kw...)
+
+    # R0 scalar from the final state estimate
+    x_last = sol === nothing ? state(kf) : sol.x_end
+    xc = ComponentVector(x_last, kf.p.xid)
+    R_last = sol === nothing ? covariance(kf) : sol.R_end
+    Σ = ComponentMatrix(R_last, kf.p.Σid)
+    r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
+    r0σ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) |> first
+
+    # R1 GP curve overlaid on the R0 panel
+    r1 = predict_gp(kf, q̂, :r1)
+    r1μ = StatsBase.reconstruct(zt.r, r1.μ) * 1.0e3
+    r1σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ))) * 1.0e3
+    rμ = r0μ .+ r1μ
+    rσ = r0σ .+ r1σ
+    lines!(ax[2], q, rμ; kw...)
+    band!(ax[2], q, rμ + 2rσ, rμ - 2rσ; alpha = 0.8, kw...)
+    return nothing
+end
+
 function plot_ecms_comparison(
         cell_models, cell_sols, module_models, module_sols;
         n_cell = 1, n_mod = 12, tags = true,
