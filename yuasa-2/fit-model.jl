@@ -126,12 +126,7 @@ function cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore())
     df_v[!, :value] = StatsBase.transform(zt.v, df_v.value)
     df_v = fill_missings(df_v, Second(Ts))
 
-    # oscilloscope current: irregular ~1 Hz scope captures → averaged per second,
-    # then linearly interpolated onto the explicit ti grid (same path as the BMS
-    # current and temperature), so current, temperature and voltage share one grid
-    df_î = CSV.File(datadir * "oscilloscope_p1_m9.csv"; dateformat = dateformat"y-m-dTH:M:S.sss+00:00") |> DataFrame
-    df_î.timestamp_utc = floor.(df_î.timestamp_utc, Second(1))
-    df_î = combine(groupby(df_î, :timestamp_utc), :MEAS1 => mean => :MEAS1)
+    df_î = copy(data[:oscilloscope_current])
     select!(df_î, :timestamp_utc => "time", :MEAS1 => ByRow(x -> -x) => "value")
     df_î = interpolate(df_î, ti; Ts)
 
