@@ -66,9 +66,7 @@ export fit_composite_ocv, rescale_composite_ocv, fit_cells_to_reference # compos
 # plotting — model-agnostic
 export plot_sim
 export plot_ecm, plot_ecm!, plot_ecms
-export plot_q_trajectory, plot_q_estimation, plot_q_estimation_state
-export plot_soc_trajectories
-export plot_module_soh, plot_cell_soh_hist, plot_module_inhomogenity
+export plot_q_estimation
 export plot_module_soc
 
 # plotting — model-specific (YuasaModel)
