@@ -1,27 +1,12 @@
-using DataFrames
-using CSV
-using JSON
-using QuackIO
-using Dates
-using Intervals
-using DataInterpolations
-using StatsBase
-using Measurements
-using Printf
+using YuasaAnalysis        # the analysis module (src/): fitting, OCV validation, metrics, figures
+using BatteryDigitalTwin   # gp_ocv, fit_composite_ocv, rescale_composite_ocv
 
-# using GLMakie
-using CairoMakie
-using ColorSchemes
-
-using BatteryDigitalTwin
-using StaticArrays
-import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
-
-include("fit-model.jl")
-include("analysis.jl")
-include("plot.jl")
-include("dataset.jl")
-include("ocv.jl")
+using CSV, DataFrames, Dates, Intervals
+using QuackIO              # read_parquet
+using DataInterpolations   # LinearInterpolation, ExtrapolationType
+using StatsBase            # reconstruct, mean
+using Measurements         # Measurements.value
+using CairoMakie           # Makie backend + figure display/manipulation
 
 
 # === Data ===
@@ -38,6 +23,10 @@ files = Dict(
 )
 dateformat = dateformat"y-m-d H:M:S+00:00"
 data = Dict(id => CSV.File(file; dateformat) |> DataFrame for (id, file) in files)
+let df = CSV.File(datadir * "oscilloscope_p1_m9.csv"; dateformat = dateformat"y-m-dTH:M:S.sss+00:00") |> DataFrame
+    df.timestamp_utc = floor.(df.timestamp_utc, Second(1))
+    data[:oscilloscope_current] = combine(groupby(df, :timestamp_utc), :MEAS1 => mean => :MEAS1)
+end
 ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
 # measured low-power OCV reference (rig module 7 ≡ P1M9; accurate oscilloscope probe)
@@ -61,7 +50,7 @@ cell_sols_ol = eval_models(cell_models, cell_sols, cell_ids);
 module_sols_ol = eval_models(module_models, module_sols, module_ids);
 
 # closed-loop run: frozen ECM parameters, 2-state EKF estimates charge + RC voltage
-θ_soc = (; q = (; σ0 = 1.0e-3, σ1 = 0.5e-5), rc = (; σ0 = 1.0e-4, σ1 = 1.0e-4))
+θ_soc = (; q = (; σ0 = 0.01, σ1 = 5.0e-5), rc = (; σ0 = 1.0e-1, σ1 = 2.0e-4))
 cell_soc = fit_soc_models(cell_models, cell_sols, cell_ids; θ = θ_soc);
 module_soc = fit_soc_models(module_models, module_sols, module_ids; θ = θ_soc);
 
@@ -136,6 +125,22 @@ soc_module = calc_soc_trajectories(module_soc.models, module_soc.sols, module_fi
 soc_err = calc_soc_error(soc_cell, soc_module, cell_fit, cell_ids, module_ids)
 df_soc = calc_module_soc_summary(soc_err, module_ids)
 
+# charge-estimation accuracy against the oscilloscope ground truth — reference module P1M9 only
+# (the sole module with a precision current probe). Empirical validation of the estimated charge:
+# the EKF tracks the reference to a median SOC RMSE <1% (~2% peak), consistent across the 12 cells.
+cell_idx = Dict(cell_ids .=> eachindex(cell_ids))
+Q_p1m9 = [Measurements.value(cell_fit.Q_cell[cell_idx[id]]) for id in p1m9_ids]
+df_q_acc = calc_charge_accuracy(cell_soc.models, cell_soc.sols, data, ti, p1m9_ids, Q_p1m9)
+df_q_err = calc_charge_error(cell_soc.models, cell_soc.sols, data, ti, p1m9_ids, Q_p1m9; tg)
+# write_table("data/data-yuasa-cycles-2/charge_accuracy.csv", df_q_acc)
+
+# fault-rejection diagnostic (single reference cell): the EKF rejects a wrong initial SOC and a
+# constant current-sensor bias that Coulomb counting integrates without bound; the no-fault panel
+# shows CC is near-optimal otherwise. Faults in Ah/A so the CC error reads directly off the axis.
+id_diag = (p = 1, m = 9, c = 2)
+soc_scenarios = ((; offset = 0.0, bias = 0.0), (; offset = 3.0, bias = 0.2))  # Ah, A
+soc_diag = calc_soc_diagnostic(cell_models[id_diag], cell_sols[id_diag], data, ti, id_diag.c, soc_scenarios; θ = θ_soc)
+
 
 # === Figures ===
 # Semantic names; trailing comment is the paper figure number.
@@ -160,6 +165,7 @@ fig_module_rmse = plot_module_v_rmse(df_v_module)  # Fig 9
 # SOH
 fig_cell_soh = plot_cell_soh(cell_fit, cell_ocvs)  # Fig 3
 fig_module_soh = plot_module_summary(df_soh)        # Fig 4
+fig_cell_soh_hist = plot_cell_soh_hist(cell_fit)
 
 # OCV reconstruction validation
 fig_current_sources = compare_current_sources(df_dch)  # Fig S4
@@ -173,5 +179,15 @@ fig_soc_comparison = let  # Fig 5
     df_out = calc_module_soc((; p = 3, m = 5), tg, soc_cell, soc_module, cell_fit, cell_ids, module_ids)
     plot_soc_comparison(df_norm, df_out; titles = ("p=3 m=7", "p=3 m=5"))
 end
+fig_q_trajectory = let id = (p = 1, m = 9, c = 1)
+    zt = cell_models[id].kf.p.zt
+    (; u) = cell_dataset_osci(data, ti, id.c)
+    q_ref = StatsBase.reconstruct(zt.q, [ui.q for ui in u])
+    plot_q_estimation(q_ref, cell_soc.sols[id], cell_models[id])
+end
+fig_charge_error = plot_charge_error(df_q_err)                # charge accuracy vs oscilloscope (SOC %)
 fig_soc_discrepancy = plot_soc_discrepancy(soc_err)            # Fig 6
 fig_soc_heatmap = plot_soc_discrepancy_heatmap(tg, soc_err)    # Fig S3
+
+
+fig_soc_diag = plot_soc_diagnostic(soc_diag)                 # fault-rejection diagnostic (EKF vs CC)
