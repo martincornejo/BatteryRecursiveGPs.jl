@@ -173,36 +173,3 @@ function reduce_sol(model::Fenecon2RCModel, sol)
         x_end, R_end,
     )
 end
-
-
-# === model-specific plots
-
-function plot_ecm!(ax, model::Fenecon2RCModel, sol = nothing)
-    kf = model.kf
-    zt = kf.p.zt
-
-    if sol === nothing
-        q̂min, q̂max = extrema(kf.p.ocv.b0)
-    else
-        q̂min, q̂max = extrema(sol.qμ)
-    end
-    q̂ = collect(q̂min:0.01:q̂max)
-    q = StatsBase.reconstruct(zt.q, q̂)
-
-    # OCV
-    ocv = predict_gp(kf, q̂, :ocv)
-    ocvμ = StatsBase.reconstruct(zt.v, ocv.μ)
-    ocvσ = StatsBase.reconstruct(zt.σ, sqrt.(diag(ocv.Σ)))
-    lines!(ax[1], q, ocvμ)
-    band!(ax[1], q, ocvμ + 2ocvσ, ocvμ - 2ocvσ, alpha = 0.8)
-
-    # R0 scalar: horizontal band from final state estimate
-    x_last = sol === nothing ? state(kf) : sol.x_end
-    xc = ComponentVector(x_last, kf.p.xid)
-    R_last = sol === nothing ? covariance(kf) : sol.R_end
-    Σ = ComponentMatrix(R_last, kf.p.Σid)
-    rμ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
-    rσ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) |> first
-    hlines!(ax[2], rμ * 1.0e3; color = Cycled(1))
-    return hspan!(ax[2], (rμ - 2rσ) * 1.0e3, (rμ + 2rσ) * 1.0e3; color = (Cycled(1), 0.3))
-end

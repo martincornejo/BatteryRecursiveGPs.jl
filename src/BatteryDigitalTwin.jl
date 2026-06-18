@@ -16,8 +16,6 @@ using DataFrames
 using Measurements
 using Printf
 
-using CairoMakie # use Makie instead?
-
 abstract type AbstractBatteryModel end
 
 # state-only models: frozen ECM parameters, online estimation of charge (+ RC voltage)
@@ -39,7 +37,6 @@ include("runner.jl")
 include("fit_model.jl")
 include("analysis.jl")
 include("composite_ocv.jl")
-include("plot.jl")
 
 # model types
 export AbstractBatteryModel, AbstractBatteryStateModel
@@ -62,16 +59,5 @@ export calc_deltaq, calc_Q, calc_soc0, calc_soh # single cell
 export gls_fit, calc_wls, gp_ocv, gp_r0, gp_r1, gp_r2, charge_trajectory, voltage_error # improved GLS-based estimation
 export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
 export fit_composite_ocv, rescale_composite_ocv, fit_cells_to_reference # composite OCV from cell posteriors
-
-# plotting — model-agnostic
-export plot_sim
-export plot_ecm, plot_ecm!, plot_ecms
-export plot_q_estimation
-export plot_module_soc
-
-# plotting — model-specific (YuasaModel)
-export plot_ecms_norm
-export plot_rc_param_trajectory, plot_arrhenius_param_trajectory
-export animate_ecm_evolution, animate_model
 
 end # module BatteryDigitalTwin

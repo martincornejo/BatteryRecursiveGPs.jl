@@ -162,25 +162,3 @@ function calc_soc_pack(Q, soc::AbstractMatrix)
     return Q_dch ./ (Q_dch .+ Q_ch)
 end
 
-function plot_module_soc(df, Q)
-    # TODO: improve
-
-    fig = Figure()
-    ax = Axis(fig[1, 1])
-
-    for i in 1:12
-        lines!(ax, df.t / 3600, df[:, "soc_cell_$i"], color = (:blue, 0.2), label = "Cell")
-    end
-
-    soc = Matrix(df[:, ["soc_cell_$i" for i in 1:12]])
-    S_pack = calc_soc_pack(Q, soc)
-    lines!(ax, df.t / 3600, S_pack, color = :black, label = "Module")
-
-
-    axislegend(ax, position = :lb, merge = true)
-    xlims!(ax, df[begin, :t] / 3600, df[end, :t] / 3600)
-    ax.ylabel = "SOC / p.u."
-    ax.xlabel = "Time / h"
-
-    return fig
-end
