@@ -177,3 +177,11 @@ function calc_soc_diagnostic(model, sol, data, ti, c, scenarios; θ, Ts = 1.0, z
            qσ = sqrt.(s.qσ) .* scale)
     end
 end
+
+
+# total charge throughput (Ah) over a module's current trace
+function calc_throughput(data, p, m)
+    df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => "value")
+    dt = [Dates.value.(diff(df_i.time)) * 1.0e-3; 0]
+    return sum(abs, df_i.value .* dt) / 3600
+end

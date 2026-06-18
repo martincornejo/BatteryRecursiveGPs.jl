@@ -1,7 +1,6 @@
 module YuasaAnalysis
 
 using DataFrames
-using CSV
 using JSON
 using Dates
 using Intervals
@@ -23,7 +22,6 @@ include("model.jl")
 include("ocv.jl")
 include("analysis.jl")
 include("plot.jl")
-include("dataset.jl")
 
 # data preparation + model fitting (model.jl)
 export fit_zscore, scale_θ, cell_dataset, module_dataset, cell_dataset_osci
@@ -38,8 +36,9 @@ export calc_v_summary, calc_module_v_summary, calc_v_run_summary
 export calc_module_soh_summary
 export calc_soc_trajectories, calc_module_soc, calc_soc_error, calc_module_soc_summary
 export calc_charge_accuracy, calc_charge_error, calc_soc_diagnostic, eval_soc_range
+export calc_throughput
 
-# figures (plot.jl, dataset.jl)
+# figures (plot.jl)
 export plot_dataset_overview, plot_cell_voltage_system, plot_data_resolution
 export plot_ecms_comparison, plot_sim, plot_q_estimation
 export plot_cell_v_rmse, plot_module_v_rmse
