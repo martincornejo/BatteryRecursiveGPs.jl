@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "800db5a42a96e6e7f5de6be820041bdb70e98953"
+project_hash = "7aaf709f0b908d30cccd6574f05a440c630b640c"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -131,7 +131,7 @@ git-tree-sha1 = "bca794632b8a9bbe159d56bf9e31c422671b35e0"
 uuid = "18cc8868-cbac-4acf-b575-c8ff214dc66f"
 version = "1.3.2"
 
-[[deps.BatteryDigitalTwin]]
+[[deps.BatteryRecursiveGPs]]
 deps = ["AbstractGPs", "ComponentArrays", "DataFrames", "DataInterpolations", "Distributed", "LinearAlgebra", "LowLevelParticleFilters", "Measurements", "Printf", "RecursiveGPs", "StaticArrays", "StatsBase"]
 path = "."
 uuid = "f4473fa2-29a4-49b4-bd4d-eee85a30348a"
@@ -482,18 +482,20 @@ version = "1.11.0"
 
 [[deps.Distributions]]
 deps = ["AliasTables", "FillArrays", "LinearAlgebra", "PDMats", "Printf", "QuadGK", "Random", "SpecialFunctions", "Statistics", "StatsAPI", "StatsBase", "StatsFuns"]
-git-tree-sha1 = "96f76dcd6cc75cf8eb49109123868499d413f526"
+git-tree-sha1 = "3c8a0a9a6d4a10bdfb6b751bd2b6051ed3e25fd4"
 uuid = "31c24e10-a181-5473-b8eb-7969acd0382f"
-version = "0.25.126"
+version = "0.25.127"
 
     [deps.Distributions.extensions]
     DistributionsChainRulesCoreExt = "ChainRulesCore"
     DistributionsDensityInterfaceExt = "DensityInterface"
+    DistributionsSparseConnectivityTracerExt = "SparseConnectivityTracer"
     DistributionsTestExt = "Test"
 
     [deps.Distributions.weakdeps]
     ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
     DensityInterface = "b429d917-457f-4dbc-8f4c-0cc954292b1d"
+    SparseConnectivityTracer = "9f842d2f-2579-4b1d-911e-f412cf18a3f5"
     Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [[deps.DocStringExtensions]]
@@ -1219,9 +1221,9 @@ version = "0.2.4"
 
 [[deps.NaNMath]]
 deps = ["OpenLibm_jll"]
-git-tree-sha1 = "9b8215b1ee9e78a293f99797cd31375471b2bcae"
+git-tree-sha1 = "dbd2e8cd2c1c27f0b584f6661b4309609c5a685e"
 uuid = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
-version = "1.1.3"
+version = "1.1.4"
 
 [[deps.Netpbm]]
 deps = ["FileIO", "ImageCore", "ImageMetadata"]
@@ -1970,13 +1972,13 @@ uuid = "c5fb5394-a638-5e4d-96e5-b29de1b5cf10"
 version = "1.6.0+0"
 
 [[deps.YuasaAnalysis]]
-deps = ["BatteryDigitalTwin", "CSV", "CairoMakie", "ColorSchemes", "ComponentArrays", "DataFrames", "DataInterpolations", "Dates", "Distributed", "Intervals", "JSON", "LinearAlgebra", "LowLevelParticleFilters", "Measurements", "Printf", "QuackIO", "RecursiveGPs", "StaticArrays", "Statistics", "StatsBase"]
+deps = ["BatteryRecursiveGPs", "CSV", "CairoMakie", "ColorSchemes", "ComponentArrays", "DataFrames", "DataInterpolations", "Dates", "Distributed", "Intervals", "JSON", "LinearAlgebra", "LowLevelParticleFilters", "Measurements", "Printf", "QuackIO", "RecursiveGPs", "StaticArrays", "Statistics", "StatsBase"]
 path = "yuasa-2"
 uuid = "d9836e77-66ce-4510-92dc-502e481bf084"
 version = "0.1.0"
 
 [[deps.YuasaPeakShaving]]
-deps = ["BatteryDigitalTwin", "CSV", "CairoMakie", "ComponentArrays", "DataFrames", "DataInterpolations", "Dates", "Distributed", "Intervals", "JSON", "Measurements", "Printf", "RecursiveGPs", "StaticArrays", "StatsBase"]
+deps = ["BatteryRecursiveGPs", "CSV", "CairoMakie", "ComponentArrays", "DataFrames", "DataInterpolations", "Dates", "Distributed", "Intervals", "JSON", "Measurements", "Printf", "RecursiveGPs", "StaticArrays", "StatsBase"]
 path = "yuasa-peak-shaving"
 uuid = "1bcec380-2a11-471a-8708-f2a00a11d41e"
 version = "0.1.0"

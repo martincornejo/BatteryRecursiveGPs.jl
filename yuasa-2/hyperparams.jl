@@ -12,11 +12,11 @@ using JSON
 
 # master: load packages BEFORE addprocs so they precompile (else workers hit a world-age race)
 using YuasaAnalysis        # cell_dataset, fit_zscore, scale_θ, module_dataset
-using BatteryDigitalTwin   # fit_composite_ocv, fit_model, gp_ocv, RCGPModel
+using BatteryRecursiveGPs   # fit_composite_ocv, fit_model, gp_ocv, RCGPModel
 
 using Distributed
 nprocs() == 1 && addprocs(Sys.CPU_THREADS ÷ 2)
-@everywhere using BatteryDigitalTwin
+@everywhere using BatteryRecursiveGPs
 
 using CairoMakie   # master-only: figures are built in memory, not persisted
 

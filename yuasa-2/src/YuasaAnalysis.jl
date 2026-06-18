@@ -11,7 +11,7 @@ using Printf
 using CairoMakie
 using ColorSchemes
 using StaticArrays
-using BatteryDigitalTwin
+using BatteryRecursiveGPs
 import ComponentArrays: ComponentVector, ComponentMatrix
 using LinearAlgebra: diag
 using RecursiveGPs: predict_gp

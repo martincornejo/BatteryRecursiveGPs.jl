@@ -1,4 +1,4 @@
-name = "BatteryDigitalTwin"
+name = "BatteryRecursiveGPs"
 uuid = "f4473fa2-29a4-49b4-bd4d-eee85a30348a"
 version = "0.1.0"
 authors = ["Martin Cornejo <martin.cornejo@tum.de>"]

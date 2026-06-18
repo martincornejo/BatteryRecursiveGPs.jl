@@ -1,5 +1,5 @@
 using YuasaAnalysis        # the analysis module (src/): fitting, OCV validation, metrics, figures
-using BatteryDigitalTwin   # gp_ocv, fit_composite_ocv, rescale_composite_ocv
+using BatteryRecursiveGPs   # gp_ocv, fit_composite_ocv, rescale_composite_ocv
 
 using CSV, DataFrames, Dates, Intervals
 using QuackIO              # read_parquet

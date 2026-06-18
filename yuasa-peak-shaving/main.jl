@@ -15,9 +15,10 @@ using RecursiveGPs: predict_gp
 using CairoMakie
 
 # Worker setup for distributed fitting (run only once)
+using BatteryRecursiveGPs  # precompile on master BEFORE addprocs, else workers hit a world-age race
 using Distributed
 addprocs(Sys.CPU_THREADS ÷ 2)
-@everywhere using BatteryDigitalTwin
+@everywhere using BatteryRecursiveGPs
 
 include("dataset.jl")
 include("parallel.jl")
@@ -42,7 +43,7 @@ models_d2 = res_d2.models
 sols_d2 = res_d2.sols
 
 # Refine data_1 fit using data_2
-@time (; models_refined, sols_refined) = refine_cells_distributed(data_2, ti_2, models, ids)
+@time (; models_refined, sols_refined) = refine_cells_distributed(data_2, ti_2, models, ids);
 
 
 # === Composite OCV per dataset, rescaled to common reference ===
