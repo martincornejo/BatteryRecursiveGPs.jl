@@ -34,7 +34,7 @@ export calc_v_summary, calc_module_v_summary, calc_v_run_summary
 export calc_module_soh_summary
 export calc_soc_trajectories, calc_module_soc, calc_soc_error, calc_module_soc_summary
 export calc_charge_accuracy, calc_charge_error, calc_soc_diagnostic, eval_soc_range
-export calc_throughput
+export calc_throughput, calc_data_completeness
 
 # figures (plot.jl)
 export plot_dataset_overview, plot_cell_voltage_system, plot_data_resolution

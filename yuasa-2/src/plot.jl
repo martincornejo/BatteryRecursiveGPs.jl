@@ -80,7 +80,8 @@ end
 
 # Per-signal sampling-interval histograms. All tables share a single dense `_time`
 # column, so the sampling intervals are a property of each signal table.
-function plot_data_resolution(data; yscale = log10)
+function plot_data_resolution(data; completeness = nothing, yscale = log10)
+    avail = isnothing(completeness) ? nothing : Dict(r.signal => r.completeness for r in eachrow(completeness))
     colors = Makie.wong_colors()
     # signal → color mapping matches plot_dataset_overview
     signals = [
@@ -105,7 +106,11 @@ function plot_data_resolution(data; yscale = log10)
         hist!(ax[i], Δt; strokewidth = 1, strokecolor = :black, color, bins,
             fillto = logscale ? 0.5 : 0.0)
         nmax = max(nmax, maximum(StatsBase.fit(Histogram, Δt, bins).weights))
-        ax[i].title = "$name  (median $(round(Int, median(Δt))) s)"
+        ax[i].title = if isnothing(avail)
+            "$name  (median $(round(Int, median(Δt))) s)"
+        else
+            "$name  (median $(round(Int, median(Δt))) s, $(round(Int, 100avail[key]))% available)"
+        end
     end
 
     linkaxes!(ax...)

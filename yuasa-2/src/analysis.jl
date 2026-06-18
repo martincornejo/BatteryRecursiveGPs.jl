@@ -185,3 +185,27 @@ function calc_throughput(data, p, m)
     dt = [Dates.value.(diff(df_i.time)) * 1.0e-3; 0]
     return sum(abs, df_i.value .* dt) / 3600
 end
+
+
+# === data availability ===
+
+# how much data is actually available: per signal table, the fraction of expected samples
+# present over `ti`. Each table shares one `_time` column but its channels carry missings,
+# so we count non-missing values across all channels against the count expected at the
+# nominal sampling rate. Complements the median-timestep view in `plot_data_resolution`.
+function calc_data_completeness(data, ti)
+    nominal_dt = Dict(  # nominal sampling period [s] per signal table
+        :cell_voltage => 10.0,
+        :module_voltage => 1.0,
+        :module_current => 1.0,
+        :battery_temperature => 15.0,
+    )
+    dur_s = (last(ti) - first(ti)) / Millisecond(1000)
+    map(collect(keys(nominal_dt))) do sig
+        df = filter(:_time => ∈(ti), data[sig])
+        chans = names(df, Not(:_time))
+        expected = (floor(Int, dur_s / nominal_dt[sig]) + 1) * length(chans)
+        actual = sum(c -> count(!ismissing, df[!, c]), chans)
+        (; signal = sig, n_channels = length(chans), actual, expected, completeness = actual / expected)
+    end |> DataFrame
+end

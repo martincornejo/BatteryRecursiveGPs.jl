@@ -148,7 +148,8 @@ soc_diag = calc_soc_diagnostic(cell_models[id_diag], cell_sols[id_diag], data, t
 # dataset
 fig_dataset = plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5))  # Fig 1
 fig_cell_voltages = plot_cell_voltage_system(data)                            # Fig S1
-fig_data_resolution = plot_data_resolution(data)                             # Fig S2
+df_completeness = calc_data_completeness(data, ti)                           # data availability per signal
+fig_data_resolution = plot_data_resolution(data; completeness = df_completeness)  # Fig S2
 
 # ECM parameters
 fig_ecms = plot_ecms_comparison(cell_models, cell_sols, module_models, module_sols; n_mod = 12)  # Fig 2
