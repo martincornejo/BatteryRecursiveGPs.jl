@@ -3,7 +3,6 @@ module YuasaAnalysis
 using DataFrames
 using JSON
 using Dates
-using Intervals
 using DataInterpolations
 using StatsBase
 using Statistics
@@ -16,7 +15,6 @@ using BatteryDigitalTwin
 import ComponentArrays: ComponentVector, ComponentMatrix
 using LinearAlgebra: diag
 using RecursiveGPs: predict_gp
-using LowLevelParticleFilters: state, covariance
 
 include("model.jl")
 include("ocv.jl")

@@ -314,13 +314,12 @@ end
 
 # ECM curves for one RCGP cell/module onto a 2-row axis (OCV top, R0+R1(q) bottom).
 # Helper for plot_ecms_comparison below.
-function plot_ecm!(ax, model::RCGPModel, sol = nothing; color = nothing)
+function plot_ecm!(ax, model::RCGPModel, sol; color = nothing)
     kw = isnothing(color) ? (;) : (; color)
     kf = model.kf
     zt = kf.p.zt
 
-    q̂min, q̂max = sol === nothing ? extrema(kf.p.r1.b0) : extrema(sol.qμ)
-    q̂ = collect(q̂min:0.01:q̂max)
+    q̂ = collect(range(extrema(sol.qμ)...; step = 0.01))
     q = StatsBase.reconstruct(zt.q, q̂)
 
     # OCV
@@ -331,10 +330,8 @@ function plot_ecm!(ax, model::RCGPModel, sol = nothing; color = nothing)
     band!(ax[1], q, ocvμ + 2ocvσ, ocvμ - 2ocvσ; alpha = 0.8, kw...)
 
     # R0 scalar from the final state estimate
-    x_last = sol === nothing ? state(kf) : sol.x_end
-    xc = ComponentVector(x_last, kf.p.xid)
-    R_last = sol === nothing ? covariance(kf) : sol.R_end
-    Σ = ComponentMatrix(R_last, kf.p.Σid)
+    xc = ComponentVector(sol.x_end, kf.p.xid)
+    Σ = ComponentMatrix(sol.R_end, kf.p.Σid)
     r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
     r0σ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) |> first
 
