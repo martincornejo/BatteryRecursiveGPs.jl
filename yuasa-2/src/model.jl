@@ -148,24 +148,6 @@ function cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore())
     return (; u, y)
 end
 
-function extract_ocv(model::YuasaModel)
-    kf = model.kf
-    zt = kf.p.zt
-    q̂min, q̂max = extrema(kf.p.r0.b0)
-    q̂ = q̂min:0.01:q̂max
-    q = StatsBase.reconstruct(zt.q, q̂)
-
-    soc = range(0.15, 0.9, length = length(q))
-
-    ocv = predict_gp(kf, q̂, :ocv)
-    ocvμ = StatsBase.reconstruct(zt.v, ocv.μ)
-
-    focv = LinearInterpolation(ocvμ, soc)
-    focv⁻¹ = LinearInterpolation(soc, ocvμ)
-
-    return (; ocv = focv, ocv⁻¹ = focv⁻¹)
-end
-
 
 function load_hyperparams(file, ids, id_str)
     hyperparams = JSON.parsefile(file, Dict{String, Dict{String, Any}})

@@ -193,7 +193,7 @@ end
 # === plotters migrated out of the package (BatteryRecursiveGPs no longer ships plotting) ===
 
 # terminal-voltage fit + innovation over time
-function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0, plot_Δv = true)
+function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0)
     kf = model.kf
     zt = kf.p.zt
     (; idx, u, yt, yμ, yΣ) = sol
