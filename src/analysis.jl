@@ -106,7 +106,8 @@ function charge_trajectory(model::AbstractBatteryModel, sol)
     zt = _gp_kf(model).p.zt
     t = (sol.idx .- 1) .* model.kf.p.Ts
     q = StatsBase.reconstruct(zt.q, _charge(model, sol))
-    return (; t, q)
+    qσ = sqrt.(sol.qσ) .* zt.q.scale[1]
+    return (; t, q, qσ)
 end
 
 """

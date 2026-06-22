@@ -82,12 +82,12 @@ end
 # === SOC estimation ===
 
 function calc_soc_trajectories(models, sols, fit, ids; tg)
-    socs = map(enumerate(ids)) do (k, id)
-        (; t, q) = charge_trajectory(models[id], sols[id])
-        fq = LinearInterpolation(q, t; extrapolation = ExtrapolationType.Constant)
-        Measurements.value(fit.s0[k]) .+ fq.(tg) ./ Measurements.value(fit.Q_cell[k])
+    trajs = map(enumerate(ids)) do (k, id)
+        (; t, q, qσ) = charge_trajectory(models[id], sols[id])
+        fq = LinearInterpolation(Measurements.measurement.(q, qσ), t; extrapolation = ExtrapolationType.Constant)
+        fit.s0[k] .+ fq.(tg) ./ fit.Q_cell[k]
     end
-    return stack(socs)  # length(tg) × length(ids)
+    return stack(trajs)  # length(tg) × length(ids), eltype Measurement{Float64}
 end
 
 function calc_module_soc(id, tg, soc_cell, soc_module, cell_fit, cell_ids, module_ids)
@@ -96,10 +96,11 @@ function calc_module_soc(id, tg, soc_cell, soc_module, cell_fit, cell_ids, modul
     idx = [cell_idx[(; p, m, c)] for c in 1:12]
     k = findfirst(==(id), module_ids)
     Q = Measurements.value.(cell_fit.Q_cell[idx])
+    soc_c = soc_cell[:, idx]
     return DataFrame(
         "t" => collect(tg),
-        ["soc_cell_$c" => soc_cell[:, i] for (c, i) in enumerate(idx)]...,
-        "soc_pack" => calc_soc_pack(Q, soc_cell[:, idx]),
+        ["soc_cell_$c" => soc_c[:, i] for (c, i) in enumerate(1:12)]...,
+        "soc_pack" => calc_soc_pack(Q, soc_c),
         "soc_module" => soc_module[:, k],
     )
 end

@@ -685,10 +685,18 @@ function plot_soc_trajectories!(
     th = df.t ./ 3600
 
     for c in 1:12
-        lines!(ax, th, df[:, "soc_cell_$c"] .* 100; color = (:gray, 0.6), linewidth = 1)
+        μ = Measurements.value.(df[:, "soc_cell_$c"]) .* 100
+        σ = Measurements.uncertainty.(df[:, "soc_cell_$c"]) .* 100
+        band!(ax, th, μ .- 2σ, μ .+ 2σ; color = (:gray, 0.15))
+        lines!(ax, th, μ; color = (:gray, 0.6), linewidth = 1)
     end
-    lines!(ax, th, df.soc_module .* 100; color = colors[1], linewidth = 2)
-    lines!(ax, th, df.soc_pack .* 100; color = colors[2], linewidth = 2)
+
+    for (col, color) in ((:soc_module, colors[1]), (:soc_pack, colors[2]))
+        μ = Measurements.value.(df[!, col]) .* 100
+        σ = Measurements.uncertainty.(df[!, col]) .* 100
+        band!(ax, th, μ .- 2σ, μ .+ 2σ; color = (color, 0.3))
+        lines!(ax, th, μ; color, linewidth = 2)
+    end
 
     xlims!(ax, first(th), last(th))
     ax.xlabel = "Time / h"
@@ -706,12 +714,12 @@ function plot_soc_comparison(df_norm, df_out; titles = ("", ""), colors = Makie.
     linkyaxes!(ax1, ax2)
 
     elements = [
-        LineElement(color = (:gray, 0.6), linewidth = 1),
-        LineElement(color = colors[1], linewidth = 2),
-        LineElement(color = colors[2], linewidth = 2),
+        [PolyElement(color = (colors[1], 0.3)), LineElement(color = colors[1], linewidth = 2)],
+        [PolyElement(color = (colors[2], 0.3)), LineElement(color = colors[2], linewidth = 2)],
+        [PolyElement(color = (:gray, 0.15)), LineElement(color = (:gray, 0.6), linewidth = 1)],
     ]
     Legend(
-        fig[2, 1], elements, ["Cells", "Module-based", "Cell-based"];
+        fig[2, 1], elements, ["Module-based", "Cell-based", "Cells"];
         orientation = :horizontal, framevisible = false,
     )
     return fig
@@ -724,7 +732,7 @@ function plot_soc_discrepancy(soc_err)
     n_t, n_mod = size(soc_err)
     xs = repeat(1:n_mod; inner = n_t)
 
-    boxplot!(ax, xs, vec(soc_err) .* 100; width = 0.6, color = (:gray, 0.6), whiskerwidth = 0.4, markersize = 3)
+    boxplot!(ax, xs, vec(Measurements.value.(soc_err)) .* 100; width = 0.6, color = (:gray, 0.6), whiskerwidth = 0.4, markersize = 3)
     hlines!(ax, [0]; color = (:black, 0.4), linewidth = 1)
     vlines!(ax, [9.5, 18.5]; color = (:black, 0.3), linewidth = 1)
 
@@ -832,8 +840,9 @@ function plot_soc_discrepancy_heatmap(tg, soc_err)
     ax = Axis(fig[1, 1], xlabel = "Time / h", ylabel = "Module ID")
     n_mod = size(soc_err, 2)
 
-    cr = maximum(abs, soc_err) * 100
-    hm = heatmap!(ax, tg ./ 3600, 1:n_mod, soc_err .* 100; colormap = :vik, colorrange = (-cr, cr))
+    soc_err_v = Measurements.value.(soc_err) * 100
+    cr = maximum(abs, soc_err_v)
+    hm = heatmap!(ax, tg ./ 3600, 1:n_mod, soc_err_v; colormap = :vik, colorrange = (-cr, cr))
     hlines!(ax, [9.5, 18.5]; color = :black, linewidth = 1)
     Colorbar(fig[1, 2], hm; label = "Module − cell SOC / %")
 
