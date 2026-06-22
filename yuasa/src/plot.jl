@@ -202,7 +202,9 @@ end
 # === plotters migrated out of the package (BatteryRecursiveGPs no longer ships plotting) ===
 
 # terminal-voltage fit + innovation over time
-function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0)
+# draws the example open-loop fit into `gl` as two stacked panels (voltage + error,
+# error ≈ 1/3 height); returns (ax_v, ax_e). Measured = neutral gray, cell model = orange.
+function plot_sim!(gl, model::AbstractBatteryModel, sol; Ts = 1.0)
     kf = model.kf
     zt = kf.p.zt
     (; idx, u, yt, yμ, yΣ) = sol
@@ -211,29 +213,56 @@ function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0)
     σ = StatsBase.reconstruct(zt.σ, sqrt.(first.(yΣ)))
     t = (0:(length(u) - 1)) * Ts / 3600 |> collect
 
-    fig = Figure()
-    ax = [Axis(fig[i, 1]) for i in 1:2]
-    colors = Makie.wong_colors()
+    c_meas = :gray30        # measured reference (neutral, dark enough to balance the model)
+    c_model = Makie.wong_colors()[2]   # cell-model prediction / error (orange), matching "cells" in the accuracy figure
+
+    ax_v = Axis(gl[1, 1]; ylabel = "Voltage / V")
+    ax_e = Axis(gl[2, 1]; ylabel = "Error / mV", xlabel = "Time / h")
 
     v = StatsBase.reconstruct(zt.v, first.(yt))
-    lines!(ax[1], t[idx], v)
-    lines!(ax[1], t[idx], μ, color = colors[2])
-    band!(ax[1], t[idx], μ - 2σ, μ + 2σ, color = (colors[2], 0.5))
+    band!(ax_v, t[idx], μ - 2σ, μ + 2σ; color = (c_model, 0.3), label = "Model")
+    lines!(ax_v, t[idx], μ; color = c_model, label = "Model")
+    lines!(ax_v, t[idx], v; color = c_meas, linewidth = 1.2, label = "Measured")
 
     e = v - μ
-    lines!(ax[2], t[idx], e * 1.0e3, color = colors[2])
-    band!(ax[2], t[idx], (e - 2σ) * 1.0e3, (e + 2σ) * 1.0e3, color = (colors[2], 0.5))
+    rmse = sqrt(sum(abs2, e) / length(e)) * 1.0e3
+    elim = maximum(abs, vcat(e - 2σ, e + 2σ)) * 1.0e3
+    hlines!(ax_e, [0]; color = (:black, 0.4), linewidth = 1)
+    band!(ax_e, t[idx], (e - 2σ) * 1.0e3, (e + 2σ) * 1.0e3; color = (c_model, 0.3))
+    lines!(ax_e, t[idx], e * 1.0e3; color = c_model)
+    text!(
+        ax_e, 0.99, 0.96; text = "RMSE = $(round(rmse; digits = 1)) mV",
+        space = :relative, align = (:right, :top), fontsize = 11
+    )
 
     if 0 < sol.tt < length(sol.u)
-        vlines!(ax[1], t[sol.tt]; color = :red)
-        vlines!(ax[2], t[sol.tt]; color = :red)
+        vlines!(ax_v, t[sol.tt]; color = :red)
+        vlines!(ax_e, t[sol.tt]; color = :red)
     end
 
-    xlims!.(ax, t[begin], t[end])
-    ax[1].ylabel = "Voltage / V"
-    ax[2].ylabel = "Voltage error / mV"
-    ax[2].xlabel = "Time / h"
-    linkxaxes!(ax...)
+    xlims!(ax_v, t[begin], t[end])
+    xlims!(ax_e, t[begin], t[end])
+    ylims!(ax_e, -1.1elim, 1.1elim)
+    for a in (ax_v, ax_e)
+        a.xgridvisible = false
+        a.ygridvisible = false
+        a.yminorticks = IntervalsBetween(2)
+        a.yminorticksvisible = true
+        a.xminorticks = IntervalsBetween(2)
+        a.xminorticksvisible = true
+    end
+    linkxaxes!(ax_v, ax_e)
+    hidexdecorations!(ax_v; grid = false, ticks = false)
+    axislegend(ax_v; merge = true, framevisible = false, position = :rb, padding = (4, 4, 2, 2))
+    rowsize!(gl, 1, Auto(2))   # error panel ≈ 1/3 of the example height
+    rowsize!(gl, 2, Auto(1))
+    rowgap!(gl, 6)
+    return (ax_v, ax_e)
+end
+
+function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0)
+    fig = Figure(size = (700, 300))
+    plot_sim!(GridLayout(fig[1, 1]), model, sol; Ts)
     return fig
 end
 
@@ -790,8 +819,7 @@ end
 # 1.5·IQR fence at n = 12 plus any glyph clash with the Tukey boxplots used elsewhere (e.g.
 # the SOC-error figure). The single off-scale cell (a current/voltage desync artifact) is
 # named in place; fleet stats belong in the caption.
-function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]])
-    fig = Figure(size = (700, 320))
+function plot_v_accuracy!(ax, df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]])
     q99 = quantile(df_v_cell.rmse, 0.99)
 
     # focus the axis on the bulk + module comparison; the lone extreme cell (a desync
@@ -800,8 +828,8 @@ function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1
     # floor the axis just below the lowest point (not at 0) so the 4–14 mV band fills the panel
     ybot = floor(min(minimum(df_v_cell.rmse), minimum(df_v_module.rmse_module ./ 12))) - 0.5
 
-    # main panel: per-module cell-RMSE spread + module model
-    ax = Axis(fig[1, 1]; xlabel = "Module ID", ylabel = "Cell voltage RMSE / mV")
+    ax.xlabel = "Module ID"
+    ax.ylabel = "Cell voltage RMSE / mV"
     mod_idx = Dict((; p, m) => (p - 1) * 9 + m for p in 1:3, m in 1:9)
     xs = [mod_idx[(; p = r.p, m = r.m)] for r in eachrow(df_v_cell)]
 
@@ -839,6 +867,29 @@ function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1
     axislegend(ax, [cells_el, mod_el], ["Cell models: per-cell RMSE + median", "Module model: RMSE ÷ 12"]; framevisible = true, framecolor = (:black, 0.2), backgroundcolor = :white, position = :rt)
 
     ylims!(ax, ybot, ytop)
+    return ax
+end
+
+function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]])
+    fig = Figure(size = (700, 320))
+    plot_v_accuracy!(Axis(fig[1, 1]), df_v_cell, df_v_module; colors)
+    return fig
+end
+
+# Combined voltage-accuracy figure: (A) one example open-loop cell fit + residual — the
+# qualitative story — over (B) the fleet-wide per-module accuracy — the quantitative one.
+function plot_v_accuracy_overview(model::AbstractBatteryModel, sol, df_v_cell, df_v_module; Ts = 1.0, title = "")
+    fig = Figure(size = (700, 550))
+
+    gl_sim = GridLayout(fig[1, 1])
+    ax_v, _ = plot_sim!(gl_sim, model, sol; Ts)
+    ax_v.title = title
+
+    plot_v_accuracy!(Axis(fig[2, 1]), df_v_cell, df_v_module)
+
+    Label(gl_sim[1, 1, TopLeft()], "A"; font = :bold, fontsize = 18, padding = (0, 0, 5, 0))
+    Label(fig[2, 1, TopLeft()], "B"; font = :bold, fontsize = 18, padding = (0, 0, 5, 0))
+    rowgap!(fig.layout, 16)
     return fig
 end
 

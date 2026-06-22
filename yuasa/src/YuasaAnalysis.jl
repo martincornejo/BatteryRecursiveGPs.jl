@@ -39,7 +39,7 @@ export calc_throughput, calc_data_completeness
 # figures (plot.jl)
 export plot_dataset_overview, plot_cell_voltage_system, plot_data_resolution
 export plot_ecms_comparison, plot_sim, plot_q_estimation
-export plot_v_accuracy
+export plot_v_accuracy, plot_v_accuracy_overview
 export plot_cell_soh, plot_cell_soh_hist, plot_module_summary
 export plot_soc_discrepancy, plot_soc_discrepancy_heatmap, plot_soc_comparison, plot_soc_overview
 export plot_charge_error, plot_soc_diagnostic

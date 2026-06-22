@@ -157,12 +157,9 @@ fig_data_resolution = plot_data_resolution(data; completeness = df_completeness)
 fig_ecms = plot_ecms_comparison(cell_models, cell_sols, module_models, module_sols; n_mod = 12)  # Fig 2
 
 # voltage accuracy
-fig_sim_example = let id = (; p = 1, m = 1, c = 1)  # Fig 7
-    fig = plot_sim(cell_models[id], cell_sols_ol[id])
-    fig.content[1].title = "Cell P$(id.p)M$(id.m)C$(id.c)"
-    fig
+fig_v_overview = let id = (; p = 1, m = 1, c = 1)  # Fig 7: example fit (A) + fleet accuracy (B)
+    plot_v_accuracy_overview(cell_models[id], cell_sols_ol[id], df_v_cell, df_v_module; title = "Cell P$(id.p)M$(id.m)C$(id.c)")
 end
-fig_v_accuracy = plot_v_accuracy(df_v_cell, df_v_module)  # Fig 8
 
 # SOH
 fig_cell_soh = plot_cell_soh(cell_fit, cell_ocvs)  # Fig 3
