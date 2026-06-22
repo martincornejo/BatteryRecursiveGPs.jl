@@ -157,7 +157,7 @@ function plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5))
         lines!(axs[3, j], t_dr, df_dr[:, "dr_ch_p$(p)_m$(m)"]; color = (:black, 0.6), linestyle = :dash)
         lines!(axs[3, j], t_dr, -df_dr[:, "dr_dch_p$(p)_m$(m)"]; color = (:black, 0.6), linestyle = :dash)
 
-        axs[1, j].title = "Phase $p, Module $m" * (j == 2 ? " (outlier)" : "")
+        axs[1, j].title = "Module P$(p)M$(m)"
         axs[4, j].xlabel = "Time / h"
         for k in 1:4
             xlims!(axs[k, j], first(df_v.t), last(df_v.t))
@@ -783,34 +783,62 @@ function plot_soc_overview(
     return fig
 end
 
-function plot_cell_v_rmse(df_v_cell)
-    fig = Figure(size = (700, 300))
-    ax = Axis(fig[1, 1], xlabel = "Cell voltage RMSE / mV", ylabel = "Cell count")
-    hist!(ax, df_v_cell.rmse; bins = 0:0.5:25, color = :gray, strokewidth = 1)
-    ylims!(ax, 0, nothing)
-    return fig
-end
+# Fleet-wide open-loop voltage accuracy: every cell RMSE as a point, grouped by module,
+# with a median tick, vs the dedicated module model on the per-cell scale (÷12). The strip
+# (rather than a boxplot) shows the actual within-module distribution — one stray cell vs a
+# broad spread — fits the cell-to-cell heterogeneity story, and avoids the unreliable Tukey
+# 1.5·IQR fence at n = 12 plus any glyph clash with the Tukey boxplots used elsewhere (e.g.
+# the SOC-error figure). The single off-scale cell (a current/voltage desync artifact) is
+# named in place; fleet stats belong in the caption.
+function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]])
+    fig = Figure(size = (700, 320))
+    q99 = quantile(df_v_cell.rmse, 0.99)
 
-function plot_module_v_rmse(df_v_module; colors = Makie.wong_colors()[[1, 2]])
-    fig = Figure(size = (700, 300))
-    ax = Axis(fig[1, 1], xlabel = "Module ID", ylabel = "Module voltage RMSE / mV")
-    ids = 1:nrow(df_v_module)
+    # focus the axis on the bulk + module comparison; the lone extreme cell (a desync
+    # artifact) is named off-scale rather than allowed to stretch the whole axis.
+    ytop = ceil(max(maximum(df_v_module.rmse_module) / 12, q99) * 1.05)
+    # floor the axis just below the lowest point (not at 0) so the 4–14 mV band fills the panel
+    ybot = floor(min(minimum(df_v_cell.rmse), minimum(df_v_module.rmse_module ./ 12))) - 0.5
 
-    linesegments!(
-        ax, repeat(ids; inner = 2),
-        collect(Iterators.flatten(zip(df_v_module.rmse_module, df_v_module.rmse_cells)));
-        color = (:gray, 0.6), linewidth = 2,
-    )
-    scatter!(ax, ids, df_v_module.rmse_module; color = colors[1], markersize = 10, label = "Module-based")
-    scatter!(ax, ids, df_v_module.rmse_cells; color = colors[2], markersize = 10, label = "Cell-based (Σ cells)")
+    # main panel: per-module cell-RMSE spread + module model
+    ax = Axis(fig[1, 1]; xlabel = "Module ID", ylabel = "Cell voltage RMSE / mV")
+    mod_idx = Dict((; p, m) => (p - 1) * 9 + m for p in 1:3, m in 1:9)
+    xs = [mod_idx[(; p = r.p, m = r.m)] for r in eachrow(df_v_cell)]
+
+    # every on-scale cell as a point (the off-scale cell is named below) + a per-module
+    # median tick; the point cloud shows whether a module's spread is one stray cell or broad
+    ks = 1:nrow(df_v_module)
+    keep = df_v_cell.rmse .<= ytop
+    cell_md = [median(df_v_cell.rmse[xs .== k]) for k in ks]
+
+    scatter!(ax, xs[keep], df_v_cell.rmse[keep]; color = (colors[2], 0.55), markersize = 7)
+    scatter!(ax, ks, cell_md; marker = :hline, markersize = 15, color = colors[2])
+    scatter!(ax, ks, df_v_module.rmse_module ./ 12; color = colors[1], markersize = 9)
+
+    # name the single worst cell in place — it is the off-scale point readers ask about
+    worst = argmax(df_v_cell.rmse)
+    if df_v_cell.rmse[worst] > ytop
+        r = df_v_cell[worst, :]
+        y_mark = ytop - 0.035 * (ytop - ybot)  # just below the top edge so the ▲ shows fully
+        scatter!(ax, [xs[worst]], [y_mark]; color = colors[3], markersize = 11, marker = :utriangle)
+        text!(
+            ax, xs[worst] + 0.5, y_mark; text = "P$(r.p)M$(r.m)C$(r.c): $(round(Int, r.rmse)) mV",
+            align = (:left, :center), fontsize = 12, color = colors[3]
+        )
+    end
+
     vlines!(ax, [9.5, 18.5]; color = (:black, 0.3), linewidth = 1)
-
-    xlims!(ax, 0.3, last(ids) + 0.7)
-    ylims!(ax, 0, nothing)
+    xlims!(ax, 0.3, 27.7)
     module_id_xticks!(ax)
     ax.xgridvisible = false
     ax.ygridvisible = false
-    axislegend(ax; framevisible = false)
+    ax.yminorticks = IntervalsBetween(5)  # 1 mV steps between the 5 mV majors
+    ax.yminorticksvisible = true
+    cells_el = [MarkerElement(; marker = :circle, color = (colors[2], 0.55), markersize = 7), MarkerElement(; marker = :hline, color = colors[2], markersize = 15)]
+    mod_el = MarkerElement(; marker = :circle, color = colors[1], markersize = 9)
+    axislegend(ax, [cells_el, mod_el], ["Cell models: per-cell RMSE + median", "Module model: RMSE ÷ 12"]; framevisible = true, framecolor = (:black, 0.2), backgroundcolor = :white, position = :rt)
+
+    ylims!(ax, ybot, ytop)
     return fig
 end
 

@@ -30,7 +30,7 @@ export clean_ocv, average_charge_discharge, validate_cell_ocvs, eval_cell_ocv_va
 export compare_current_sources
 
 # analysis / metrics (analysis.jl)
-export calc_v_summary, calc_module_v_summary, calc_v_run_summary
+export calc_v_summary, calc_module_v_summary
 export calc_module_soh_summary
 export calc_soc_trajectories, calc_module_soc, calc_soc_error, calc_module_soc_summary
 export calc_charge_accuracy, calc_charge_error, calc_soc_diagnostic, eval_soc_range
@@ -39,7 +39,7 @@ export calc_throughput, calc_data_completeness
 # figures (plot.jl)
 export plot_dataset_overview, plot_cell_voltage_system, plot_data_resolution
 export plot_ecms_comparison, plot_sim, plot_q_estimation
-export plot_cell_v_rmse, plot_module_v_rmse
+export plot_v_accuracy
 export plot_cell_soh, plot_cell_soh_hist, plot_module_summary
 export plot_soc_discrepancy, plot_soc_discrepancy_heatmap, plot_soc_comparison, plot_soc_overview
 export plot_charge_error, plot_soc_diagnostic

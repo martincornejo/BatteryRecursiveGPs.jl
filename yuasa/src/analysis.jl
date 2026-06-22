@@ -32,22 +32,6 @@ function calc_module_v_summary(cell_run, module_run, module_ids)
     return df
 end
 
-function calc_v_run_summary(v_runs, cell_ids, module_ids)
-    df = map(collect(pairs(v_runs))) do (run, r)
-        df_cell = calc_v_summary(r.cell.models, r.cell.sols, cell_ids)
-        df_mod = calc_module_v_summary(r.cell, r.mod, module_ids)
-        (;
-            run,
-            cell_med = median(df_cell.rmse),
-            cell_q95 = quantile(df_cell.rmse, 0.95), # or 99?
-            cell_max = maximum(df_cell.rmse),
-            module_med = median(df_mod.rmse_module),
-            cells_agg_med = median(df_mod.rmse_cells),
-        )
-    end |> DataFrame
-    return df
-end
-
 # === SOH estimation ===
 
 function calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit; Q_nom = 100)

@@ -60,22 +60,14 @@ module_ocvs = [gp_ocv(module_models[id], module_sols[id]) for id in module_ids]
 
 
 # === Voltage accuracy ===
-# open-/closed-loop voltage prediction; RMSE/MAE/quantiles over cells & modules.
-# Three runs:
-# fit — innovations during training, inflated by the GP warm-up transient
-# ol  — pure simulation, no feedback: errors accumulate (predictive performance)
-# soc — one-step-ahead with SOC feedback: model-shape mismatch only
-
-v_runs = (
-    fit = (; cell = (; models = cell_models, sols = cell_sols), mod = (; models = module_models, sols = module_sols)),
-    ol = (; cell = (; models = cell_models, sols = cell_sols_ol), mod = (; models = module_models, sols = module_sols_ol)),
-    soc = (; cell = cell_soc, mod = module_soc),
-);
-df_v_runs = calc_v_run_summary(v_runs, cell_ids, module_ids)
-
-# figures show the open-loop run: predictive performance is what we want to measure
-df_v_cell = calc_v_summary(v_runs.ol.cell.models, v_runs.ol.cell.sols, cell_ids)
-df_v_module = calc_module_v_summary(v_runs.ol.cell, v_runs.ol.mod, module_ids)
+# Predictive voltage accuracy is reported on the open-loop run: frozen parameters, no
+# correction step, errors accumulate. (The fit run's innovations are inflated by the GP
+# warm-up transient; the soc run corrects state every step and only shows model-shape
+# mismatch — neither measures prediction.)
+ol_cell = (; models = cell_models, sols = cell_sols_ol)
+ol_mod = (; models = module_models, sols = module_sols_ol)
+df_v_cell = calc_v_summary(ol_cell.models, ol_cell.sols, cell_ids)
+df_v_module = calc_module_v_summary(ol_cell, ol_mod, module_ids)
 
 
 # === measured low-power OCV reference ===
@@ -166,12 +158,11 @@ fig_ecms = plot_ecms_comparison(cell_models, cell_sols, module_models, module_so
 
 # voltage accuracy
 fig_sim_example = let id = (; p = 1, m = 1, c = 1)  # Fig 7
-    fig = plot_sim(cell_models[id], cell_sols[id])
-    fig.content[1].title = "Cell p=$(id.p) m=$(id.m) c=$(id.c)"
+    fig = plot_sim(cell_models[id], cell_sols_ol[id])
+    fig.content[1].title = "Cell P$(id.p)M$(id.m)C$(id.c)"
     fig
 end
-fig_cell_rmse = plot_cell_v_rmse(df_v_cell)        # Fig 8
-fig_module_rmse = plot_module_v_rmse(df_v_module)  # Fig 9
+fig_v_accuracy = plot_v_accuracy(df_v_cell, df_v_module)  # Fig 8
 
 # SOH
 fig_cell_soh = plot_cell_soh(cell_fit, cell_ocvs)  # Fig 3
@@ -179,8 +170,6 @@ fig_module_soh = plot_module_summary(df_soh)        # Fig 4
 fig_cell_soh_hist = plot_cell_soh_hist(cell_fit)
 
 # OCV reconstruction validation
-fig_current_sources = compare_current_sources(df_dch)  # Fig S4
-fig_ocv_cleaning = plot_ocv_cleaning(df_chg, (; m = 7, c = 1); dch = false)  # diagnostic
 fig_ocv_extrap = plot_ocv_extrapolation(meas_composite)                             # Fig 12
 fig_ocv_cells = plot_cell_ocv_validation(ocv_val, measured, reconstructed)          # Fig 10
 
