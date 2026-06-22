@@ -78,13 +78,31 @@ df_v_cell = calc_v_summary(v_runs.ol.cell.models, v_runs.ol.cell.sols, cell_ids)
 df_v_module = calc_module_v_summary(v_runs.ol.cell, v_runs.ol.mod, module_ids)
 
 
+# === measured low-power OCV reference ===
+# Cleaned midline OCV from the rig (module 7 ≡ P1M9, accurate oscilloscope probe). Its
+# composite, extrapolated to the full voltage window, fixes the absolute SOC gauge used by
+# the SOH fit below and by the OCV-validation section.
+fcs = [clean_ocv(df_chg, (; m = 7, c); dch = false, current_col = "tek") for c in 1:12];
+fds = [clean_ocv(df_dch, (; m = 7, c); dch = true, current_col = "tek") for c in 1:12];
+measured = [average_charge_discharge(fcs[c], fds[c]) for c in 1:12];  # (; q, μ)
+
+V_window = (2.9, 4.1)
+meas_comp = fit_composite_ocv(measured; uq = false)
+meas_composite = LinearInterpolation(meas_comp.v_grid, meas_comp.soc_grid; extrapolation = ExtrapolationType.Constant)
+soc_range = eval_soc_range(meas_composite; V_min = V_window[1], V_max = V_window[2])
+# absolute SOC (0 at V_min, 1 at V_max) of the measured OCV at a voltage, linearly
+# extrapolated beyond the measured range — the reference anchors for the composite-OCV gauge.
+ref_soc(v) = (soc_range.soc_of_v(v) - soc_range.soc_at_Vmin) / soc_range.soc_full
+
+
 # === SOH estimation ===
 # composite OCV curve from all cells / all modules → SOH and initial SOC from the fit.
 # inhomogeneity: cell-to-cell spread within each module; unusable capacity split into
 # irreversible (SOH spread) and reversible (SOC imbalance).
 
-cell_fit = fit_composite_ocv(cell_ocvs, (v_low = 3.45, soc_low = 0.05, v_high = 4.05, soc_high = 0.85))
-module_fit = fit_composite_ocv(module_ocvs, (v_low = 44.0, soc_low = 0.1, v_high = 48.6, soc_high = 0.85))
+# cell_fit = fit_composite_ocv(cell_ocvs, (v_low = 3.45, soc_low = 0.06, v_high = 4.05, soc_high = 0.9))
+cell_fit = fit_composite_ocv(cell_ocvs, (v_low = 3.62, soc_low = 0.1, v_high = 4.05, soc_high = 0.9))
+module_fit = fit_composite_ocv(module_ocvs, (v_low = 43.44, soc_low = 0.1, v_high = 48.6, soc_high = 0.9))
 df_soh = calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit)
 
 
@@ -98,18 +116,10 @@ df_soh = calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit)
 p1m9_ids = [(; p = 1, m = 9, c) for c in 1:12]
 reconstructed = [gp_ocv(cell_models[id], cell_sols[id]) for id in p1m9_ids];
 
-# measured midline OCV: low-power charge/discharge, oscilloscope current, rig module 7
-fcs = [clean_ocv(df_chg, (; m = 7, c); dch = false, current_col = "tek") for c in 1:12];
-fds = [clean_ocv(df_dch, (; m = 7, c); dch = true, current_col = "tek") for c in 1:12];
-measured = [average_charge_discharge(fcs[c], fds[c]) for c in 1:12];  # (; q, μ)
-
 ocv_val = validate_cell_ocvs(measured, reconstructed)
 eval_cell_ocv_validation(ocv_val)
 
-# usable SOC window + reference-OCV curve from the measured composite (SOC → V)
-meas_composite = LinearInterpolation(ocv_val.meas_comp.v_grid, ocv_val.meas_comp.soc_grid; extrapolation = ExtrapolationType.Constant)
-eval_soc_range(meas_composite)
-ref_curve = rescale_composite_ocv(ocv_val.meas_comp, (v_low = 3.45, soc_low = 0.15, v_high = 4.05, soc_high = 0.95))
+ref_curve = rescale_composite_ocv(meas_comp, (v_low = 3.45, soc_low = 0.15, v_high = 4.05, soc_high = 0.95))
 # write_table("data/yuasa-ocv-test/reference_ocv.csv", DataFrame(v = ref_curve.v_grid, soc = ref_curve.soc_grid))
 
 

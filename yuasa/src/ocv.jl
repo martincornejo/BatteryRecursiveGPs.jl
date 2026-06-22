@@ -293,17 +293,32 @@ function compare_current_sources(df; m = 7)
     return fig
 end
 
-# Estimate the usable SOC window of the measured composite by linearly extrapolating the
-# OCV to the full voltage window [V_min, V_max]. `composite` maps SOC → V (composite.t =
-# SOC grid, composite.u = V grid), e.g. `LinearInterpolation(fit.v_grid, fit.soc_grid)`.
-function eval_soc_range(composite; V_min = 2.9, V_max = 4.1)
+# Build the linearly-extrapolated OCV interpolants from a composite SOC → V curve
+# (`composite.t` = SOC grid, `composite.u` = V grid, e.g.
+# `LinearInterpolation(fit.v_grid, fit.soc_grid)`). Extends the curve linearly beyond the
+# observed data so any voltage maps to an SOC and vice versa. Returns `(; v_of_soc, soc_of_v)`,
+# two interpolants that are mutual inverses: `v_of_soc` is SOC → V, `soc_of_v` is V → SOC.
+# Single source of truth for both `eval_soc_range` and `plot_ocv_extrapolation`.
+function extrapolate_ocv(composite; n_samples = 100)
     soc = collect(composite.t)
     v = collect(composite.u)
-    ocv_extrap = LinearInterpolation(v, soc; extrapolation = ExtrapolationType.Linear)
-    sv_extrap = invert_ocv(ocv_extrap; n_samples = 1000, extrapolation = ExtrapolationType.Linear)
+    v_of_soc = LinearInterpolation(v, soc; extrapolation = ExtrapolationType.Linear)        # SOC → V
+    soc_of_v = invert_ocv(v_of_soc; n_samples, extrapolation = ExtrapolationType.Linear)    # V → SOC
+    return (; v_of_soc, soc_of_v)
+end
 
-    soc_at_Vmin = sv_extrap(V_min)
-    soc_at_Vmax = sv_extrap(V_max)
+# Estimate the usable SOC window of the measured composite by linearly extrapolating the
+# OCV to the full voltage window [V_min, V_max]. Returns the extrapolated interpolants and
+# the SOC bounds — `soc_of_v` maps any voltage to its SOC on the extrapolated composite and
+# is exactly the `ref_soc_of_v` reference that `fit_cells_to_reference` consumes to scale the
+# reconstructed cell OCVs onto this full-window gauge.
+function eval_soc_range(composite; V_min = 2.9, V_max = 4.1)
+    (; v_of_soc, soc_of_v) = extrapolate_ocv(composite)
+    soc = collect(composite.t)
+    v = collect(composite.u)
+
+    soc_at_Vmin = soc_of_v(V_min)
+    soc_at_Vmax = soc_of_v(V_max)
     soc_full = soc_at_Vmax - soc_at_Vmin
 
     soc_data_min = first(soc)
@@ -322,21 +337,20 @@ function eval_soc_range(composite; V_min = 2.9, V_max = 4.1)
         "  Full range:     %.3f - %.3f (%.3f) [%.2fV - %.2fV]\n",
         soc_at_Vmin, soc_at_Vmax, soc_full, V_min, V_max
     )
-    return @printf(
+    @printf(
         "  SOC range used: %.1f%% - %.1f%%\n",
         100 * (soc_data_min - soc_at_Vmin) / soc_full,
         100 * (soc_data_max - soc_at_Vmin) / soc_full
     )
+    return (; v_of_soc, soc_of_v, soc_at_Vmin, soc_at_Vmax, soc_full)
 end
 
-function plot_ocv_extrapolation(composite; V_min = 2.75, V_max = 4.1)
+function plot_ocv_extrapolation(composite; V_min = 2.9, V_max = 4.1)
+    (; v_of_soc, soc_of_v) = extrapolate_ocv(composite)
     soc = collect(composite.t)
-    v = collect(composite.u)
-    ocv_extrap = CubicSpline(v, soc; extrapolation = ExtrapolationType.Extension)
-    sv_extrap = invert_ocv(ocv_extrap; n_samples = 100, extrapolation = ExtrapolationType.Extension)
 
-    soc_at_Vmin = sv_extrap(V_min)
-    soc_at_Vmax = sv_extrap(V_max)
+    soc_at_Vmin = soc_of_v(V_min)
+    soc_at_Vmax = soc_of_v(V_max)
 
     fig = Figure(size = (900, 500))
     ax = Axis(
@@ -345,7 +359,7 @@ function plot_ocv_extrapolation(composite; V_min = 2.75, V_max = 4.1)
     )
 
     soc_full = range(soc_at_Vmin, soc_at_Vmax; length = 500)
-    lines!(ax, collect(soc_full), ocv_extrap.(soc_full), color = :red, linewidth = 2, linestyle = :dash, label = "Extrapolated")
+    lines!(ax, collect(soc_full), v_of_soc.(soc_full), color = :red, linewidth = 2, linestyle = :dash, label = "Extrapolated")
 
     soc_data = range(first(soc), last(soc); length = 500)
     scatterlines!(ax, collect(soc_data), composite.(soc_data), color = :black, linewidth = 2, label = "Measured")
