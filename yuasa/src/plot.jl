@@ -94,8 +94,10 @@ function plot_data_resolution(data; completeness = nothing, yscale = log10)
 
     fig = Figure(size = (550, 500))
     ax = [
-        Axis(fig[i, 1]; yscale, ylabel = "Count", titlealign = :left, titlesize = 12,
-            xticks = 0:10:80, xminorticks = IntervalsBetween(10), xminorticksvisible = true)
+        Axis(
+                fig[i, 1]; yscale, ylabel = "Count", titlealign = :left, titlesize = 12,
+                xticks = 0:10:80, xminorticks = IntervalsBetween(10), xminorticksvisible = true
+            )
             for i in 1:4
     ]
     bins = 0.5:1:80.5  # integer-second timestamps, center bars on integers
@@ -103,8 +105,10 @@ function plot_data_resolution(data; completeness = nothing, yscale = log10)
     nmax = 0
     for (i, (key, name, color)) in enumerate(signals)
         Δt = Dates.value.(diff(data[key][!, "_time"])) * 1.0e-3
-        hist!(ax[i], Δt; strokewidth = 1, strokecolor = :black, color, bins,
-            fillto = logscale ? 0.5 : 0.0)
+        hist!(
+            ax[i], Δt; strokewidth = 1, strokecolor = :black, color, bins,
+            fillto = logscale ? 0.5 : 0.0
+        )
         nmax = max(nmax, maximum(StatsBase.fit(Histogram, Δt, bins).weights))
         ax[i].title = if isnothing(avail)
             "$name  (median $(round(Int, median(Δt))) s)"
@@ -431,7 +435,7 @@ function plot_soh_heatmap!(layout, comp_fit)
     ax.yminorticksvisible = true
 
     colormap = :lipari
-    colorrange = (65, 87)
+    colorrange = (60, 82)
     lowclip = :black
     soh = reshape(Measurements.value.(comp_fit.Q_cell), 12, 27)
     heatmap!(ax, soh; colorrange, colormap, lowclip)
@@ -479,7 +483,7 @@ function plot_composite_ocv!(layout, comp_fit, cells; xaxis = :soc, vertical = t
     Q_cell_μ = Measurements.value.(Q_cell)
     s0_μ = Measurements.value.(s0)
     colormap = :lipari
-    colorrange = (65, 87)
+    colorrange = (60, 82)
     lowclip = :black
     for i in eachindex(cells)
         q = cells[i].q
@@ -517,10 +521,11 @@ function plot_cell_soh_hist(comp_fit; Q_nom = 100)
     fig = Figure(size = (450, 400))
     ax = Axis(fig[1, 1], xlabel = "Cell SOH / %", ylabel = "Cell count")
 
-    bins = 40:1:90
+    bins = 35:1:85
     hist!(ax, soh; bins, color = :gray, strokewidth = 1)
     xlims!(ax, first(bins), last(bins))
-    ylims!(ax, 0, nothing)
+    ylims!(ax, 0, 100)
+    ax.yticks = 0:20:100
 
     ax.xgridvisible = false
     ax.ygridvisible = false
@@ -576,7 +581,7 @@ function plot_module_soh!(
 
     vlines!(ax, [9.5, 18.5]; color = (:black, 0.3), linewidth = 1)
 
-    ylims!(ax, 38, 100)
+    ylims!(ax, 35, 90)
     xlims!(ax, 0.3, 27.7)
     ax.yticks = 40:10:100
     ax.xgridvisible = false
@@ -665,7 +670,7 @@ function plot_module_summary(
     axislegend(ax2; position = :ct, framevisible = false, patchsize = (12, 12), padding = (0, 0, 0, 0))
 
     for (ax, tag) in zip((ax1, ax2), ("A", "B"))
-        text!(ax, 0.01, 0.98; text = tag, space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
+        text!(ax, 0.01, 1.02; text = tag, space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
     end
     return fig
 end
@@ -835,4 +840,3 @@ function plot_soc_discrepancy_heatmap(tg, soc_err)
     ax.yticks = ([1, 6, 10, 15, 19, 24], ["P1M1", "P1M6", "P2M1", "P2M6", "P3M1", "P3M6"])
     return fig
 end
-
