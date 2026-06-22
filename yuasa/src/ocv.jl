@@ -211,17 +211,20 @@ function plot_cell_ocv_validation(res, measured, reconstructed)
         axA, [LineElement(color = c_meas), LineElement(color = :black, linestyle = :dash)],
         ["Measured", "RGP-ECM"]; position = :rb, framevisible = false, labelsize = 11,
     )
+    axA.yticks = 3.2:0.2:4.2
+    axA.yminorticks = IntervalsBetween(2)
+    axA.yminorticksvisible = true
 
     axB = Axis(fig[2, 1]; xlabel = "SOC / %", ylabel = "ΔOCV / mV", xgridvisible = false, ygridvisible = false)
     for rc in res_curves
         lines!(axB, rc.soc .* 100, rc.r; color = (c_rgp, 0.6), linewidth = 1.3)
     end
     hlines!(axB, [0]; color = :black, linestyle = :dot)
-    ylims!(axB, -50, 50)   # show the high-SOC rise (~+15 mV); the steep low-SOC knee clips off-panel
+    ylims!(axB, -20, 50)   # show the high-SOC rise (~+15 mV); the steep low-SOC knee clips off-panel
     text!(axB, 0.5, 0.98; text = "median RMS $(round(rms_mV; digits = 1)) mV", space = :relative, align = (:center, :top), fontsize = 11)
-    axB.yticks = -50:10:50
-    axB.yminorticks = IntervalsBetween(5)
-    # axB.yminorticksvisible = true
+    axB.yticks = -20:20:60
+    axB.yminorticks = IntervalsBetween(2)
+    axB.yminorticksvisible = true
     for ax in (axA, axB)
         ax.xticks = 0:20:100
         ax.xminorticks = IntervalsBetween(2)
