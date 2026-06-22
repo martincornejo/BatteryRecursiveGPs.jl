@@ -726,9 +726,8 @@ function plot_soc_comparison(df_norm, df_out; titles = ("", ""), colors = Makie.
 end
 
 # per-module distribution of the SOC error trajectories
-function plot_soc_discrepancy(soc_err)
-    fig = Figure(size = (700, 300))
-    ax = Axis(fig[1, 1])
+function plot_soc_discrepancy!(layout, soc_err)
+    ax = Axis(layout[1, 1])
     n_t, n_mod = size(soc_err)
     xs = repeat(1:n_mod; inner = n_t)
 
@@ -742,6 +741,45 @@ function plot_soc_discrepancy(soc_err)
     module_id_xticks!(ax)
     ax.xgridvisible = false
     ax.ygridvisible = false
+    return ax
+end
+
+function plot_soc_discrepancy(soc_err)
+    fig = Figure(size = (700, 300))
+    plot_soc_discrepancy!(GridLayout(fig[1, 1]), soc_err)
+    return fig
+end
+
+function plot_soc_overview(
+        df_norm, df_out, soc_err;
+        titles = ("", ""), colors = Makie.wong_colors()[[1, 2]],
+    )
+    fig = Figure(size = (700, 530))
+
+    ax_disc = plot_soc_discrepancy!(GridLayout(fig[1, 1:2]), soc_err)
+
+    ax1 = plot_soc_trajectories!(GridLayout(fig[2, 1]), df_norm; colors, title = titles[1])
+    ax2 = plot_soc_trajectories!(GridLayout(fig[2, 2]), df_out; colors, title = titles[2])
+    linkyaxes!(ax1, ax2)
+    hideydecorations!(ax2; ticks = false, grid = false)
+
+    elements = [
+        [PolyElement(color = (colors[1], 0.3)), LineElement(color = colors[1], linewidth = 2)],
+        [PolyElement(color = (colors[2], 0.3)), LineElement(color = colors[2], linewidth = 2)],
+        [PolyElement(color = (:gray, 0.15)), LineElement(color = (:gray, 0.6), linewidth = 1)],
+    ]
+    Legend(
+        fig[3, 1:2], elements, ["Module-based", "Cell-based", "Cells"];
+        orientation = :horizontal, framevisible = false,
+    )
+
+    rowsize!(fig.layout, 1, Auto(1.0))
+    rowsize!(fig.layout, 2, Auto(1.2))
+
+    for (ax, tag) in zip((ax_disc, ax1, ax2), ("A", "B", "C"))
+        text!(ax, 0.01, 1.0; text = tag, space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
+    end
+
     return fig
 end
 

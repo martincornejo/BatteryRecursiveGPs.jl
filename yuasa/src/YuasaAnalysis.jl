@@ -41,7 +41,7 @@ export plot_dataset_overview, plot_cell_voltage_system, plot_data_resolution
 export plot_ecms_comparison, plot_sim, plot_q_estimation
 export plot_cell_v_rmse, plot_module_v_rmse
 export plot_cell_soh, plot_cell_soh_hist, plot_module_summary
-export plot_soc_discrepancy, plot_soc_discrepancy_heatmap, plot_soc_comparison
+export plot_soc_discrepancy, plot_soc_discrepancy_heatmap, plot_soc_comparison, plot_soc_overview
 export plot_charge_error, plot_soc_diagnostic
 export plot_cell_ocv_validation, plot_ocv_cleaning, plot_ocv_extrapolation
 export plot_soh_heatmap, plot_composite_ocv, plot_module_soh, plot_module_inhomogeneity

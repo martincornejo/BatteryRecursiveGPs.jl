@@ -185,20 +185,11 @@ fig_ocv_extrap = plot_ocv_extrapolation(meas_composite)                         
 fig_ocv_cells = plot_cell_ocv_validation(ocv_val, measured, reconstructed)          # Fig 10
 
 # SOC estimation
-fig_soc_comparison = let  # Fig 5
+fig_soc_diag = plot_soc_diagnostic(soc_diag)                 # fault-rejection diagnostic (EKF vs CC)
+fig_charge_error = plot_charge_error(df_q_err)                # charge accuracy vs oscilloscope (SOC %)
+fig_soc_overview = let
     df_norm = calc_module_soc((; p = 3, m = 7), tg, soc_cell, soc_module, cell_fit, cell_ids, module_ids)
     df_out = calc_module_soc((; p = 3, m = 5), tg, soc_cell, soc_module, cell_fit, cell_ids, module_ids)
-    plot_soc_comparison(df_norm, df_out; titles = ("p=3 m=7", "p=3 m=5"))
+    plot_soc_overview(df_norm, df_out, soc_err; titles = ("Module P3M7", "Module P3M5"))
 end
-fig_q_trajectory = let id = (p = 1, m = 9, c = 1)
-    zt = cell_models[id].kf.p.zt
-    (; u) = cell_dataset_osci(data, ti, id.c)
-    q_ref = StatsBase.reconstruct(zt.q, [ui.q for ui in u])
-    plot_q_estimation(q_ref, cell_soc.sols[id], cell_models[id])
-end
-fig_charge_error = plot_charge_error(df_q_err)                # charge accuracy vs oscilloscope (SOC %)
-fig_soc_discrepancy = plot_soc_discrepancy(soc_err)            # Fig 6
 fig_soc_heatmap = plot_soc_discrepancy_heatmap(tg, soc_err)    # Fig S3
-
-
-fig_soc_diag = plot_soc_diagnostic(soc_diag)                 # fault-rejection diagnostic (EKF vs CC)
