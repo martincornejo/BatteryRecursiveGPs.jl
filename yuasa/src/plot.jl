@@ -222,12 +222,12 @@ function plot_sim!(gl, model::AbstractBatteryModel, sol; Ts = 1.0)
     v = StatsBase.reconstruct(zt.v, first.(yt))
     band!(ax_v, t[idx], μ - 2σ, μ + 2σ; color = (c_model, 0.3), label = "Model")
     lines!(ax_v, t[idx], μ; color = c_model, label = "Model")
-    lines!(ax_v, t[idx], v; color = c_meas, linewidth = 1.2, label = "Measured")
+    lines!(ax_v, t[idx], v; color = c_meas, label = "Measured")
 
     e = v - μ
     rmse = sqrt(sum(abs2, e) / length(e)) * 1.0e3
     elim = maximum(abs, vcat(e - 2σ, e + 2σ)) * 1.0e3
-    hlines!(ax_e, [0]; color = (:black, 0.4), linewidth = 1)
+    hlines!(ax_e, [0]; color = (:black, 0.4), linewidth = 1.2)
     band!(ax_e, t[idx], (e - 2σ) * 1.0e3, (e + 2σ) * 1.0e3; color = (c_model, 0.3))
     lines!(ax_e, t[idx], e * 1.0e3; color = c_model)
     text!(
@@ -813,13 +813,19 @@ function plot_soc_overview(
 end
 
 # Fleet-wide open-loop voltage accuracy: every cell RMSE as a point, grouped by module,
-# with a median tick, vs the dedicated module model on the per-cell scale (÷12). The strip
+# with the combined cell-model tick (the 12 cells as a virtual module, Σ predicted vs Σ
+# measured cell voltage, ÷12), vs the dedicated module model on the per-cell scale (÷12).
+# The combined tick — not the per-cell mean/median — is the like-for-like counterpart to the
+# module model: both score a *sum* of cell voltages, so both keep the temporal cancellation
+# between cells (mean(RMSE) discards it and overstates the error on heterogeneous modules).
+# The strip
 # (rather than a boxplot) shows the actual within-module distribution — one stray cell vs a
 # broad spread — fits the cell-to-cell heterogeneity story, and avoids the unreliable Tukey
 # 1.5·IQR fence at n = 12 plus any glyph clash with the Tukey boxplots used elsewhere (e.g.
 # the SOC-error figure). The single off-scale cell (a current/voltage desync artifact) is
 # named in place; fleet stats belong in the caption.
-function plot_v_accuracy!(ax, df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]])
+function plot_v_accuracy!(layout, df_v_cell, df_v_module; legend = true, colors = Makie.wong_colors()[[1, 2, 6]])
+    ax = Axis(layout[1, 1])
     q99 = quantile(df_v_cell.rmse, 0.99)
 
     # focus the axis on the bulk + module comparison; the lone extreme cell (a desync
@@ -829,18 +835,19 @@ function plot_v_accuracy!(ax, df_v_cell, df_v_module; colors = Makie.wong_colors
     ybot = floor(min(minimum(df_v_cell.rmse), minimum(df_v_module.rmse_module ./ 12))) - 0.5
 
     ax.xlabel = "Module ID"
-    ax.ylabel = "Cell voltage RMSE / mV"
+    ax.ylabel = "Voltage RMSE / mV"
     mod_idx = Dict((; p, m) => (p - 1) * 9 + m for p in 1:3, m in 1:9)
     xs = [mod_idx[(; p = r.p, m = r.m)] for r in eachrow(df_v_cell)]
 
     # every on-scale cell as a point (the off-scale cell is named below) + a per-module
-    # median tick; the point cloud shows whether a module's spread is one stray cell or broad
+    # combined tick (cell models as a virtual module, ÷12); the point cloud shows whether a
+    # module's spread is one stray cell or broad, the tick the like-for-like module comparison
     ks = 1:nrow(df_v_module)
     keep = df_v_cell.rmse .<= ytop
-    cell_md = [median(df_v_cell.rmse[xs .== k]) for k in ks]
+    cell_combined = df_v_module.rmse_cells ./ 12
 
     scatter!(ax, xs[keep], df_v_cell.rmse[keep]; color = (colors[2], 0.55), markersize = 7)
-    scatter!(ax, ks, cell_md; marker = :hline, markersize = 15, color = colors[2])
+    scatter!(ax, ks, cell_combined; marker = :hline, markersize = 15, color = colors[2])
     scatter!(ax, ks, df_v_module.rmse_module ./ 12; color = colors[1], markersize = 9)
 
     # name the single worst cell in place — it is the off-scale point readers ask about
@@ -862,34 +869,45 @@ function plot_v_accuracy!(ax, df_v_cell, df_v_module; colors = Makie.wong_colors
     ax.ygridvisible = false
     ax.yminorticks = IntervalsBetween(5)  # 1 mV steps between the 5 mV majors
     ax.yminorticksvisible = true
-    cells_el = [MarkerElement(; marker = :circle, color = (colors[2], 0.55), markersize = 7), MarkerElement(; marker = :hline, color = colors[2], markersize = 15)]
-    mod_el = MarkerElement(; marker = :circle, color = colors[1], markersize = 9)
-    axislegend(ax, [cells_el, mod_el], ["Cell models: per-cell RMSE + median", "Module model: RMSE ÷ 12"]; framevisible = true, framecolor = (:black, 0.2), backgroundcolor = :white, position = :rt)
-
     ylims!(ax, ybot, ytop)
+
+    # three entries below the axis (outside the data) — individual cells (cloud), the 12 cells
+    # combined as a virtual module (tick), and the module model. orange = cell-level approach,
+    # blue = module-level; per-cell scaling (÷12) is a derivation detail, kept to the caption.
+    # placed below rather than inside because the tall points span the full width of the axis.
+    if legend
+        cell_pt_el = MarkerElement(; marker = :circle, color = (colors[2], 0.55), markersize = 7)
+        cell_comb_el = MarkerElement(; marker = :hline, color = colors[2], markersize = 15)
+        mod_el = MarkerElement(; marker = :circle, color = colors[1], markersize = 9)
+        Legend(layout[2, 1], [cell_pt_el, cell_comb_el, mod_el], ["Cell-level (individual)", "Cell-level (virtual module)", "Module-level"]; orientation = :horizontal, framevisible = false)
+    end
     return ax
 end
 
 function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]])
-    fig = Figure(size = (700, 320))
-    plot_v_accuracy!(Axis(fig[1, 1]), df_v_cell, df_v_module; colors)
+    fig = Figure(size = (700, 360))
+    plot_v_accuracy!(GridLayout(fig[1, 1]), df_v_cell, df_v_module; colors)
     return fig
 end
 
 # Combined voltage-accuracy figure: (A) one example open-loop cell fit + residual — the
 # qualitative story — over (B) the fleet-wide per-module accuracy — the quantitative one.
 function plot_v_accuracy_overview(model::AbstractBatteryModel, sol, df_v_cell, df_v_module; Ts = 1.0, title = "")
-    fig = Figure(size = (700, 550))
+    fig = Figure(size = (700, 500))
 
     gl_sim = GridLayout(fig[1, 1])
     ax_v, _ = plot_sim!(gl_sim, model, sol; Ts)
     ax_v.title = title
 
-    plot_v_accuracy!(Axis(fig[2, 1]), df_v_cell, df_v_module)
+    plot_v_accuracy!(GridLayout(fig[2, 1]), df_v_cell, df_v_module)
 
     Label(gl_sim[1, 1, TopLeft()], "A"; font = :bold, fontsize = 18, padding = (0, 0, 5, 0))
     Label(fig[2, 1, TopLeft()], "B"; font = :bold, fontsize = 18, padding = (0, 0, 5, 0))
-    rowgap!(fig.layout, 16)
+    rowgap!(fig.layout, -10)
+    # panel A stacks two subplots (voltage + error) and panel B's row also carries the legend,
+    # so give row B more weight to keep the two plotting areas similar in size
+    rowsize!(fig.layout, 1, Auto(1))
+    rowsize!(fig.layout, 2, Auto(1.5))
     return fig
 end
 

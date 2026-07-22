@@ -31,7 +31,7 @@ export compare_current_sources
 
 # analysis / metrics (analysis.jl)
 export calc_v_summary, calc_module_v_summary
-export calc_module_soh_summary
+export calc_module_soh_summary, calc_composite_rmse
 export calc_soc_trajectories, calc_module_soc, calc_soc_error, calc_module_soc_summary
 export calc_charge_accuracy, calc_charge_error, calc_soc_diagnostic, eval_soc_range
 export calc_throughput, calc_data_completeness
