@@ -63,6 +63,32 @@ function calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit; Q_n
     return df_soh
 end
 
+# Per-cell misfit to the consensus OCV from `fit_composite_ocv`: each cell is placed on the
+# composite's absolute-SOC gauge via its own (Q_cell, s0), then compared to the composite
+# curve over their shared SOC overlap. Same construction as `validate_cell_ocvs`, but the
+# reference is the fit's own consensus instead of the measured OCV — i.e. the voltage error
+# the alignment leaves behind. `ocv_rmse`, `ocv_max` in mV, per cell.
+function calc_composite_rmse(comp_fit, cells, ids; n_soc = 200)
+    (; soc_grid, v_grid, Q_cell, s0) = comp_fit
+    Q = Measurements.value.(Q_cell)
+    s = Measurements.value.(s0)
+
+    ord = sortperm(soc_grid)
+    v_comp = LinearInterpolation(v_grid[ord], soc_grid[ord]; extrapolation = ExtrapolationType.Constant)
+    soc_comp_lo, soc_comp_hi = extrema(soc_grid)
+
+    df = map(enumerate(ids)) do (i, id)
+        soc = s[i] .+ collect(cells[i].q) ./ Q[i]
+        v_cell = LinearInterpolation(collect(cells[i].μ), soc; extrapolation = ExtrapolationType.Constant)
+        lo = max(minimum(soc), soc_comp_lo) + 0.002
+        hi = min(maximum(soc), soc_comp_hi) - 0.002
+        sg = collect(range(lo, hi; length = n_soc))
+        r = (v_cell.(sg) .- v_comp.(sg)) .* 1000
+        (; id..., ocv_rmse = sqrt(mean(abs2, r)), ocv_max = maximum(abs, r))
+    end |> DataFrame
+    return df
+end
+
 # === SOC estimation ===
 
 function calc_soc_trajectories(models, sols, fit, ids; tg)
