@@ -81,7 +81,10 @@ function _build_rcgp_kf(θ, u, zt; n = 21, pad = 0.05)
     )
 
     arr = Arrhenius(; θ.arr...)
-    cc = ColoumbCounting(; θ.cc...)
+    cc = ColoumbCounting(;
+        σ0 = StatsBase.transform(zt.q, [θ.cc.σ0]) |> first,
+        σ1 = StatsBase.transform(zt.q, [θ.cc.σ1]) |> first,
+    )
     vσ² = StatsBase.transform(zt.σ, [θ.vσ]) |> first |> abs2
 
     p = (; arr = arr.p, Ts = θ.Ts, vσ², zt)

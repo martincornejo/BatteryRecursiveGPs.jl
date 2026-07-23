@@ -174,7 +174,7 @@ function default_θ(; n = 1)
             v0 = n * 0.0, σ0_v = n * 1.0e-4, σ1_v = n * 5.0e-5,
             τ0 = 800.0, σ0_τ = 5.0, σ1_τ = 0.0,
         ),
-        cc = (; σ1 = 0.1e-5),
+        cc = (; σ0 = 0.0, σ1 = 0.0),  # first-pass parametrization trusts Coulomb counting
         arr = (; T0 = 25, k0 = 2000, σ0_k = 100.0, σ1_k = 0.0),
     )
 end
@@ -206,7 +206,7 @@ end
 function fit_modules(data, ϑ, ti, ids)
     zt = fit_zscore(12)
     make_uy = id -> module_dataset(data, ti, id.p, id.m; zt)
-    make_θ = (u, y, id) -> scale_θ(u, y, ϑ[id])
+    make_θ = (u, y, id) -> scale_θ(u, y, ϑ[id]; n = 12)  # module-scale priors (12 series cells), matching zt = fit_zscore(12)
     (; models, sols) = fit_models_thread(RCGPModel, make_uy, make_θ, ids, zt)
     return (; module_models = models, module_sols = sols)
 end
