@@ -15,9 +15,11 @@ using BatteryRecursiveGPs
 import ComponentArrays: ComponentVector, ComponentMatrix
 using LinearAlgebra: diag
 using RecursiveGPs: predict_gp
+using Distributed: remotecall
 
 include("model.jl")
 include("ocv.jl")
+include("hyperparams.jl")
 include("analysis.jl")
 include("plot.jl")
 
@@ -28,6 +30,10 @@ export load_hyperparams, fit_cells, fit_modules, fit_soc_models, eval_models
 # OCV reconstruction validation (ocv.jl)
 export clean_ocv, average_charge_discharge, validate_cell_ocvs, eval_cell_ocv_validation
 export compare_current_sources
+
+# GP hyperparameter selection (hyperparams.jl)
+export select_hyperparams, build_hyperparam_export, selection_counts
+export calc_scaled_hyperparams, calc_hyperparam_selection
 
 # analysis / metrics (analysis.jl)
 export calc_v_summary, calc_module_v_summary
@@ -45,5 +51,6 @@ export plot_soc_discrepancy, plot_soc_discrepancy_heatmap, plot_soc_comparison, 
 export plot_charge_error, plot_soc_diagnostic
 export plot_cell_ocv_validation, plot_ocv_cleaning, plot_ocv_extrapolation
 export plot_soh_heatmap, plot_composite_ocv, plot_module_soh, plot_module_inhomogeneity
+export plot_hyperparam_selection, plot_hyperparam_scales
 
 end # module YuasaAnalysis

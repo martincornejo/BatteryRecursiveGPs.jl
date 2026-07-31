@@ -7,6 +7,15 @@ function fit_model(make_model, u, y, θ, zt)
     return (; model, sol, time = stats.time)
 end
 
+# Slim payload for distributed hyperparameter sweeps: fit at a fully-specified θ and return
+# only the GP-OCV curve. θ is built on the master (scale_θ) before the remotecall, so the
+# worker carries no configuration and no solution object comes back.
+function fit_ocv_curve(make_model, u, y, θ, zt)
+    (; model, sol) = fit_model(make_model, u, y, θ, zt)
+    ocv = gp_ocv(model, sol)
+    return (; q = collect(ocv.q), μ = collect(ocv.μ))
+end
+
 function eval_model(model, sol)
     (; u, y) = sol
     reinit_kf!(model)

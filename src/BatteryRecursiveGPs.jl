@@ -46,7 +46,7 @@ export YuasaStateModel, FeneconStateModel, Fenecon2RCStateModel, RCGPStateModel,
 # runner
 export run_kf!, reduce_sol, reinit_kf!
 export run_kf_smoother!, smooth_kf!
-export fit_model, fit_models_threaded, fit_models_distributed
+export fit_model, fit_models_threaded, fit_models_distributed, fit_ocv_curve
 export eval_model
 
 # model components
