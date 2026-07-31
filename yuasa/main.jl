@@ -50,9 +50,12 @@ cell_sols_ol = eval_models(cell_models, cell_sols, cell_ids);
 module_sols_ol = eval_models(module_models, module_sols, module_ids);
 
 # closed-loop run: frozen ECM parameters, 2-state EKF estimates charge + RC voltage
-θ_soc = (; q = (; σ0 = 0.01, σ1 = 5.0e-5), rc = (; σ0 = 1.0e-1, σ1 = 2.0e-4))
-cell_soc = fit_soc_models(cell_models, cell_sols, cell_ids; θ = θ_soc);
-module_soc = fit_soc_models(module_models, module_sols, module_ids; θ = θ_soc);
+# tuning in physical units: q in Ah, rc in V. Charge noise is scope-invariant (cells and
+# module see the same series current); the RC voltage noise is module-scale (12 cells).
+θ_soc_cell = (; q = (; σ0 = 0.3, σ1 = 1.5e-3), rc = (; σ0 = 25.0e-3, σ1 = 50.0e-6))
+θ_soc_module = (; q = (; σ0 = 0.3, σ1 = 1.5e-3), rc = (; σ0 = 12 * 25.0e-3, σ1 = 12 * 50.0e-6))
+cell_soc = fit_soc_models(cell_models, cell_sols, cell_ids; θ = θ_soc_cell);
+module_soc = fit_soc_models(module_models, module_sols, module_ids; θ = θ_soc_module);
 
 # reconstructed OCV posteriors
 cell_ocvs = [gp_ocv(cell_models[id], cell_sols[id]) for id in cell_ids]
@@ -86,6 +89,12 @@ soc_range = eval_soc_range(meas_composite; V_min = V_window[1], V_max = V_window
 # extrapolated beyond the measured range — the reference anchors for the composite-OCV gauge.
 ref_soc(v) = (soc_range.soc_of_v(v) - soc_range.soc_at_Vmin) / soc_range.soc_full
 
+V_window = (2.75, 4.1)
+cell_fit = fit_composite_ocv(cell_ocvs)
+cell_composite = LinearInterpolation(cell_fit.v_grid, cell_fit.soc_grid)
+soc_range = eval_soc_range(cell_composite; V_min = V_window[1], V_max = V_window[2])
+ref_soc(v) = (soc_range.soc_of_v(v) - soc_range.soc_at_Vmin) / soc_range.soc_full
+
 
 # === SOH estimation ===
 # composite OCV curve from all cells / all modules → SOH and initial SOC from the fit.
@@ -96,6 +105,39 @@ ref_soc(v) = (soc_range.soc_of_v(v) - soc_range.soc_at_Vmin) / soc_range.soc_ful
 cell_fit = fit_composite_ocv(cell_ocvs, (v_low = 3.62, soc_low = 0.1, v_high = 4.05, soc_high = 0.9))
 module_fit = fit_composite_ocv(module_ocvs, (v_low = 43.44, soc_low = 0.1, v_high = 48.6, soc_high = 0.9))
 df_soh = calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit)
+
+df_soh_cell = map(cell_fit.Q_cell, cell_ids) do Q, id
+    (; p, m, c) = id
+    soh = Q
+    (; p, m, c, soh)
+end |> DataFrame
+
+combine(
+    groupby(df_soh_cell, [:p, :m]),
+    :soh => mean => :soh_mean,
+    :soh => std => :soh_std,
+    :soh => (x -> minimum(x)) => :soh_min,
+    :soh => (x -> maximum(x)) => :soh_max,
+    nrow => :n,
+)
+
+df_soc_cell = map(cell_fit.s0, cell_ids) do soc, id
+    (; p, m, c) = id
+    (; p, m, c, soc = soc * 100)
+end |> DataFrame
+
+combine(
+    groupby(df_soc_cell, [:p, :m]),
+    :soc => mean => :soc_mean,
+    :soc => std => :soc_std,
+    :soc => (x -> minimum(x)) => :soc_min,
+    :soc => (x -> maximum(x)) => :soc_max,
+    :soc => (x -> maximum(x) - minimum(x)) => :soc_delta,
+    nrow => :n,
+)
+
+# per-cell voltage misfit to the composite consensus OCV (mV) — fit quality of the alignment
+df_comp_rmse = calc_composite_rmse(cell_fit, cell_ocvs, cell_ids)
 
 
 # === OCV reconstruction validation ===
@@ -141,7 +183,7 @@ df_q_err = calc_charge_error(cell_soc.models, cell_soc.sols, data, ti, p1m9_ids,
 # shows CC is near-optimal otherwise. Faults in Ah/A so the CC error reads directly off the axis.
 id_diag = (p = 1, m = 9, c = 2)
 soc_scenarios = ((; offset = 0.0, bias = 0.0), (; offset = 3.0, bias = 0.2))  # Ah, A
-soc_diag = calc_soc_diagnostic(cell_models[id_diag], cell_sols[id_diag], data, ti, id_diag.c, soc_scenarios; θ = θ_soc)
+soc_diag = calc_soc_diagnostic(cell_models[id_diag], cell_sols[id_diag], data, ti, id_diag.c, soc_scenarios; θ = θ_soc_cell)
 
 
 # === Figures ===
@@ -167,7 +209,7 @@ fig_module_soh = plot_module_summary(df_soh)        # Fig 4
 fig_cell_soh_hist = plot_cell_soh_hist(cell_fit)
 
 # OCV reconstruction validation
-fig_ocv_extrap = plot_ocv_extrapolation(meas_composite)                             # Fig 12
+# fig_ocv_extrap = plot_ocv_extrapolation(meas_composite)                             # Fig 12
 fig_ocv_cells = plot_cell_ocv_validation(ocv_val, measured, reconstructed)          # Fig 10
 
 # SOC estimation

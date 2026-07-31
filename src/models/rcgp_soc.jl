@@ -60,6 +60,7 @@ function _build_rcgp_soc_kf(kf1; q0, Ts, θ)
     xid = kf1.p.xid
     T0 = kf1.p.arr.T0
     vσ² = kf1.p.vσ²
+    zt = kf1.p.zt
     xc = ComponentVector(kf1.x, xid)
 
     r0 = abs(xc.r0.r)
@@ -68,9 +69,14 @@ function _build_rcgp_soc_kf(kf1; q0, Ts, θ)
 
     p = (; kf = kf1, Ts, r0, τ1, k, T0, vσ²)
 
-    x0 = SA[q0, 0.0]
-    Σ = @SMatrix [θ.q.σ0^2 0; 0 θ.rc.σ0^2]
+    # physical tuning (charge Ah, RC voltage V) → the z-scored units of the state.
+    # zt.q and zt.σ are scale-only transforms, so σ's convert like values.
+    q̂0, σ̂q0, σ̂q1 = StatsBase.transform(zt.q, [q0, θ.q.σ0, θ.q.σ1])
+    σ̂v0, σ̂v1 = StatsBase.transform(zt.σ, [θ.rc.σ0, θ.rc.σ1])
+
+    x0 = SA[q̂0, 0.0]
+    Σ = @SMatrix [σ̂q0^2 0; 0 σ̂v0^2]
     d0 = LLPF.SimpleMvNormal(x0, Σ)
-    R1 = @SMatrix [θ.q.σ1^2 0; 0 θ.rc.σ1^2]
+    R1 = @SMatrix [σ̂q1^2 0; 0 σ̂v1^2]
     return ExtendedKalmanFilter(_rcgp_dynamics_soc, _rcgp_measurement_soc, R1, _rcgp_R2_soc, d0; nx = 2, nu = 1, ny = 1, p)
 end
