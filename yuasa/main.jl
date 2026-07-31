@@ -12,7 +12,8 @@ using CairoMakie           # Makie backend + figure display/manipulation
 # === Data ===
 
 # cycling dataset
-datadir = "data/data-yuasa-cycles-2/"
+datadir = "yuasa/data/cycles/"
+paramdir = "yuasa/data/hyperparams/"
 files = Dict(
     :cell_voltage => datadir * "cell_voltages.csv",
     :cell_soc => datadir * "cell_soc.csv",
@@ -30,19 +31,19 @@ end
 ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
 # measured low-power OCV reference (rig module 7 ≡ P1M9; accurate oscilloscope probe)
-df_dch = read_parquet(DataFrame, "data/yuasa-ocv-test/combined_log_20260131_200948.parquet")
-df_chg = read_parquet(DataFrame, "data/yuasa-ocv-test/combined_log_20260201_181000.parquet")
+df_dch = read_parquet(DataFrame, "yuasa/data/ocv-test/combined_log_20260131_200948.parquet")
+df_chg = read_parquet(DataFrame, "yuasa/data/ocv-test/combined_log_20260201_181000.parquet")
 
 
 # === Model fits ===
 # parametrize ECM and OCV + R1 GPs for every cell and module
 
 cell_ids = [(; p, m, c) for p in 1:3, m in 1:9, c in 1:12] |> vec |> sort
-cell_ϑ = load_hyperparams(datadir * "cell_hyperparams.json", cell_ids, id -> "$(id.p)_$(id.m)_$(id.c)")
+cell_ϑ = load_hyperparams(paramdir * "cell_hyperparams.json", cell_ids, id -> "$(id.p)_$(id.m)_$(id.c)")
 @time (; cell_models, cell_sols) = fit_cells(data, cell_ϑ, ti, cell_ids);
 
 module_ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
-module_ϑ = load_hyperparams(datadir * "module_hyperparams.json", module_ids, id -> "$(id.p)_$(id.m)")
+module_ϑ = load_hyperparams(paramdir * "module_hyperparams.json", module_ids, id -> "$(id.p)_$(id.m)")
 @time (; module_models, module_sols) = fit_modules(data, module_ϑ, ti, module_ids);
 
 # open-loop run: frozen parameters, voltage prediction without correction step
@@ -142,7 +143,7 @@ df_comp_rmse = calc_composite_rmse(cell_fit, cell_ocvs, cell_ids)
 
 # === OCV reconstruction validation ===
 # Validate the reconstructed cell OCVs against the oscilloscope-measured OCV from the
-# low-power cycling experiment (yuasa-ocv-test). Reference module is P1M9 here ≡ rig module 7
+# low-power cycling experiment (data/ocv-test). Reference module is P1M9 here ≡ rig module 7
 # there (the only module with the accurate current probe). Each dataset is decomposed into a
 # shared shape + per-cell (SOH, SOC) and compared on one global gauge (see ocv.jl); per-cell
 # affine alignment is NOT used (it manufactures artifacts).
@@ -154,7 +155,7 @@ ocv_val = validate_cell_ocvs(measured, reconstructed)
 eval_cell_ocv_validation(ocv_val)
 
 ref_curve = rescale_composite_ocv(meas_comp, (v_low = 3.45, soc_low = 0.15, v_high = 4.05, soc_high = 0.95))
-# write_table("data/yuasa-ocv-test/reference_ocv.csv", DataFrame(v = ref_curve.v_grid, soc = ref_curve.soc_grid))
+# write_table("yuasa/data/ocv-test/reference_ocv.csv", DataFrame(v = ref_curve.v_grid, soc = ref_curve.soc_grid))
 
 
 # === SOC estimation ===
@@ -176,7 +177,7 @@ cell_idx = Dict(cell_ids .=> eachindex(cell_ids))
 Q_p1m9 = [Measurements.value(cell_fit.Q_cell[cell_idx[id]]) for id in p1m9_ids]
 df_q_acc = calc_charge_accuracy(cell_soc.models, cell_soc.sols, data, ti, p1m9_ids, Q_p1m9)
 df_q_err = calc_charge_error(cell_soc.models, cell_soc.sols, data, ti, p1m9_ids, Q_p1m9; tg)
-# write_table("data/data-yuasa-cycles-2/charge_accuracy.csv", df_q_acc)
+# write_table("yuasa/data/cycles/charge_accuracy.csv", df_q_acc)
 
 # fault-rejection diagnostic (single reference cell): the EKF rejects a wrong initial SOC and a
 # constant current-sensor bias that Coulomb counting integrates without bound; the no-fault panel

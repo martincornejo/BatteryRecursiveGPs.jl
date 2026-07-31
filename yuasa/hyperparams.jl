@@ -17,7 +17,8 @@ using CairoMakie
 
 # === Config ===
 
-datadir = "data/data-yuasa-cycles-2/"
+datadir = "yuasa/data/cycles/"
+paramdir = "yuasa/data/hyperparams/"
 
 ϑ_init = (; ocv = (; σ = 0.5, ℓ = 0.5), r1 = (; σ = 0.5, ℓ = 0.5))
 ℓ_ocv_grid = [0.6, 0.85, 1.0, 1.5, 3.0, 7.0, 15.0]  # escalation grid (challengers to the init)
@@ -73,8 +74,8 @@ export_figs = false
 if export_json
     cell_hyperparams = build_hyperparam_export(cells, id -> "$(id.p)_$(id.m)_$(id.c)")
     module_hyperparams = build_hyperparam_export(modules, id -> "$(id.p)_$(id.m)")
-    write(datadir * "cell_hyperparams.json", JSON.json(cell_hyperparams, 2))
-    write(datadir * "module_hyperparams.json", JSON.json(module_hyperparams, 2))
+    write(paramdir * "cell_hyperparams.json", JSON.json(cell_hyperparams, 2))
+    write(paramdir * "module_hyperparams.json", JSON.json(module_hyperparams, 2))
 end
 
 if export_figs

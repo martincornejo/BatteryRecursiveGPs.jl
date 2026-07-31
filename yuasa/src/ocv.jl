@@ -1,5 +1,5 @@
 # Validation of the reconstructed cell OCV curves (RGP-ECM, this dataset) against the
-# oscilloscope-measured OCV from the low-power cycling experiment (yuasa-ocv-test).
+# oscilloscope-measured OCV from the low-power cycling experiment (data/ocv-test).
 #
 # The validated module carries the accurate current probe: it is rig module 7 in the
 # yuasa-ocv test and P1M9 (p=1, m=9) here. Cell index c refers to the same physical
