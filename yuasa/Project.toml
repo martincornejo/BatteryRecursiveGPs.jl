@@ -5,7 +5,6 @@ authors = ["Martin Cornejo <martin.cornejo@tum.de>"]
 
 [deps]
 BatteryRecursiveGPs = "f4473fa2-29a4-49b4-bd4d-eee85a30348a"
-CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
 ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
@@ -29,7 +28,6 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 BatteryRecursiveGPs = {path = ".."}
 
 [compat]
-CSV = "0.10.16"
 CairoMakie = "0.15.11"
 ColorSchemes = "3.31.0"
 ComponentArrays = "0.15.39"

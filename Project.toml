@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Martin Cornejo <martin.cornejo@tum.de>"]
 
 [workspace]
-projects = ["yuasa", "yuasa-peak-shaving"]
+projects = ["yuasa"]
 
 [sources]
 RecursiveGPs = {url = "https://github.com/martincornejo/RecursiveGPs.jl"}
