@@ -2,6 +2,7 @@ using YuasaAnalysis
 using BatteryRecursiveGPs
 
 using DataFrames, Dates, Intervals
+using JSON
 using CairoMakie
 
 # === Data ===
@@ -118,7 +119,15 @@ fig_soc_diag = plot_soc_diagnostic(soc_diag)  # fault rejection: EKF vs CC
 
 
 # === Export ===
-export_figs = false
+export_figs = true
+export_json = false
+
+# for validation.jl
+if export_json
+    valdir = "yuasa/data/validation/"
+    validation_export = build_validation_export(cell_fit, cell_ocvs, cell_ids, p1m9_ids, refs_cell)
+    write(valdir * "validation_p1m9.json", JSON.json(validation_export, 2))
+end
 
 if export_figs
     save("figs/dataset-modules.pdf", fig_dataset)

@@ -30,8 +30,10 @@ export fit_zscore, scale_θ, cell_dataset, module_dataset, cell_dataset_osci
 export load_hyperparams, fit_cells, fit_modules, fit_soc_models, eval_models
 
 # OCV reconstruction validation (ocv.jl)
-export clean_ocv, average_charge_discharge, validate_cell_ocvs
-export calc_cell_ocv_validation, calc_ocv_validation_summary
+export clean_ocv, average_charge_discharge
+export calc_ocv_shape_validation, calc_ocv_curves, calc_reference_floor
+export calc_soh_validation, calc_validation_summary
+export build_validation_export, load_validation_export
 export compare_current_sources
 
 # GP hyperparameter selection (hyperparams.jl)

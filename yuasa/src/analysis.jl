@@ -91,7 +91,7 @@ end
 
 # Per-cell misfit to the consensus OCV from `fit_composite_ocv`: each cell is placed on the
 # composite's absolute-SOC gauge via its own (Q_cell, s0), then compared to the composite
-# curve over their shared SOC overlap. Same construction as `validate_cell_ocvs`, but the
+# curve over their shared SOC overlap. Same construction as the measured-OCV validation, but the
 # reference is the fit's own consensus instead of the measured OCV — i.e. the voltage error
 # the alignment leaves behind. `ocv_rmse`, `ocv_max` in mV, per cell.
 function calc_composite_rmse(comp_fit, cells, ids; n_soc = 200)
