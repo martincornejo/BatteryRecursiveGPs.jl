@@ -179,9 +179,11 @@ end
 
 compcurve(comp) = (o = sortperm(comp.soc_grid); (collect(comp.soc_grid)[o], collect(comp.v_grid)[o]))
 
+# SOC in %, derivative in mV per % — the units used for dV/dSOC elsewhere in the paper.
+# 1 V per unit SOC fraction = 1000 mV / 100 % = 10 mV/%.
 function dvdsoc(soc, v)
-    o = sortperm(soc); s = soc[o]; vv = v[o]
-    return ((s[1:(end - 1)] .+ s[2:end]) ./ 2, diff(vv) ./ diff(s))
+    o = sortperm(soc); s = soc[o] .* 100; vv = v[o]
+    return ((s[1:(end - 1)] .+ s[2:end]) ./ 2, diff(vv) ./ diff(s) .* 1000)
 end
 
 # align each unit's (q, μ) to a composite's SOC axis → vector of (; soc, μ) in `ids` order

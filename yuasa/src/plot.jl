@@ -571,19 +571,31 @@ end
 
 function plot_composite_ocv!(layout, comp_fit, cells; xaxis = :soc, vertical = true)
     (; soc_grid, v_grid, Q_cell, s0, Q_full) = comp_fit
-    xscale = xaxis == :ah ? Q_full : 1.0
-    xlabel = xaxis == :ah ? "Capacity / Ah" : "SOC"
+    xscale = xaxis == :ah ? Q_full : 100.0   # SOC in %, as elsewhere
+    xlabel = xaxis == :ah ? "Capacity / Ah" : "SOC / %"
+    dlabel = xaxis == :ah ? "dV/dQ / (mV/Ah)" : "dV/dSOC / (mV/%)"
 
     if vertical
         ax1 = Axis(layout[1, 1]; ylabel = "Voltage / V")
-        ax2 = Axis(layout[2, 1]; ylabel = "dV/d$(xlabel)", xlabel)
+        ax2 = Axis(layout[2, 1]; ylabel = dlabel, xlabel)
         hidexdecorations!(ax1; grid = false, ticks = false)
         linkxaxes!(ax1, ax2)
         rowgap!(layout, 1, 5)
     else
         ax1 = Axis(layout[1, 1]; ylabel = "Voltage / V", xlabel)
-        ax2 = Axis(layout[1, 2]; ylabel = "dV/d$(xlabel)", xlabel)
+        ax2 = Axis(layout[1, 2]; ylabel = dlabel, xlabel)
     end
+
+    for ax in (ax1, ax2)
+        xaxis == :soc && (ax.xticks = 0:25:100)
+        ax.xminorticks = IntervalsBetween(5)   # every 5 % SOC
+        ax.xminorticksvisible = true
+        ax.yminorticks = IntervalsBetween(2)
+        ax.yminorticksvisible = true
+    end
+    # sparse majors, the intermediate values demoted to minor ticks
+    ax1.yticks = 3.5:0.2:4.1
+    ax2.yticks = 0:20:60
 
     Q_cell_μ = Measurements.value.(Q_cell)
     s0_μ = Measurements.value.(s0)
@@ -595,13 +607,13 @@ function plot_composite_ocv!(layout, comp_fit, cells; xaxis = :soc, vertical = t
         v = cells[i].μ
         x = (q ./ Q_cell_μ[i] .+ s0_μ[i]) .* xscale
         lines!(ax1, x, v; color = Q_cell_μ[i], colorrange, colormap, alpha = 0.6, label = "Cell OCV")
-        lines!(ax2, x[2:end], diff(v) ./ diff(x); color = Q_cell_μ[i], colorrange, colormap, alpha = 0.4)
+        lines!(ax2, x[2:end], diff(v) ./ diff(x) .* 1000; color = Q_cell_μ[i], colorrange, colormap, alpha = 0.4)
     end
 
     order = sortperm(soc_grid)
     itp = PCHIPInterpolation(v_grid[order], soc_grid[order])
     soc_dense = range(soc_grid[order[1]], soc_grid[order[end]]; length = 500)
-    dv_dx_raw = [DataInterpolations.derivative(itp, s) / xscale for s in soc_dense]
+    dv_dx_raw = [DataInterpolations.derivative(itp, s) / xscale * 1000 for s in soc_dense]
     hw = 15
     n = length(dv_dx_raw)
     dv_dx = [mean(dv_dx_raw[max(1, i - hw):min(n, i + hw)]) for i in 1:n]
@@ -609,7 +621,9 @@ function plot_composite_ocv!(layout, comp_fit, cells; xaxis = :soc, vertical = t
     x_comp = soc_grid .* xscale
     lines!(ax1, x_comp, v_grid; color = :black, linewidth = 2, label = "Composite OCV")
     lines!(ax2, collect(soc_dense) .* xscale, dv_dx; color = :black, linewidth = 2)
-    ylims!(ax2, 0, nothing)
+    ylims!(ax1, 3.4, 4.1)
+    ylims!(ax2, 0, 60)
+    xaxis == :soc && xlims!(ax2, 0, 100)   # linked, so ax1 follows
     ax1.xgridvisible = false
     ax1.ygridvisible = false
     ax2.xgridvisible = false
@@ -640,11 +654,11 @@ function plot_cell_soh_hist(comp_fit; Q_nom = 100)
     return fig
 end
 
-function plot_cell_soh(comp_fit, cells)
+function plot_cell_soh(comp_fit, cells; xaxis = :soc)
     fig = Figure(size = (700, 400))
     gl1 = GridLayout(fig[1, 1])
     gl2 = GridLayout(fig[1, 2])
-    plot_composite_ocv!(gl1, comp_fit, cells; vertical = true)
+    plot_composite_ocv!(gl1, comp_fit, cells; xaxis, vertical = true)
     plot_soh_heatmap!(gl2, comp_fit)
     colsize!(fig.layout, 2, Relative(0.4))
     Label(fig[1, 1, TopLeft()], "A"; fontsize = 20, font = :bold, padding = (0, 0, 5, 0))
@@ -1089,9 +1103,12 @@ function plot_hyperparam_selection(cells, modules)
                 lines!(ax, r.soc, r.dvdsoc; color = flagged ? (c_flag, 0.8) : c_bulk, linewidth = flagged ? 1.0 : 0.8)
             end
             lines!(ax, lvl.comp.soc, lvl.comp.dvdsoc; color = :black, linewidth = 2)
-            ylims!(ax, -0.5, 3); xlims!(ax, 0, 1)
+            ylims!(ax, -5, 30); xlims!(ax, 0, 100)
+            ax.xticks = 0:25:100
+            ax.xminorticks = IntervalsBetween(5)   # every 5 % SOC
+            ax.xminorticksvisible = true
         end
-        axs[2, col].xlabel = "SOC"
+        axs[2, col].xlabel = "SOC / %"
 
         # row 3: RMSE shift, initial vs adapted; off-scale outliers noted as text
         ax = Axis(fig[3, col]); axs[3, col] = ax
@@ -1103,8 +1120,10 @@ function plot_hyperparam_selection(cells, modules)
         for (i, r) in enumerate(out)
             text!(
                 ax, 0.97, 0.95 - 0.15 * (i - 1);
-                text = rich("$(r.name): ", rich(string(round(Int, r.init)), color = c_init), " → ",
-                            rich(string(round(Int, r.adapted)), color = c_adap), " mV"),
+                text = rich(
+                    "$(r.name): ", rich(string(round(Int, r.init)), color = c_init), " → ",
+                    rich(string(round(Int, r.adapted)), color = c_adap), " mV"
+                ),
                 space = :relative, align = (:right, :top), fontsize = 10,
             )
         end
@@ -1129,7 +1148,7 @@ function plot_hyperparam_selection(cells, modules)
         axs[2, col].title = rich("Adapted ℓ", subscript("OCV"), " (stage 2)")
         axs[1, col].titlefont = :regular; axs[2, col].titlefont = :regular
     end
-    axs[1, 1].ylabel = "dV/dSOC / V"; axs[2, 1].ylabel = "dV/dSOC / V"; axs[3, 1].ylabel = "Density"
+    axs[1, 1].ylabel = "dV/dSOC / (mV/%)"; axs[2, 1].ylabel = "dV/dSOC / (mV/%)"; axs[3, 1].ylabel = "Density"
     foreach(ax -> hidexdecorations!(ax; ticks = false, grid = false), axs[1, :])
     for row in 1:3
         linkyaxes!(axs[row, 1], axs[row, 2])
@@ -1172,14 +1191,22 @@ function plot_hyperparam_scales(scaled_cells, scaled_mods)
 
     # (value, nominal-for-color, xscale, xticks, xlims, bin edges, log-spaced?, label)
     specs = [
-        (x -> x.ℓ_ocv, x -> x.nom_ocv, log10, ([10, 20, 50, 100, 200], ["10", "20", "50", "100", "200"]),
-            (9, 220), 10 .^ (log10(9):0.035:log10(220)), true, rich("ℓ", subscript("OCV"), " / Ah")),
-        (x -> x.ℓ_r1, x -> x.nom_r1, identity, (0:20:60, string.(0:20:60)),
-            (5, 68), 5:1.5:68, false, rich("ℓ", subscript("R1"), " / Ah")),
-        (x -> x.σ_ocv, x -> 0.5, identity, ([180, 230, 280], ["180", "230", "280"]),
-            (175, 295), 178:2.9:294, false, rich("σ", subscript("OCV"), " / mV")),
-        (x -> x.σ_r1, x -> 0.5, identity, (7:1:10, string.(7:1:10)),
-            (6.1, 10.3), 6.2:0.1:10.2, false, rich("σ", subscript("R1"), " / mΩ")),
+        (
+            x -> x.ℓ_ocv, x -> x.nom_ocv, log10, ([10, 20, 50, 100, 200], ["10", "20", "50", "100", "200"]),
+            (9, 220), 10 .^ (log10(9):0.035:log10(220)), true, rich("ℓ", subscript("OCV"), " / Ah"),
+        ),
+        (
+            x -> x.ℓ_r1, x -> x.nom_r1, identity, (0:20:60, string.(0:20:60)),
+            (5, 68), 5:1.5:68, false, rich("ℓ", subscript("R1"), " / Ah"),
+        ),
+        (
+            x -> x.σ_ocv, x -> 0.5, identity, ([180, 230, 280], ["180", "230", "280"]),
+            (175, 295), 178:2.9:294, false, rich("σ", subscript("OCV"), " / mV"),
+        ),
+        (
+            x -> x.σ_r1, x -> 0.5, identity, (7:1:10, string.(7:1:10)),
+            (6.1, 10.3), 6.2:0.1:10.2, false, rich("σ", subscript("R1"), " / mΩ"),
+        ),
     ]
 
     fig = Figure(size = (700, 360), figure_padding = 8)
