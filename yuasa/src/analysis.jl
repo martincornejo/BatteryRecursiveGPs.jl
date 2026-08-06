@@ -176,16 +176,18 @@ end
 # as SOC % (charge / capacity, the downstream quantity and field-standard metric); absolute Ah and
 # the module-current Coulomb-counting baseline are kept for reference.
 function calc_charge_accuracy(soc_models, soc_sols, data, ti, ids, Qs; zt = fit_zscore())
-    map(ids, Qs) do id, Q
+    return map(ids, Qs) do id, Q
         sol = soc_sols[id]
         (; q) = charge_trajectory(soc_models[id], sol)                                   # EKF estimate [Ah]
         qref = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, id.c).u])[sol.idx]
         q_cc = StatsBase.reconstruct(zt.q, [u.q for u in sol.ut])                         # module-current CC [Ah]
         e, e_cc = q .- qref, q_cc .- qref
         rmse = sqrt(mean(abs2, e))
-        (; id.p, id.m, id.c, Q,
-           rmse_soc = 100rmse / Q, max_soc = 100maximum(abs, e) / Q,                     # %SOC
-           rmse, max = maximum(abs, e), rmse_cc = sqrt(mean(abs2, e_cc)))                 # Ah
+        (;
+            id.p, id.m, id.c, Q,
+            rmse_soc = 100rmse / Q, max_soc = 100maximum(abs, e) / Q,                     # %SOC
+            rmse, max = maximum(abs, e), rmse_cc = sqrt(mean(abs2, e_cc)),
+        )                 # Ah
     end |> DataFrame
 end
 
@@ -208,7 +210,7 @@ end
 function calc_soc_diagnostic(model, sol, data, ti, c, scenarios; θ, Ts = 1.0, zt = model.kf.p.zt)
     scale = only(zt.q.scale)  # shared i/q z-score scale → integrate current in z-scored units
     q_ref = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, c).u])
-    map(scenarios) do (; offset, bias)
+    return map(scenarios) do (; offset, bias)
         bias_z = bias / scale
         # inject the bias into the input current and accumulate it into the charge channel so the
         # module-current Coulomb-counting reference (sol.ut.q) drifts with it
@@ -216,10 +218,12 @@ function calc_soc_diagnostic(model, sol, data, ti, c, scenarios; θ, Ts = 1.0, z
         sm = RCGPStateModel(model; q0 = offset, Ts, θ)
         s = reduce_sol(sm, run_kf!(sm, u, sol.y))
         t = s.idx
-        (; offset, bias, t = t ./ 3600, q_ref = q_ref[t],
-           q_cc = StatsBase.reconstruct(zt.q, [v.q for v in s.ut]) .+ offset,  # CC inherits the offset
-           q = StatsBase.reconstruct(zt.q, s.qμ),
-           qσ = sqrt.(s.qσ) .* scale)
+        (;
+            offset, bias, t = t ./ 3600, q_ref = q_ref[t],
+            q_cc = StatsBase.reconstruct(zt.q, [v.q for v in s.ut]) .+ offset,  # CC inherits the offset
+            q = StatsBase.reconstruct(zt.q, s.qμ),
+            qσ = sqrt.(s.qσ) .* scale,
+        )
     end
 end
 
@@ -246,11 +250,64 @@ function calc_data_completeness(data, ti)
         :battery_temperature => 15.0,
     )
     dur_s = (last(ti) - first(ti)) / Millisecond(1000)
-    map(collect(keys(nominal_dt))) do sig
+    return map(collect(keys(nominal_dt))) do sig
         df = filter(:_time => ∈(ti), data[sig])
         chans = names(df, Not(:_time))
         expected = (floor(Int, dur_s / nominal_dt[sig]) + 1) * length(chans)
         actual = sum(c -> count(!ismissing, df[!, c]), chans)
         (; signal = sig, n_channels = length(chans), actual, expected, completeness = actual / expected)
     end |> DataFrame
+end
+
+
+# === fitted ECM parameters, per cell ===
+
+"""
+    calc_ecm_parameters(models, sols, ids; v_ref = 3.9, n = 1) -> DataFrame
+
+Per-unit ECM parameters, alongside the OCV: `R0`, `R1` and `R_DC = R0 + R1` at `v_ref` (mΩ), RC
+time constant `τ` (s) and Arrhenius coefficient `k` (K), each with its posterior standard
+deviation.
+
+`n` is the number of series cells the unit represents (1 cell, 12 module). Series quantities are
+divided by it so the two levels compare directly; `τ` and `k` are intensive and are not.
+"""
+function calc_ecm_parameters(models, sols, ids; v_ref = 3.9, n = 1)
+    return map(ids) do id
+        model = models[id]
+        sol = sols[id]
+        zt = model.kf.p.zt
+        ocv = gp_ocv(model, sol)
+        r1 = gp_r1(model, sol)
+        j = argmin(abs.(ocv.μ ./ n .- v_ref)) # compare at a voltage reference, since SOC not yet known
+
+        # the `*_σ` fields are VARIANCES, hence the square roots; and a variance is rescaled by
+        # `var·scale²`, not by `reconstruct`, which would also add the mean. τ and k are raw.
+        R0 = StatsBase.reconstruct(zt.r, [sol.r0_μ[end]])[1] * 1000 / n
+        (;
+            id,
+            R0, R0_sd = sqrt(max(sol.r0_σ[end], 0)) * zt.r.scale[1] * 1000 / n,
+            R1 = r1.μ[j] * 1000 / n, R1_sd = r1.σ[j] * 1000 / n,
+            R_DC = R0 + r1.μ[j] * 1000 / n, R_DC_sd = r1.σ[j] * 1000 / n,
+            τ = sol.rc_τμ[end], τ_sd = sqrt(max(sol.rc_τσ[end], 0)),
+            k = sol.arr_kμ[end], k_sd = sqrt(max(sol.arr_kσ[end], 0)),
+            v_in_range = minimum(ocv.μ) / n <= v_ref <= maximum(ocv.μ) / n,
+        )
+    end |> DataFrame
+end
+
+# Fleet spread of each parameter against its median posterior uncertainty. Ratios below ~2 mean
+# the cell-to-cell differences are not resolved and the spread is mostly the prior showing through.
+function calc_parameter_summary(df)
+    rows = map(
+        (
+            (:R1, :R1_sd, "R1 / mΩ"), (:R0, :R0_sd, "R0 / mΩ"), (:R_DC, :R_DC_sd, "R_DC / mΩ"),
+            (:τ, :τ_sd, "τ / s"), (:k, :k_sd, "Arrhenius k / K"),
+        )
+    ) do (mc, sc, name)
+        post = median(df[!, sc])
+        fleet = std(df[!, mc])
+        (; name, median = median(df[!, mc]), post_sd = post, fleet_sd = fleet, ratio = fleet / post)
+    end
+    return DataFrame(rows)
 end

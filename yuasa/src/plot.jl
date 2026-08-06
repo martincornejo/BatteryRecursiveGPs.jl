@@ -1247,3 +1247,113 @@ function plot_hyperparam_scales(scaled_cells, scaled_mods)
     rowgap!(fig.layout, 8); colgap!(fig.layout, 10)
     return fig
 end
+
+
+# Fitted ECM parameters across the fleet (consumes `calc_ecm_parameters`).
+# Complements the ECM figure rather than repeating it: that one draws R_DC(q) curves for a handful
+# of example units, this one carries the fleet SPREAD and the scalar parameters, which it does not
+# show at all. Composite-free throughout — no SOC, no capacity, both of which come later.
+#
+# Cell and module fits are overlaid, modules on a per-cell basis (`n = 12` in the builder), because
+# the COMPARISON is the result: R1, τ and k agree between the two levels, but module R0 sits ~40 %
+# higher — the busbars and contacts that lie in a module's series path but not in a cell's own
+# voltage measurement. Densities, not counts, since there are 324 cells against 27 modules.
+function plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ = 5.0, T = 5:1:40, T0 = 25)
+    wong = Makie.wong_colors()
+    c_cell = wong[2]
+    c_mod = wong[1]
+    c_cell_med = wong[6]
+
+    fig = Figure(size = (700, 450))
+
+    pct(v) = (x = v * 100; isapprox(x, round(x); atol = 1.0e-9) ? string(round(Int, x)) : string(round(x; digits = 1)))
+    function overlay!(ax, vc, vm; bins, ymax, ystep)
+        ax.ytickformat = vs -> pct.(vs)
+        ylims!(ax, nothing, ymax)
+        ax.yticks = 0:ystep:ymax
+        ax.yminorticks = IntervalsBetween(2)
+        ax.yminorticksvisible = true
+        hist!(ax, vc; bins, normalization = :probability, color = (c_cell, 0.85), strokewidth = 0.5, strokecolor = :white)
+        isnothing(vm) && return
+        hist!(ax, vm; bins, normalization = :probability, color = (c_mod, 0.55), strokewidth = 0.5, strokecolor = :white)
+        return
+    end
+
+    shared(v, Δ) = (floor(minimum(v) / Δ) * Δ):Δ:(ceil(maximum(v) / Δ) * Δ)
+    r = isnothing(df_mod) ? vcat(df.R0, df.R1) : vcat(df.R0, df.R1, df_mod.R0, df_mod.R1)
+    edges = shared(r, Δr)
+    τ_edges = shared(isnothing(df_mod) ? df.τ : vcat(df.τ, df_mod.τ), Δτ)
+
+    axA = Axis(fig[1, 1]; xlabel = rich("R", subscript("1"), " ($(v_ref) V) / mΩ"), ylabel = "Share / %")
+    overlay!(axA, df.R1, isnothing(df_mod) ? nothing : df_mod.R1; bins = edges, ymax = 0.25, ystep = 0.1)
+
+    axC = Axis(fig[2, 1]; xlabel = rich("R", subscript("0"), " / mΩ"), ylabel = "Share / %")
+    overlay!(axC, df.R0, isnothing(df_mod) ? nothing : df_mod.R0; bins = edges, ymax = 0.5, ystep = 0.2)
+    linkxaxes!(axA, axC)
+
+    axB = Axis(fig[1, 2]; xlabel = "τ / s", ylabel = "Share / %")
+    overlay!(axB, df.τ, isnothing(df_mod) ? nothing : df_mod.τ; bins = τ_edges, ymax = 0.25, ystep = 0.1)
+
+    # (D) the Arrhenius factor k(T) itself, unity at the reference temperature T0 = 25 °C
+    axD = Axis(fig[2, 2]; xlabel = "Temperature / °C", ylabel = "Arrhenius factor k(T)")
+    # k(T) = exp(k·(1/T − 1/T0)) is a closed form of the fitted `k`, not a separate quantity, so it
+    # is rendered here rather than prepared upstream
+    Tg = collect(T)
+    Δ = 1 ./ (Tg .+ 273.15) .- 1 / (T0 + 273.15)
+    kfac(ks) = [exp.(k .* Δ) for k in ks]
+    fac = kfac(df.k)
+    fac_mod = isnothing(df_mod) ? nothing : kfac(df_mod.k)
+
+    for f in fac
+        lines!(axD, Tg, f; color = (c_cell, 0.15), linewidth = 0.8)
+    end
+    if !isnothing(fac_mod)
+        for f in fac_mod
+            lines!(axD, Tg, f; color = (c_mod, 0.35), linewidth = 0.8)
+        end
+    end
+
+    lines!(axD, Tg, [median(getindex.(fac, i)) for i in eachindex(Tg)]; color = c_cell_med, linewidth = 2)
+    if !isnothing(fac_mod)
+        lines!(
+            axD, Tg, [median(getindex.(fac_mod, i)) for i in eachindex(Tg)];
+            color = :black, linewidth = 2
+        )
+    end
+    hlines!(axD, [1.0]; color = :black, linestyle = :dot, linewidth = 1)
+
+    ylims!(axD, nothing, 2.5)
+    xlims!(axD, extrema(Tg)...)
+    axD.yticks = 1:1:2
+    axD.yminorticks = IntervalsBetween(2)
+    axD.yminorticksvisible = true
+
+    entries = isnothing(fac_mod) ?
+        ([[LineElement(color = (c_cell, 0.6)), LineElement(color = c_cell_med, linewidth = 2)]], ["Cell-level median"]) :
+        (
+            [
+                [LineElement(color = (c_cell, 0.6)), LineElement(color = c_cell_med, linewidth = 2)],
+                [LineElement(color = (c_mod, 0.7)), LineElement(color = :black, linewidth = 2)],
+            ],
+            ["Cell-level median", "Module-level median"],
+        )
+    axislegend(axD, entries...; position = :rt, framevisible = false, patchsize = (18, 10), rowgap = 0)
+
+    for ax in (axA, axB, axC, axD)
+        ax.xgridvisible = false
+        ax.ygridvisible = false
+        hidespines!(ax, :t, :r)
+        ax.xminorticks = IntervalsBetween(2)
+        ax.xminorticksvisible = true
+    end
+    if !isnothing(df_mod)
+        axislegend(
+            axA, [PolyElement(color = (c_cell, 0.85)), PolyElement(color = (c_mod, 0.55))],
+            ["Cell-level", "Module-level"]; position = :rt, framevisible = false, patchsize = (16, 10), rowgap = 0,
+        )
+    end
+    for (tag, ax) in (("A", axA), ("B", axB), ("C", axC), ("D", axD))
+        text!(ax, 0.02, 0.98; text = tag, space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
+    end
+    return fig
+end

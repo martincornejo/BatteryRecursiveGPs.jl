@@ -46,12 +46,13 @@ export calc_module_soh_summary, calc_cell_spread, calc_composite_rmse
 export calc_soc_trajectories, calc_module_soc, calc_soc_error, calc_module_soc_summary
 export cell_capacities, calc_charge_accuracy, calc_charge_error, calc_soc_diagnostic, eval_soc_range
 export calc_throughput, calc_data_completeness
+export calc_ecm_parameters, calc_parameter_summary
 
 # figures (plot.jl)
 export plot_dataset_overview, plot_cell_voltage_system, plot_data_resolution
 export plot_ecms_comparison, plot_sim, plot_q_estimation
 export plot_v_accuracy, plot_v_accuracy_overview
-export plot_cell_soh, plot_cell_soh_hist, plot_module_summary
+export plot_cell_soh, plot_cell_soh_hist, plot_ecm_parameters, plot_module_summary
 export plot_soc_discrepancy, plot_soc_discrepancy_heatmap, plot_soc_comparison, plot_soc_overview
 export plot_charge_error, plot_soc_diagnostic
 export plot_cell_ocv_validation, plot_ocv_cleaning, plot_ocv_extrapolation

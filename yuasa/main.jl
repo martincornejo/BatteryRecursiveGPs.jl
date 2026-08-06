@@ -36,6 +36,11 @@ module_ϑ = load_hyperparams(paramdir * "module_hyperparams.json", module_ids, i
 
 fig_ecms = plot_ecms_comparison(cell_models, cell_sols, module_models, module_sols; n_mod = 12)  # Fig 2
 
+ecm_cell = calc_ecm_parameters(cell_models, cell_sols, cell_ids)
+ecm_module = calc_ecm_parameters(module_models, module_sols, module_ids; n = 12)
+
+fig_ecm_params = plot_ecm_parameters(ecm_cell, ecm_module)
+
 
 # === Voltage accuracy ===
 
@@ -134,6 +139,7 @@ if export_figs
     save("figs/dataset-cell-voltages.pdf", fig_cell_voltages)
     save("figs/dataset-resolution.pdf", fig_data_resolution)
     save("figs/ecms.pdf", fig_ecms)
+    save("figs/ecm-parameters.pdf", fig_ecm_params)
     save("figs/model-voltage-accuracy.pdf", fig_v_overview)
     save("figs/cell-soh.pdf", fig_cell_soh)
     save("figs/module-soh.pdf", fig_module_soh)
