@@ -12,17 +12,17 @@ end
 # measured module voltage it was fit on; the cell models as a virtual module,
 # Σ predicted vs Σ measured cell voltage. Σ cells vs measured module voltage is NOT
 # comparable — wiring drops between the two measurements reach several 100 mV.
-function calc_module_v_summary(cell_run, module_run, module_ids)
+function calc_module_v_summary(cell_models, cell_sols, module_models, module_sols, module_ids)
     df = map(module_ids) do id
         (; p, m) = id
         errs = map(1:12) do c
             cid = (; p, m, c)
-            sol = cell_run.sols[cid]
-            Dict(zip(sol.idx, voltage_error(cell_run.models[cid], sol).e))
+            sol = cell_sols[cid]
+            Dict(zip(sol.idx, voltage_error(cell_models[cid], sol).e))
         end
         common = sort(collect(intersect([Set(keys(d)) for d in errs]...)))
         e_cells = [sum(d[i] for d in errs) for i in common]
-        e_mod = voltage_error(module_run.models[id], module_run.sols[id]).e
+        e_mod = voltage_error(module_models[id], module_sols[id]).e
         (;
             p, m,
             rmse_module = sqrt(mean(abs2, e_mod)) * 1000,
@@ -61,6 +61,32 @@ function calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit; Q_n
         (; p, m, soh, soh_module, Δsoc_max, Δsoh_max, σ_soh, σ_soc, loss_soh, loss_soc)
     end |> DataFrame
     return df_soh
+end
+
+# Per-module spread of the per-cell composite-OCV fit, in PHYSICAL units: SOH as capacity (Ah)
+# and initial SOC (%). Complements `calc_module_soh_summary`, which reports the same quantities
+# normalised by Q_nom and only as σ/Δ — this one keeps mean/min/max in the units the paper
+# quotes. Fit uncertainties propagate through, so the columns are `Measurement`s.
+function calc_cell_spread(cell_fit, cell_ids)
+    df = map(cell_fit.Q_cell, cell_fit.s0, cell_ids) do Q, s0, id
+        (; p, m, c) = id
+        (; p, m, c, soh = Q, soc = s0 * 100)
+    end |> DataFrame
+    # min/max MUST stay wrapped in lambdas: a bare `minimum`/`maximum` hits DataFrames'
+    # fast-aggregation path, which initialises via `typemin` — undefined for `Measurement`.
+    return combine(
+        groupby(df, [:p, :m]),
+        :soh => mean => :soh_mean,
+        :soh => std => :soh_std,
+        :soh => (x -> minimum(x)) => :soh_min,
+        :soh => (x -> maximum(x)) => :soh_max,
+        :soc => mean => :soc_mean,
+        :soc => std => :soc_std,
+        :soc => (x -> minimum(x)) => :soc_min,
+        :soc => (x -> maximum(x)) => :soc_max,
+        :soc => (x -> maximum(x) - minimum(x)) => :soc_delta,
+        nrow => :n,
+    )
 end
 
 # Per-cell misfit to the consensus OCV from `fit_composite_ocv`: each cell is placed on the
@@ -133,6 +159,14 @@ function calc_module_soc_summary(soc_err, module_ids)
         (; id.p, id.m, bias = mean(e), rmse = sqrt(mean(abs2, e)), max = maximum(abs, e))
     end |> DataFrame
     return df_soc
+end
+
+# Per-cell capacities (Ah, point estimates) for the subset `ids`, looked up in a composite fit
+# whose `Q_cell` is indexed parallel to `cell_ids`. The `Qs` argument of the charge-accuracy
+# functions below; kept separate from them so the capacity source stays swappable.
+function cell_capacities(fit, cell_ids, ids)
+    idx = Dict(cell_ids .=> eachindex(cell_ids))
+    return [Measurements.value(fit.Q_cell[idx[id]]) for id in ids]
 end
 
 # charge-estimation accuracy on the reference module (only P1M9 carries an oscilloscope current

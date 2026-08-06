@@ -1,5 +1,6 @@
 module YuasaAnalysis
 
+using QuackIO
 using DataFrames
 using JSON
 using Dates
@@ -24,11 +25,13 @@ include("analysis.jl")
 include("plot.jl")
 
 # data preparation + model fitting (model.jl)
+export load_dataset
 export fit_zscore, scale_θ, cell_dataset, module_dataset, cell_dataset_osci
 export load_hyperparams, fit_cells, fit_modules, fit_soc_models, eval_models
 
 # OCV reconstruction validation (ocv.jl)
-export clean_ocv, average_charge_discharge, validate_cell_ocvs, eval_cell_ocv_validation
+export clean_ocv, average_charge_discharge, validate_cell_ocvs
+export calc_cell_ocv_validation, calc_ocv_validation_summary
 export compare_current_sources
 
 # GP hyperparameter selection (hyperparams.jl)
@@ -37,9 +40,9 @@ export calc_scaled_hyperparams, calc_hyperparam_selection
 
 # analysis / metrics (analysis.jl)
 export calc_v_summary, calc_module_v_summary
-export calc_module_soh_summary, calc_composite_rmse
+export calc_module_soh_summary, calc_cell_spread, calc_composite_rmse
 export calc_soc_trajectories, calc_module_soc, calc_soc_error, calc_module_soc_summary
-export calc_charge_accuracy, calc_charge_error, calc_soc_diagnostic, eval_soc_range
+export cell_capacities, calc_charge_accuracy, calc_charge_error, calc_soc_diagnostic, eval_soc_range
 export calc_throughput, calc_data_completeness
 
 # figures (plot.jl)

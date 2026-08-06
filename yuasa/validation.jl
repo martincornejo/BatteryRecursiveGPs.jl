@@ -1,32 +1,17 @@
-using YuasaAnalysis        # clean_ocv, average_charge_discharge, validate_cell_ocvs, fit_cells
-using BatteryRecursiveGPs  # gp_ocv, fit_composite_ocv, rescale_composite_ocv
+using YuasaAnalysis
+using BatteryRecursiveGPs
 
-using CSV, DataFrames, Dates, Intervals
-using QuackIO              # read_parquet, write_table
-using DataInterpolations   # LinearInterpolation, ExtrapolationType
-using CairoMakie           # Makie backend + figure display/manipulation
-
-# Validation of the reconstructed cell OCVs against the oscilloscope-measured OCV from the
-# low-power cycling experiment (data/ocv-test). Reference module is P1M9 in the cycling
-# dataset ≡ rig module 7 there (the only module with the accurate current probe). Each
-# dataset is decomposed into a shared shape + per-cell (SOH, SOC) and compared on one global
-# gauge (see ocv.jl); per-cell affine alignment is NOT used (it manufactures artifacts).
-#
-# Standalone: refits only the 12 reference cells, so it does not depend on main.jl.
+using DataFrames, Dates, Intervals
+using QuackIO
+using DataInterpolations
+using CairoMakie
 
 
 # === Data ===
 
-# cycling dataset — only the signals cell_dataset reads (voltage, module current, temperature)
 datadir = "yuasa/data/cycles/"
 paramdir = "yuasa/data/hyperparams/"
-files = Dict(
-    :cell_voltage => datadir * "cell_voltages.csv",
-    :module_current => datadir * "module_current_average.csv",
-    :battery_temperature => datadir * "battery_temperature.csv",
-)
-dateformat = dateformat"y-m-d H:M:S+00:00"
-data = Dict(id => CSV.File(file; dateformat) |> DataFrame for (id, file) in files)
+data = load_dataset(datadir; signals = (:cell_voltage, :module_current, :battery_temperature))
 ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
 # measured low-power OCV reference (rig module 7 ≡ P1M9; accurate oscilloscope probe)
@@ -66,7 +51,8 @@ ref_soc(v) = (soc_range.soc_of_v(v) - soc_range.soc_at_Vmin) / soc_range.soc_ful
 # per-cell SOH (Q_cell), initial SOC (s0) and OCV residual on the common gauge
 
 ocv_val = validate_cell_ocvs(measured, reconstructed)
-eval_cell_ocv_validation(ocv_val)
+df_ocv_val = calc_cell_ocv_validation(ocv_val)          # per-cell SOH %, s0, residual (mV)
+ocv_summary = calc_ocv_validation_summary(ocv_val)      # SOH corr, SOC corr, median residual
 
 ref_curve = rescale_composite_ocv(meas_comp, (v_low = 3.45, soc_low = 0.15, v_high = 4.05, soc_high = 0.95))
 

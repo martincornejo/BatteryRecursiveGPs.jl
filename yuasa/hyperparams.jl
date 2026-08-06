@@ -1,8 +1,8 @@
-using CSV, DataFrames, Dates, Intervals
+using DataFrames, Dates, Intervals
 using JSON
 
-using YuasaAnalysis        # cell_dataset, module_dataset, fit_zscore, select_hyperparams
-using BatteryRecursiveGPs  # fit_ocv_curve
+using YuasaAnalysis
+using BatteryRecursiveGPs
 
 using Distributed
 nprocs() == 1 && addprocs(Sys.CPU_THREADS ÷ 2)
@@ -15,30 +15,16 @@ using CairoMakie
 # Stage 2: re-fit the misfits over the ℓ grids and keep, per unit, the ℓ minimising the composite-OCV residual.
 
 
-# === Config ===
+# === Data ===
 
 datadir = "yuasa/data/cycles/"
 paramdir = "yuasa/data/hyperparams/"
 
-ϑ_init = (; ocv = (; σ = 0.5, ℓ = 0.5), r1 = (; σ = 0.5, ℓ = 0.5))
-ℓ_ocv_grid = [0.6, 0.85, 1.0, 1.5, 3.0, 7.0, 15.0]  # escalation grid (challengers to the init)
-ℓ_r1_grid = [0.3, 1.0]                              # r1 length-scale challengers
+data = load_dataset(datadir; signals = (:cell_voltage, :module_voltage, :module_current, :battery_temperature))
+ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
 cell_ids = [(; p, m, c) for p in 1:3, m in 1:9, c in 1:12] |> vec |> sort
 module_ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
-
-
-# === Data ===
-
-files = Dict(
-    :cell_voltage => datadir * "cell_voltages.csv",
-    :module_voltage => datadir * "module_voltage.csv",
-    :module_current => datadir * "module_current_average.csv",
-    :battery_temperature => datadir * "battery_temperature.csv",
-)
-dateformat = dateformat"y-m-d H:M:S+00:00"
-data = Dict(id => CSV.File(file; dateformat) |> DataFrame for (id, file) in files)
-ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
 zt = fit_zscore()
 zt_mod = fit_zscore(12)
@@ -50,13 +36,14 @@ pool = WorkerPool(workers())
 
 # === Selection ===
 
+ϑ_init = (; ocv = (; σ = 0.5, ℓ = 0.5), r1 = (; σ = 0.5, ℓ = 0.5))
+ℓ_ocv_grid = [0.6, 0.85, 1.0, 1.5, 3.0, 7.0, 15.0]
+ℓ_r1_grid = [0.3, 1.0]
+
 @time cells = select_hyperparams(pool, cell_ids, cell_data, zt; ϑ = ϑ_init, ℓ_ocv_grid, ℓ_r1_grid, thresh_mV = 4.0);
 @time modules = select_hyperparams(pool, module_ids, module_data, zt_mod; ϑ = ϑ_init, ℓ_ocv_grid, ℓ_r1_grid, thresh_mV = 50.0, n = 12);
 
-
-# === Figures ===
-
-df_selection = selection_counts(cells, modules)   # selected-ℓ counts, the paper's table
+df_selection = selection_counts(cells, modules)
 
 fig_hyperparam_selection = plot_hyperparam_selection(
     calc_hyperparam_selection(cells), calc_hyperparam_selection(modules)

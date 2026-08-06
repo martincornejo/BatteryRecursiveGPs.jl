@@ -1,20 +1,31 @@
-replace_missing!(v) = accumulate!((n0, n1) -> ismissing(n1) ? n0 : n1, v, v, init = zero(eltype(v)))
+"""
+    load_dataset(datadir; signals = nothing, oscilloscope = false)
 
-function ffill(df, ts = Second(1))
-    t0 = first(df._time)
-    t1 = last(df._time)
-
-    df2 = DataFrame(_time = t0:ts:t1)
-    leftjoin!(df2, df, on = :_time)
-    sort!(df2, :_time)
-
-    for col in names(df2[:, Not(:_time)])
-        replace_missing!(df2[!, col])
+Read the cycling dataset into a `Dict{Symbol, DataFrame}`. `signals` selects which signals to load
+— any of `:cell_voltage`, `:cell_soc`, `:module_voltage`, `:module_current`, `:derating_current`, `:battery_temperature` 
+— defaulting to all of them.
+With `oscilloscope = true` the P1M9 current reference is also read, under `:oscilloscope_current`.
+"""
+function load_dataset(datadir; signals = nothing, oscilloscope = false)
+    files = (
+        cell_voltage = "cell_voltages.csv",
+        cell_soc = "cell_soc.csv",
+        module_voltage = "module_voltage.csv",
+        module_current = "module_current_average.csv",
+        derating_current = "derating_currents.csv",
+        battery_temperature = "battery_temperature.csv",
+    )
+    signals = something(signals, keys(files))
+    data = Dict{Symbol, DataFrame}(
+        sig => read_csv(DataFrame, datadir * files[sig])
+            for sig in signals
+    )
+    if oscilloscope
+        df = read_csv(DataFrame, datadir * "oscilloscope_p1_m9.csv")
+        df.timestamp_utc = floor.(df.timestamp_utc, Second(1))
+        data[:oscilloscope_current] = combine(groupby(df, :timestamp_utc), :MEAS1 => mean => :MEAS1)
     end
-
-    disallowmissing!(df2)
-
-    return df2
+    return data
 end
 
 

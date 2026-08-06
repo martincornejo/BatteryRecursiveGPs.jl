@@ -145,20 +145,31 @@ function validate_cell_ocvs(measured, reconstructed)
     return (; df, gauge = (; α, β), meas_comp = mf, rgp_comp = rf)
 end
 
-function eval_cell_ocv_validation(res)
+# Per-cell view of `validate_cell_ocvs`: SOH as a deviation from the fleet mean (%), so the
+# unidentifiable absolute-capacity offset cancels; initial SOC on the common gauge; and the
+# OCV residual (mV). Full precision — round at the display, not here.
+function calc_cell_ocv_validation(res)
     df = res.df
-    soh_m = df.soh_meas ./ mean(df.soh_meas); soh_r = df.soh_rgp ./ mean(df.soh_rgp)
-    @printf("\n=== Individual-cell OCV validation (composite decomposition) ===\n")
-    @printf("%-8s %9s %9s   %8s %8s   %11s\n", "Cell", "SOH_meas%", "SOH_rgp%", "s0_meas", "s0_rgp", "OCV rmse/mV")
-    for r in eachrow(df)
-        @printf(
-            "Cell %2d: %+9.2f %+9.2f   %8.3f %8.3f   %11.2f\n",
-            r.cell, (soh_m[r.cell] - 1) * 100, (soh_r[r.cell] - 1) * 100, r.s0_meas, r.s0_rgp, r.ocv_rmse
-        )
-    end
-    return @printf(
-        "\nSOH corr(RGP,meas)=%.2f | SOC corr=%.2f | per-cell OCV residual median=%.2f mV\n",
-        cor(soh_r, soh_m), cor(df.s0_rgp, df.s0_meas), median(df.ocv_rmse)
+    return DataFrame(
+        cell = df.cell,
+        soh_meas_pct = (df.soh_meas ./ mean(df.soh_meas) .- 1) .* 100,
+        soh_rgp_pct = (df.soh_rgp ./ mean(df.soh_rgp) .- 1) .* 100,
+        s0_meas = df.s0_meas,
+        s0_rgp = df.s0_rgp,
+        ocv_rmse = df.ocv_rmse,
+    )
+end
+
+# The three headline validation numbers. SOH/SOC are correlations of the per-cell spreads
+# (absolute scale is unidentifiable), the residual is the median over cells in mV.
+function calc_ocv_validation_summary(res)
+    df = res.df
+    soh_m = df.soh_meas ./ mean(df.soh_meas)
+    soh_r = df.soh_rgp ./ mean(df.soh_rgp)
+    return (;
+        soh_cor = cor(soh_r, soh_m),
+        soc_cor = cor(df.s0_rgp, df.s0_meas),
+        ocv_rmse_median = median(df.ocv_rmse),
     )
 end
 
@@ -331,21 +342,13 @@ function eval_soc_range(composite; V_min = 2.9, V_max = 4.1)
     V_data_min = first(v)
     V_data_max = last(v)
 
-    @printf("\nSOC range estimation (linear extrapolation):\n")
-    @printf(
-        "  Data covers:    %.3f - %.3f (%.3f) [%.2fV - %.2fV]\n",
-        soc_data_min, soc_data_max, soc_data, V_data_min, V_data_max
+    return (;
+        v_of_soc, soc_of_v, soc_at_Vmin, soc_at_Vmax, soc_full,
+        # coverage of the measured data within the extrapolated [V_min, V_max] gauge
+        soc_data_min, soc_data_max, soc_data, V_data_min, V_data_max,
+        soc_used_lo = 100 * (soc_data_min - soc_at_Vmin) / soc_full,
+        soc_used_hi = 100 * (soc_data_max - soc_at_Vmin) / soc_full,
     )
-    @printf(
-        "  Full range:     %.3f - %.3f (%.3f) [%.2fV - %.2fV]\n",
-        soc_at_Vmin, soc_at_Vmax, soc_full, V_min, V_max
-    )
-    @printf(
-        "  SOC range used: %.1f%% - %.1f%%\n",
-        100 * (soc_data_min - soc_at_Vmin) / soc_full,
-        100 * (soc_data_max - soc_at_Vmin) / soc_full
-    )
-    return (; v_of_soc, soc_of_v, soc_at_Vmin, soc_at_Vmax, soc_full)
 end
 
 function plot_ocv_extrapolation(composite; V_min = 2.9, V_max = 4.1)
