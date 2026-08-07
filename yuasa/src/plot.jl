@@ -126,6 +126,53 @@ function plot_data_resolution(data; completeness = nothing, yscale = log10)
     return fig
 end
 
+function plot_module_data(data; N = 5)
+    fig = Figure(size=(700, 420))
+    ax = [Axis(fig[i,1]) for i in 1:3]
+        
+    # color = module ID M1–M9 (same across phases)
+    colors = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
+
+    t0 = data[:module_voltage]._time[begin]
+    t_end = Dates.value(data[:module_voltage]._time[end] - t0) * 1.0e-3 / 3600
+
+    ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
+    for id in ids
+        (;p, m) = id
+        df_V = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
+        df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => ByRow(x -> -x) => "value")
+        df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
+        for (k, df) in enumerate((df_V, df_i, df_T))
+            df[!, :t] = Dates.value.(df.time .- t0) * 1.0e-3 / 3600
+            lines!(ax[k, 1], df.t[1:N:end], df.value[1:N:end]; color = (colors[m], 0.5))
+        end
+    end
+
+    for i in eachindex(ax)
+        xlims!(ax[i], 0, t_end)
+        ax[i].xgridvisible = false
+        ax[i].ygridvisible = false
+        ax[i].xminorticksvisible = true
+        ax[i].xminorticks = IntervalsBetween(5)
+
+        if i < 3
+            hidexdecorations!(ax[i], ticks=false, minorticks=false)
+        end
+    end
+    ax[1].ylabel = "Voltage / V"
+    ax[2].ylabel = "Current / A"
+    ax[3].ylabel = "Temperature / °C"
+    ax[3].xlabel = "Time / h"
+
+    mod_elems = [LineElement(color = colors[m], linewidth = 3) for m in 1:9]
+    Legend(
+        fig[1:3, 2], mod_elems, ["M$m" for m in 1:9], "Module ID";
+        orientation = :vertical, titleposition = :top, framevisible = false
+    )
+
+    fig
+end
+
 function plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5))
     fig = Figure(size = (700, 450))
     colors = Makie.wong_colors()

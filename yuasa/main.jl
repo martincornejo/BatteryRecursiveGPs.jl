@@ -21,6 +21,7 @@ id_out = (; p = 3, m = 5)
 
 fig_dataset = plot_dataset_overview(data; id_norm, id_out)                        # Fig 1
 fig_cell_voltages = plot_cell_voltage_system(data)                                # Fig S1
+fig_module_data = plot_module_data(data)
 fig_data_resolution = plot_data_resolution(data; completeness = df_completeness)  # Fig S2
 
 
@@ -136,6 +137,7 @@ end
 
 if export_figs
     save("figs/dataset-modules.pdf", fig_dataset)
+    save("figs/dataset-modules-overlay.pdf", fig_module_data)
     save("figs/dataset-cell-voltages.pdf", fig_cell_voltages)
     save("figs/dataset-resolution.pdf", fig_data_resolution)
     save("figs/ecms.pdf", fig_ecms)
