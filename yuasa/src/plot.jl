@@ -92,7 +92,7 @@ function plot_data_resolution(data; completeness = nothing, yscale = log10)
     ]
     logscale = yscale === log10
 
-    fig = Figure(size = (550, 500))
+    fig = Figure(size = (600, 550))
     ax = [
         Axis(
                 fig[i, 1]; yscale, ylabel = "Count", titlealign = :left, titlesize = 12,
@@ -127,24 +127,24 @@ function plot_data_resolution(data; completeness = nothing, yscale = log10)
 end
 
 function plot_module_data(data; N = 5)
-    fig = Figure(size=(700, 420))
-    ax = [Axis(fig[i,1]) for i in 1:3]
-        
+    fig = Figure(size = (600, 500))
+    ax = [Axis(fig[i, 1]) for i in 1:3]
+
     # color = module ID M1–M9 (same across phases)
     colors = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
 
     t0 = data[:module_voltage]._time[begin]
     t_end = Dates.value(data[:module_voltage]._time[end] - t0) * 1.0e-3 / 3600
 
-    ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
+    ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort |> reverse
     for id in ids
-        (;p, m) = id
+        (; p, m) = id
         df_V = select(data[:module_voltage], "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
         df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => ByRow(x -> -x) => "value")
         df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
         for (k, df) in enumerate((df_V, df_i, df_T))
             df[!, :t] = Dates.value.(df.time .- t0) * 1.0e-3 / 3600
-            lines!(ax[k, 1], df.t[1:N:end], df.value[1:N:end]; color = (colors[m], 0.5))
+            lines!(ax[k, 1], df.t[1:N:end], df.value[1:N:end]; color = colors[m])
         end
     end
 
@@ -156,7 +156,7 @@ function plot_module_data(data; N = 5)
         ax[i].xminorticks = IntervalsBetween(5)
 
         if i < 3
-            hidexdecorations!(ax[i], ticks=false, minorticks=false)
+            hidexdecorations!(ax[i], ticks = false, minorticks = false)
         end
     end
     ax[1].ylabel = "Voltage / V"
@@ -170,7 +170,7 @@ function plot_module_data(data; N = 5)
         orientation = :vertical, titleposition = :top, framevisible = false
     )
 
-    fig
+    return fig
 end
 
 function plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5))
@@ -514,7 +514,7 @@ function plot_ecms_comparison(
         # Wong palette extended to 9 with black + gray
         colors = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)]),
     )
-    fig = Figure(size = (700, 500))
+    fig = Figure(size = (700, 450))
     gl1 = GridLayout(fig[1, 1])
     gl2 = GridLayout(fig[1, 2])
 
@@ -820,7 +820,7 @@ function plot_module_summary(
         soh_colors = Makie.wong_colors()[[1, 2]],
         bar_colors = Makie.wong_colors()[[4, 3]],
     )
-    fig = Figure(size = (700, 400))
+    fig = Figure(size = (700, 350))
     gl = GridLayout(fig[1, 1])
     gl1 = GridLayout(gl[1, 1])
     gl2 = GridLayout(gl[2, 1])
@@ -1030,7 +1030,7 @@ end
 # Combined voltage-accuracy figure: (A) one example open-loop cell fit + residual — the
 # qualitative story — over (B) the fleet-wide per-module accuracy — the quantitative one.
 function plot_v_accuracy_overview(model::AbstractBatteryModel, sol, df_v_cell, df_v_module; Ts = 1.0, title = "")
-    fig = Figure(size = (700, 530))
+    fig = Figure(size = (700, 550))
 
     gl_sim = GridLayout(fig[1, 1])
     ax_v, _ = plot_sim!(gl_sim, model, sol; Ts)
@@ -1311,7 +1311,7 @@ function plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ
     c_mod = wong[1]
     c_cell_med = wong[6]
 
-    fig = Figure(size = (700, 450))
+    fig = Figure(size = (700, 400))
 
     pct(v) = (x = v * 100; isapprox(x, round(x); atol = 1.0e-9) ? string(round(Int, x)) : string(round(x; digits = 1)))
     function overlay!(ax, vc, vm; bins, ymax, ystep)
