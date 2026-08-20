@@ -1,78 +1,66 @@
 using YuasaAnalysis
 using BatteryRecursiveGPs
 
-using DataFrames, Dates, Intervals
+using DataFrames
 using QuackIO
-using DataInterpolations
 using CairoMakie
 
 
+# Validation of the reconstructed cell OCV curves against the low-power rig reference. The rig
+# carries cycling phase 3 (P3) in module order (rig module m ≡ P3Mm, cell index identical; see
+# reference.jl), so all nine rig modules are compared with their cycling counterparts and the
+# results pooled over the eight comparable ones.
+
+
 # === Data ===
-# The RGP side is NOT refitted here: `main.jl` exports the per-cell (Q_cell, s0) and OCV curves
-# from its 324-cell composite fit, so the validation compares the numbers the paper reports.
-# Run `main.jl` with `export_json = true` once to (re)generate the file.
 
+# measured reference: the same build as reference.jl (all 108 rig cells, one composite)
 valdir = "yuasa/data/validation/"
-rgp = load_validation_export(valdir * "validation_p1m9.json")
-reconstructed = rgp.curves
-
-# measured low-power OCV reference (rig module 7 ≡ P1M9; accurate oscilloscope probe)
 df_dch = read_parquet(DataFrame, valdir * "combined_log_20260131_200948.parquet")
 df_chg = read_parquet(DataFrame, valdir * "combined_log_20260201_181000.parquet")
 
+rig_ids = [(; m, c) for m in 1:9 for c in 1:12]
+(; fcs, fds, measured) = build_reference_curves(df_chg, df_dch, rig_ids)
+meas_comp = fit_composite_ocv(measured; uq = true)
 
-# === measured low-power OCV reference ===
-# Cleaned midline OCV from the rig. `fcs`/`fds` (the charge and discharge branches) are kept:
-# their separation is the reference's own ambiguity, which the shape validation compares against.
-# NOTE the rig has ONE module-level current sensor, so all 12 cells share a charge axis — the
-# measured (Q_cell, s0) below are inferred under the shared-shape assumption, not measured.
-
-fcs = [clean_ocv(df_chg, (; m = 7, c); dch = false, current_col = "tek") for c in 1:12];
-fds = [clean_ocv(df_dch, (; m = 7, c); dch = true, current_col = "tek") for c in 1:12];
-measured = [average_charge_discharge(fcs[c], fds[c]) for c in 1:12];  # (; q, μ)
+# The model side is NOT refitted here: `main.jl` exports every cell's (Q_cell, s0) and OCV curve
+# from its 324-cell composite fit, so the validation compares the numbers the paper reports. Run
+# `main.jl` with `export_json = true` once to (re)generate the file.
+rgp = load_validation_export(valdir * "validation_cells.json")
 
 # per-cell (Q_cell, s0) for the reference, on the SAME anchor convention main.jl used
-meas_comp = fit_composite_ocv(measured; uq = true)
 meas_abs = rescale_composite_ocv(meas_comp, rgp.refs)
 
 
 # === Validation ===
 # Goal 1 — shape: does the reconstruction give the right OCV curve, cell by cell?
 # Goal 2 — SOH/SOC: does that curve carry the information the extraction needs?
+# Per module (rig m ↔ P3Mm), then pooled. P3M5 is run but not comparable: its cell 12 was
+# replaced between the two experiments (38.6 Ah in cycling, 74.5 Ah on the rig).
 
-df_shape = calc_ocv_shape_validation(measured, reconstructed, fcs, fds, meas_abs.Q_cell, rgp.Q)
-curves = calc_ocv_curves(measured, reconstructed, df_shape, meas_abs.Q_cell, meas_abs.s0)
-df_soh = calc_soh_validation(meas_abs.Q_cell, meas_abs.s0, rgp.Q, rgp.s0)
-summary = calc_validation_summary(df_shape, df_soh)
+modules = 1:9
+labels = ["P3M$m" for m in modules]
+vals = map(modules) do m
+    ir = findall(id -> id.m == m, rig_ids)                        # rig cells of module m, c = 1:12
+    ic = [findfirst(==("3_$(m)_$(c)"), rgp.ids) for c in 1:12]   # their cycling counterparts
+    validate_module(measured[ir], rgp.curves[ic], fcs[ir], fds[ir], meas_abs.Q_cell[ir], meas_abs.s0[ir], rgp.Q[ic], rgp.s0[ic])
+end
 
-
-# === Reference-quality diagnostics ===
-# How much of the full SOC window the measured experiment actually covers (it stops well short
-# of both voltage limits, so the composite is extrapolated at both ends).
-
-V_window = (2.9, 4.1)
-meas_composite = LinearInterpolation(meas_comp.v_grid, meas_comp.soc_grid; extrapolation = ExtrapolationType.Constant)
-soc_range = eval_soc_range(meas_composite; V_min = V_window[1], V_max = V_window[2])
-
-ref_curve = rescale_composite_ocv(meas_comp, (v_low = 3.45, soc_low = 0.15, v_high = 4.05, soc_high = 0.95))
+comparable = [1, 2, 3, 4, 6, 7, 8, 9]   # all but P3M5
+table = calc_validation_table(vals, labels)
+pooled = calc_pooled_validation(vals[comparable])
 
 
 # === Figures ===
 
-fig_ocv_cells = plot_cell_ocv_validation(df_shape, curves, df_soh)  # Fig 10
-fig_ocv_extrap = plot_ocv_extrapolation(meas_composite)                                        # Fig 12
+fig_ocv_validation = plot_validation(vals[comparable], labels[comparable])  # Fig 10
+fig_ocv_rmse = plot_validation_rmse(vals[comparable], labels[comparable])  # supplementary
 
 
 # === Export ===
-export_csv = false
 export_figs = false
 
-if export_csv
-    df_ocv = DataFrame(v = ref_curve.v_grid, soc = ref_curve.soc_grid)
-    write_table(valdir * "reference_ocv.csv", df_ocv)
-end
-
 if export_figs
-    save("figs/ocv-validation.pdf", fig_ocv_cells)
-    save("figs/ocv-extrapolation.pdf", fig_ocv_extrap)
+    save("figs/ocv-validation.pdf", fig_ocv_validation)
+    save("figs/ocv-validation-rmse.pdf", fig_ocv_rmse)
 end

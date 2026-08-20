@@ -1030,7 +1030,7 @@ end
 # Combined voltage-accuracy figure: (A) one example open-loop cell fit + residual — the
 # qualitative story — over (B) the fleet-wide per-module accuracy — the quantitative one.
 function plot_v_accuracy_overview(model::AbstractBatteryModel, sol, df_v_cell, df_v_module; Ts = 1.0, title = "")
-    fig = Figure(size = (700, 500))
+    fig = Figure(size = (700, 530))
 
     gl_sim = GridLayout(fig[1, 1])
     ax_v, _ = plot_sim!(gl_sim, model, sol; Ts)

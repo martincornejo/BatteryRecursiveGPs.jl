@@ -30,11 +30,12 @@ export fit_zscore, scale_θ, cell_dataset, module_dataset, cell_dataset_osci
 export load_hyperparams, fit_cells, fit_modules, fit_soc_models, eval_models
 
 # OCV reconstruction validation (ocv.jl)
-export clean_ocv, average_charge_discharge
+export clean_ocv, average_charge_discharge, build_reference_curves
 export calc_ocv_shape_validation, calc_ocv_curves, calc_reference_floor
 export calc_soh_validation, calc_validation_summary
+export validate_module, calc_validation_table, calc_pooled_validation
 export build_validation_export, load_validation_export
-export compare_current_sources
+export soc_gauge, compare_current_sources
 
 # GP hyperparameter selection (hyperparams.jl)
 export select_hyperparams, build_hyperparam_export, selection_counts
@@ -55,7 +56,7 @@ export plot_v_accuracy, plot_v_accuracy_overview
 export plot_cell_soh, plot_cell_soh_hist, plot_ecm_parameters, plot_module_summary
 export plot_soc_discrepancy, plot_soc_discrepancy_heatmap, plot_soc_comparison, plot_soc_overview
 export plot_charge_error, plot_soc_diagnostic
-export plot_cell_ocv_validation, plot_ocv_cleaning, plot_ocv_extrapolation
+export plot_validation, plot_validation_rmse, plot_ocv_cleaning, plot_ocv_extrapolation
 export animate_model
 export plot_soh_heatmap, plot_composite_ocv, plot_module_soh, plot_module_inhomogeneity
 export plot_hyperparam_selection, plot_hyperparam_scales

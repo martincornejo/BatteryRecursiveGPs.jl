@@ -10,6 +10,7 @@ using CairoMakie
 # cycling dataset
 datadir = "yuasa/data/cycles/"
 paramdir = "yuasa/data/hyperparams/"
+valdir = "yuasa/data/validation/"
 data = load_dataset(datadir; oscilloscope = true)
 ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
@@ -62,9 +63,12 @@ end
 cell_ocvs = [gp_ocv(cell_models[id], cell_sols[id]) for id in cell_ids];
 module_ocvs = [gp_ocv(module_models[id], module_sols[id]) for id in module_ids];
 
-# Two voltage–SOC reference points that put the composite fit in absolute units
-refs_cell = (v_low = 3.62, soc_low = 0.1, v_high = 4.05, soc_high = 0.9)
-refs_module = (v_low = 12 * 3.62, soc_low = 0.1, v_high = 12 * 4.05, soc_high = 0.9)
+# Two voltage–SOC reference points that put the composite fit in absolute units. They are the
+# whole absolute capacity scale — `Q_i = charge_i(v_low → v_high) / (soc_high − soc_low)`, one
+# global gain — so they are read off the low-power rig reference rather than asserted here.
+# `reference.jl` derives them; re-run it with `export_json = true` to refresh the file.
+refs_cell = (; (Symbol(k) => v for (k, v) in JSON.parsefile(valdir * "reference_refs.json"))...)
+refs_module = (; refs_cell..., v_low = 12 * refs_cell.v_low, v_high = 12 * refs_cell.v_high)
 
 # align cells to extract SOH and initial SOC
 cell_fit = fit_composite_ocv(cell_ocvs, refs_cell)
@@ -125,14 +129,16 @@ fig_soc_diag = plot_soc_diagnostic(soc_diag)  # fault rejection: EKF vs CC
 
 
 # === Export ===
-export_figs = true
+export_figs = false
 export_json = false
 
-# for validation.jl
+# for validation.jl — every cell's (Q_cell, s0) and reconstructed OCV from the 324-cell joint fit.
+# The rig reference is cycling phase 3 (P3) in module order (rig m ≡ P3Mm, NOT the oscilloscope module
+# P1M9 above — the module arrangement changed between the experiments), so validation.jl slices
+# phase 3 out of this; exporting all cells keeps cross-module checks possible without refitting.
 if export_json
-    valdir = "yuasa/data/validation/"
-    validation_export = build_validation_export(cell_fit, cell_ocvs, cell_ids, p1m9_ids, refs_cell)
-    write(valdir * "validation_p1m9.json", JSON.json(validation_export, 2))
+    validation_export = build_validation_export(cell_fit, cell_ocvs, cell_ids, cell_ids, refs_cell)
+    write(valdir * "validation_cells.json", JSON.json(validation_export, 2))
 end
 
 if export_figs

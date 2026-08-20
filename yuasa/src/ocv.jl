@@ -1,12 +1,6 @@
-# Validation of the reconstructed cell OCV curves (RGP-ECM, this dataset) against the
-# oscilloscope-measured OCV from the low-power cycling experiment (data/validation).
-#
-# The validated module carries the accurate current probe: it is rig module 7 in the
-# yuasa-ocv test and P1M9 (p=1, m=9) here. Cell index c refers to the same physical
-# cell in both datasets.
-#
-# This file is self-contained: measured-OCV builders (parse the rig parquet),
-# composite-decomposition validation, and the validation plots.
+# Validation of the reconstructed cell OCV curves against the measured OCV from the low-power
+# rig experiment (data/validation): measured-OCV builders, the per-module validation, and its
+# plots. The rig carries cycling phase 3 in module order (rig m ≡ P3Mm; see reference.jl).
 
 
 # === measured OCV builders (low-power charge/discharge, oscilloscope current) ===
@@ -29,21 +23,21 @@ function find_tek_offset(df; m = 7, bms_thresh = 0.1)
 end
 
 function invert_ocv(f; n_samples = 500, extrapolation = ExtrapolationType.Constant)
-    q = range(first(f.t), last(f.t); length = n_samples)
+    q = collect(range(first(f.t), last(f.t); length = n_samples))
     v = f.(q)
-    # Ensure strict monotonicity: remove duplicate/decreasing V values
-    mask = [true; diff(v) .> 0]
-    return LinearInterpolation(q[mask], v[mask]; extrapolation)
+    # strict monotonicity via a running maximum (comparing only against the immediate
+    # predecessor leaves dips in place and the interpolation rejects the unsorted result)
+    keep = Int[]
+    vmax = -Inf
+    for k in eachindex(v)
+        v[k] > vmax && (push!(keep, k); vmax = v[k])
+    end
+    return LinearInterpolation(q[keep], v[keep]; extrapolation)
 end
 
-# Midline OCV by averaging the charge and discharge branches in the VOLTAGE frame:
-# at each voltage, the mean of the two branches' charge, q̄(v) = (q_chg(v)+q_dch(v))/2.
-# Averaging at fixed voltage (not fixed charge) keeps the high-SOC end that q-frame
-# averaging clips — the q-frame average is restricted to the charge range BOTH
-# branches share, which (because the two experiments are offset in charge) truncates
-# the top of the curve ~20 mV below either branch. The unknown charge offset between
-# the experiments only shifts the (irrelevant) q origin here; it does not distort the
-# shape. Returns (; q, μ) with μ the voltage grid and q the averaged charge.
+# Midline OCV: at each voltage, the mean of the two branches' charge, q̄(v) = (q_chg + q_dch)/2.
+# Averaging in the voltage frame (not at fixed charge) keeps the high-SOC end and is insensitive
+# to the unknown charge offset between the two experiments. Returns (; q, μ = v grid).
 function average_charge_discharge(fc, fd; n_samples = 500)
     gc = invert_ocv(fc)  # q(v), charge branch
     gd = invert_ocv(fd)  # q(v), discharge branch
@@ -84,37 +78,30 @@ function clean_ocv(df, id; dch::Bool, i_thresh = 0.5, current_col = "bms")
     return LinearInterpolation(df3.v, df3.q; extrapolation = ExtrapolationType.Constant)
 end
 
+"""
+    build_reference_curves(df_chg, df_dch, ids; current_col = "bms") -> (; fcs, fds, measured)
 
-# === individual-cell OCV validation (RGP-OCV vs measured low-power OCV) ===
-# `measured`/`reconstructed` are vectors of monotone v(q) curves `(; q, μ)` (Ah, V), one per
-# cell in matching order (rig module 7 ≡ P1M9; cell index identical).
-#
-# Two separable claims, deliberately NOT sharing machinery:
-#
-# SHAPE — does the reconstruction give the right OCV curve? Each RGP curve is aligned to its
-#   measured counterpart over THAT cell's own voltage overlap (never a window common to all
-#   cells: the shared window is pure plateau, and dropping the steep knee — 12 % of the charge
-#   but 8× the dV/dq — costs most of the capacity information). The alignment is
-#   `q_rgp(v) ≈ a·q_meas(v) + b`, and only `b` is fitted: the two datasets are separate
-#   experiments so their charge origins are unrelated, but their capacities are not. `a` is
-#   FIXED at the ratio the SOH estimates imply, so the residual tests shape AND capacity
-#   together. `ocv_rmse_free` refits `a` as well; the gap between the two localises a failure
-#   (equal ⇒ capacity is consistent, free much lower ⇒ capacity is the problem).
-#
-# SOH/SOC — per-cell `Q_cell` and `s0`. The RGP side comes from the 324-cell composite fit the
-#   paper actually reports, NOT a 12-cell refit: refitting a composite from these 12 curves
-#   alone shrinks the estimated spread ~40 % (0.74 → 0.45 %) because the shared shape adapts to
-#   them, and it validates an estimator no result uses. The measured side has no such option —
-#   only 12 rig curves exist. Both are relabelled onto one declared anchor convention and only
-#   DEVIATIONS are compared: absolute capacity is a convention (mean Q moves 63–79 Ah with the
-#   anchors), not a measurement.
-#
-# NOTE the rig measures VOLTAGE ONLY. There is one module-level current sensor, so all 12 cells
-# share a charge axis and the measured `Q_cell`/`s0` are INFERRED under the shared-shape
-# assumption, not independently measured. So this validates the OCV curve that feeds the
-# extraction, not the extraction itself. The assumption is checkable and holds: normalising each
-# measured curve by its own charge between two fixed voltages (no decomposition, no gauge) puts
-# the 12 cells within ~1.4 mV of each other.
+The measured reference for the rig cells `ids` (`(; m, c)` each): charge/discharge branch
+interpolants from `clean_ocv` and their midline `(; q, μ)` from `average_charge_discharge`. Used
+by both `reference.jl` and `validation.jl`, which build the reference independently rather than
+sharing state.
+"""
+function build_reference_curves(df_chg, df_dch, ids; current_col = "bms")
+    fcs = [clean_ocv(df_chg, id; dch = false, current_col) for id in ids]
+    fds = [clean_ocv(df_dch, id; dch = true, current_col) for id in ids]
+    measured = [average_charge_discharge(fcs[i], fds[i]) for i in eachindex(ids)]
+    return (; fcs, fds, measured)
+end
+
+
+# === individual-cell OCV validation (model OCV vs measured low-power OCV) ===
+# `measured`/`reconstructed` are monotone v(q) curves `(; q, μ)` (Ah, V), one per cell in
+# matching order. Two separable claims: SHAPE — per-cell curve comparison over each cell's own
+# voltage overlap, with only the (unidentifiable) charge origin removed (`a = 1`); note in the
+# plateau 1 % of capacity ≈ 2.8 mV of OCV, so shape and capacity are different tests. SOH/SOC —
+# per-cell `(Q_cell, s0)` from each side's own composite decomposition (model: the 324-cell fit
+# the paper reports; reference: one composite over all 108 rig cells), on a shared anchor
+# convention; absolute capacity is that convention, not a measurement.
 
 
 # q(v) for a monotone (; q, μ) curve — the voltage frame both datasets are compared in
@@ -136,21 +123,20 @@ function _dv_dq(g, v; n = 40)
 end
 
 """
-    calc_ocv_shape_validation(measured, reconstructed, fcs, fds, Q_meas, Q_rgp) -> DataFrame
+    calc_ocv_shape_validation(measured, reconstructed, fcs, fds) -> DataFrame
 
 Per-cell OCV shape validation over each cell's own measured∩RGP voltage overlap. `fcs`/`fds`
 are that cell's charge/discharge branch interpolants from `clean_ocv` (needed for the reference
-floor). `Q_meas`/`Q_rgp` set the fixed alignment scale `a = Q_rgp/Q_meas`.
+floor).
 
-Columns: `v_lo`/`v_hi` (the cell's own window), `ocv_rmse` (mV, `a` fixed at the SOH ratio),
-`ocv_rmse_free` (mV, `a` refitted), `floor` (mV, the reference's own ambiguity — see
-`calc_reference_floor`), `ratio` = `ocv_rmse`/`floor` (the cross-cell-comparable number; the
-bare mV is not, since the windows differ in width and steepness), and the two scales `a_soh`,
-`a_fit` plus the fitted offset `b_soh` the figure needs to place the curves.
+Columns: `v_lo`/`v_hi` (the cell's own window), `ocv_rmse` (mV, `a = 1`: both charge axes in
+physical Ah, only the origin `b` removed), `ocv_rmse_free` (mV, a scale `a_fit` refitted as
+well), `floor` (mV, the reference's own ambiguity — see `calc_reference_floor`), `ratio` =
+`ocv_rmse`/`floor` (the cross-cell-comparable number; the bare mV is not, since the windows
+differ in width and steepness), `a_fit`, and the fitted offset `b` the figure needs to place
+the curves.
 """
-function calc_ocv_shape_validation(measured, reconstructed, fcs, fds, Q_meas, Q_rgp; n_v = 200)
-    qm = Measurements.value.(Q_meas)
-    qr = Measurements.value.(Q_rgp)
+function calc_ocv_shape_validation(measured, reconstructed, fcs, fds; n_v = 200)
     floors = calc_reference_floor(measured, reconstructed, fcs, fds; n_v)
 
     return map(eachindex(measured)) do c
@@ -161,18 +147,17 @@ function calc_ocv_shape_validation(measured, reconstructed, fcs, fds, Q_meas, Q_
         v = collect(range(v_lo, v_hi; length = n_v))
         slope = _dv_dq(gr, v)
 
-        a_soh = qr[c] / qm[c]
-        b_soh = mean(gr.(v) .- a_soh .* gm.(v))          # only the charge origin is fitted
+        b = mean(gr.(v) .- gm.(v))                       # only the charge origin is removed
         a_fit, _ = hcat(gm.(v), ones(length(v))) \ gr.(v)
         b_fit = mean(gr.(v) .- a_fit .* gm.(v))
 
         rmse(a, b) = sqrt(mean(abs2, (gr.(v) .- (a .* gm.(v) .+ b)) .* slope .* 1000))
-        r = rmse(a_soh, b_soh)
+        r = rmse(1.0, b)
         (;
             cell = c, v_lo, v_hi,
             ocv_rmse = r, ocv_rmse_free = rmse(a_fit, b_fit),
             floor = floors[c], ratio = r / floors[c],
-            a_soh, a_fit, b_soh,
+            a_fit, b,
         )
     end |> DataFrame
 end
@@ -181,9 +166,9 @@ end
     calc_ocv_curves(measured, reconstructed, df_shape, Q_meas, s0_meas) -> Vector
 
 Plot-ready per-cell curves on the common SOC axis, plus the residual behind the `ocv_rmse`
-summary. Reuses the alignment `df_shape` already fitted (`a_soh`, `b_soh`), so there is one
-alignment, not two: the RGP curve is mapped into the measured charge frame and both are then
-divided by that cell's own `(Q_meas, s0_meas)`.
+summary. Reuses the charge offset `b` from `df_shape`, so there is one alignment, not two: the
+RGP curve is shifted into the measured charge frame (`a = 1`) and both are then divided by that
+cell's own `(Q_meas, s0_meas)` — the reference is never moved.
 
 Each entry is `(; soc_meas, v_meas, soc_rgp, v_rgp, soc, r)` — SOC in %, voltages in V, residual
 in mV over that cell's own window.
@@ -202,11 +187,11 @@ function calc_ocv_curves(measured, reconstructed, df_shape, Q_meas, s0_meas; n_v
         gm = _q_of_v(measured[c])
         gr = _q_of_v(reconstructed[c])
         v = collect(range(df_shape.v_lo[c], df_shape.v_hi[c]; length = n_v))
-        r = (gr.(v) .- (df_shape.a_soh[c] .* gm.(v) .+ df_shape.b_soh[c])) .* _dv_dq(gr, v) .* 1000
+        r = (gr.(v) .- (gm.(v) .+ df_shape.b[c])) .* _dv_dq(gr, v) .* 1000
         (;
             soc_meas = tosoc(collect(measured[c].q)), v_meas = collect(measured[c].μ),
-            # RGP mapped into the measured charge frame by this cell's alignment, then to SOC
-            soc_rgp = tosoc((collect(reconstructed[c].q) .- df_shape.b_soh[c]) ./ df_shape.a_soh[c]),
+            # RGP shifted into the measured charge frame by this cell's offset, then to SOC
+            soc_rgp = tosoc(collect(reconstructed[c].q) .- df_shape.b[c]),
             v_rgp = collect(reconstructed[c].μ),
             soc = tosoc(gm.(v)), r,
         )
@@ -272,8 +257,11 @@ function calc_soh_validation(Q_meas, s0_meas, Q_rgp, s0_rgp)
     k = mean(qr) / mean(qm)
     return DataFrame(
         cell = collect(eachindex(qm)),
-        Q_meas = qm, Q_rgp = qr, ΔQ = qr ./ k .- qm,
-        Q_meas_σ = Measurements.uncertainty.(Q_meas), Q_rgp_σ = Measurements.uncertainty.(Q_rgp),
+        Q_meas = qm, 
+        Q_rgp = qr,
+        ΔQ = qr ./ k .- qm,
+        Q_meas_σ = Measurements.uncertainty.(Q_meas), 
+        Q_rgp_σ = Measurements.uncertainty.(Q_rgp),
         soh_meas = (qm ./ mean(qm) .- 1) .* 100,
         soh_rgp = (qr ./ mean(qr) .- 1) .* 100,
         soh_meas_σ = Measurements.uncertainty.(Q_meas) ./ mean(qm) .* 100,
@@ -301,6 +289,57 @@ function calc_validation_summary(df_shape, df_soh)
         soh_spread = std(df_soh.Q_meas),
         soc_cor = cor(df_soh.s0_rgp, df_soh.s0_meas),
         soc_err = sqrt(mean(abs2, df_soh.Δs0)),
+    )
+end
+
+"""
+    validate_module(measured, reconstructed, fcs, fds, Q_meas, s0_meas, Q_rgp, s0_rgp)
+
+The per-module validation: shape table, plot-ready curves, SOH/SOC table and their summary, for
+one module's cells (same order on both sides). Returns `(; df_shape, curves, df_soh, summary)`.
+"""
+function validate_module(measured, reconstructed, fcs, fds, Q_meas, s0_meas, Q_rgp, s0_rgp)
+    df_shape = calc_ocv_shape_validation(measured, reconstructed, fcs, fds)
+    curves = calc_ocv_curves(measured, reconstructed, df_shape, Q_meas, s0_meas)
+    df_soh = calc_soh_validation(Q_meas, s0_meas, Q_rgp, s0_rgp)
+    return (; df_shape, curves, df_soh, summary = calc_validation_summary(df_shape, df_soh))
+end
+
+# One row per module from `validate_module` results: the shape numbers, the SOH/SOC numbers, the
+# module-mean capacities on both sides and their ratio `k` (the module-wide scale the per-cell
+# comparison removes).
+function calc_validation_table(vals, labels)
+    return DataFrame(
+        id = labels,
+        ocv_rmse = [v.summary.ocv_rmse for v in vals],
+        ocv_rmse_free = [v.summary.ocv_rmse_free for v in vals],
+        ocv_floor = [v.summary.ocv_floor for v in vals],
+        n_below_floor = [v.summary.n_below_floor for v in vals],
+        soh_cor = [v.summary.soh_cor for v in vals],
+        soh_err = [v.summary.soh_err for v in vals],
+        soh_spread = [v.summary.soh_spread for v in vals],
+        soc_cor = [v.summary.soc_cor for v in vals],
+        soc_err = [v.summary.soc_err for v in vals],
+        Q_meas = [mean(v.df_soh.Q_meas) for v in vals],
+        Q_rgp = [mean(v.df_soh.Q_rgp) for v in vals],
+        k = [mean(v.df_soh.Q_rgp) / mean(v.df_soh.Q_meas) for v in vals],
+    )
+end
+
+# The headline numbers pooled over the comparable modules: the per-cell shape RMSE (median over
+# all cells and how many lie below their own reference floor), the pooled SOC and SOH
+# correlations of the module-centred deviations, and the module-level capacity agreement (mean
+# offset and spread of the per-module ratio `k`, correlation of the module means).
+function calc_pooled_validation(vals)
+    rmse = vcat([v.df_shape.ocv_rmse for v in vals]...)
+    floors = vcat([v.df_shape.floor for v in vals]...)
+    ks = [mean(v.df_soh.Q_rgp) / mean(v.df_soh.Q_meas) for v in vals]
+    return (;
+        ocv_rmse = median(rmse), n_below_floor = count(rmse .< floors), n_cells = length(rmse),
+        soc_cor = cor(vcat([v.df_soh.s0_meas for v in vals]...), vcat([v.df_soh.s0_rgp for v in vals]...)),
+        soh_cor = cor(vcat([v.df_soh.soh_meas for v in vals]...), vcat([v.df_soh.soh_rgp for v in vals]...)),
+        module_Q_cor = cor([mean(v.df_soh.Q_meas) for v in vals], [mean(v.df_soh.Q_rgp) for v in vals]),
+        k_mean = mean(ks), k_sd = std(ks), n_modules = length(vals),
     )
 end
 
@@ -347,55 +386,41 @@ end
 
 # === validation plots ===
 
-# Consumes the prepared tables + the raw curves. Left column shares the charge axis:
-# (A) every cell's measured OCV against its reconstruction, (B) the residual behind that
-# overlay. Right column: (C) SOH and (D) initial-SOC deviations, with the bars both estimates
-# carry. The measured charge/discharge branches are deliberately NOT drawn — they are binned
-# pseudo-OCV (0.1 Ah bins, extreme voltage per bin), so their scatter reads as data when it is
-# mostly extraction noise. Their separation is the reference floor, reported per cell in
-# `df_shape` instead.
-function plot_cell_ocv_validation(df_shape, curves, df_soh)
-    wong = Makie.wong_colors()
+# The validation figure, pooled over the comparable modules (one `validate_module` result per
+# module, `labels` = their names): (A) measured-vs-model OCV overlay, (B) the residual behind it
+# (clipped at the low-SOC knee, where the steep dV/dq amplifies a small charge error), (C)
+# absolute capacity per cell, (D) initial-SOC deviation from each module's mean (absolute initial
+# SOC is not comparable between the two experiments). Wong palette + black by module.
+function plot_validation(vals, labels)
+    cols = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
     c_meas = :gray55
-    c_rgp = wong[1]
 
-    fig = Figure(size = (700, 500))
+    fig = Figure(size = (700, 530))
 
-    # (A) OCV overlay on the common SOC axis — each cell placed by its own (Q, s0), so the
-    # curves collapse and the shape comparison is what the reader sees
-    # x fixed to the full 0-100 % SOC range: the gap at each end is the coverage this validation
-    # actually has (the experiments span ~4-90 %), which an auto-scaled axis would hide
     axA = Axis(
         fig[1, 1]; xlabel = "SOC / %", ylabel = "OCV / V",
         limits = (0, 100, nothing, nothing), xgridvisible = false, ygridvisible = false,
     )
-    for cv in curves
-        lines!(axA, cv.soc_meas, cv.v_meas; color = c_meas)
-        lines!(axA, cv.soc_rgp, cv.v_rgp; color = c_rgp, linestyle = :dash)
+    for v in vals, cv in v.curves
+        lines!(axA, cv.soc_meas, cv.v_meas; color = (c_meas, 0.6))
+    end
+    for (j, v) in enumerate(vals), cv in v.curves
+        lines!(axA, cv.soc_rgp, cv.v_rgp; color = (cols[j], 0.7), linestyle = :dash)
     end
     axislegend(
         axA,
-        [LineElement(color = c_meas), LineElement(color = c_rgp, linestyle = :dash)],
-        ["Reference", "RGP-ECM"];
+        [LineElement(color = c_meas), LineElement(color = :black, linestyle = :dash)],
+        ["Reference", "Model"];
         position = :rb, framevisible = false,
     )
     axA.yticks = 3.4:0.2:4.0
 
-    # (B) the residual behind panel A, same SOC axis. Deliberately unannotated: no single summary
-    # survives here, because the per-cell mV RMSE is not comparable between cells (each is scored
-    # over its own window). Median 6.6, mean 10.7, pooled 13.1 mV — the spread is cells 1-3's wider
-    # windows reaching into the knee, not worse agreement (on a matched window they are the BEST
-    # three, 4.6-4.8 mV). The comparable statistic is `ratio` in `df_shape` — RMSE over each cell's
-    # own reference floor — which is 0.49-0.79 for all twelve, median and mean both 0.60.
-    # Clipped: the low-SOC knee of cells 1-3
-    # spikes to ~-70 mV (steep dV/dq there amplifies a small charge error). It is real and
-    # included in the RMS, but plotting it would flatten the ±10 mV structure that matters.
     axB = Axis(
         fig[2, 1]; xlabel = "SOC / %", ylabel = "ΔOCV / mV",
         xgridvisible = false, ygridvisible = false, limits = (0, 100, -25, 15),
     )
-    for cv in curves
-        lines!(axB, cv.soc, cv.r; color = (c_rgp, 0.6))
+    for (j, v) in enumerate(vals), cv in v.curves
+        lines!(axB, cv.soc, cv.r; color = (cols[j], 0.5), linewidth = 0.8)
     end
     hlines!(axB, [0]; color = :black, linestyle = :dot)
     linkxaxes!(axA, axB)
@@ -408,40 +433,44 @@ function plot_cell_ocv_validation(df_shape, curves, df_soh)
         ax.yminorticksvisible = true
     end
 
-    # (C) SOH as absolute capacity. Only 1:1 is drawn — the displacement of the cloud from it IS
-    # the offset, which is instrument-bounded rather than a per-cell claim, so it needs no fitted
-    # line of its own. Square axes with equal ranges, so the 1:1 line means what it looks like;
-    # that is why the data occupies only part of the panel.
-    lo = minimum(vcat(df_soh.Q_meas .- df_soh.Q_meas_σ, df_soh.Q_rgp .- df_soh.Q_rgp_σ)) - 0.4
-    hi = maximum(vcat(df_soh.Q_meas .+ df_soh.Q_meas_σ, df_soh.Q_rgp .+ df_soh.Q_rgp_σ)) + 0.4
     axC = Axis(
-        fig[1, 2]; xlabel = "Reference Q / Ah", ylabel = "RGP Q / Ah",
-        aspect = 1, limits = (lo, hi, lo, hi), xgridvisible = false, ygridvisible = false,
+        fig[1, 2]; xlabel = "Reference Q / Ah", ylabel = "Model Q / Ah",
+        aspect = 1, limits = (69, 81, 69, 81), xticks = 70:2:80, yticks = 70:2:80,
+        xgridvisible = false, ygridvisible = false,
     )
-    for a in (:x, :y)   # major ticks are every 2 Ah → minor ticks every 1 Ah
-        setproperty!(axC, Symbol(a, :minorticks), IntervalsBetween(2))
-        setproperty!(axC, Symbol(a, :minorticksvisible), true)
-    end
-    ablines!(axC, 0, 1; color = :gray, linestyle = :dash)
-    errorbars!(axC, df_soh.Q_meas, df_soh.Q_rgp, df_soh.Q_rgp_σ; color = (c_rgp, 0.35), whiskerwidth = 0)
-    errorbars!(axC, df_soh.Q_meas, df_soh.Q_rgp, df_soh.Q_meas_σ; color = (c_rgp, 0.35), whiskerwidth = 0, direction = :x)
-    scatter!(axC, df_soh.Q_meas, df_soh.Q_rgp; color = c_rgp, markersize = 11, strokewidth = 0.5, strokecolor = :white)
-
-    # (D) initial SOC — deviations from each dataset's own module mean
-    L = 1.35 * maximum(abs, vcat(df_soh.s0_meas .+ df_soh.s0_meas_σ, df_soh.s0_rgp .+ df_soh.s0_rgp_σ))
+    s0_all = vcat([vcat(v.df_soh.s0_meas, v.df_soh.s0_rgp) for v in vals]...)
+    L = 1.15 * maximum(abs, s0_all)
     axD = Axis(
-        fig[2, 2]; xlabel = "Reference ΔSOC / %", ylabel = "RGP ΔSOC / %",
+        fig[2, 2]; xlabel = "Reference ΔSOC / %", ylabel = "Model ΔSOC / %",
         aspect = 1, limits = (-L, L, -L, L), xgridvisible = false, ygridvisible = false,
     )
-    for a in (:x, :y)   # majors pinned every 5 % so the minors land on whole percent
+    for ax in (axC, axD)
+        ablines!(ax, 0, 1; color = :black, linestyle = :dash)
+    end
+    for (j, v) in enumerate(vals)
+        d = v.df_soh
+        errorbars!(axC, d.Q_meas, d.Q_rgp, d.Q_rgp_σ; color = (cols[j], 0.3), whiskerwidth = 0)
+        errorbars!(axC, d.Q_meas, d.Q_rgp, d.Q_meas_σ; color = (cols[j], 0.3), whiskerwidth = 0, direction = :x)
+        scatter!(axC, d.Q_meas, d.Q_rgp; color = cols[j], markersize = 8, strokewidth = 0.5, strokecolor = :white, label = labels[j])
+        errorbars!(axD, d.s0_meas, d.s0_rgp, d.s0_rgp_σ; color = (cols[j], 0.3), whiskerwidth = 0)
+        scatter!(axD, d.s0_meas, d.s0_rgp; color = cols[j], markersize = 8, strokewidth = 0.5, strokecolor = :white)
+    end
+    for a in (:x, :y)
+        setproperty!(axC, Symbol(a, :minorticks), IntervalsBetween(2))
+        setproperty!(axC, Symbol(a, :minorticksvisible), true)
         setproperty!(axD, Symbol(a, :ticks), -5:5:5)
         setproperty!(axD, Symbol(a, :minorticks), IntervalsBetween(5))
         setproperty!(axD, Symbol(a, :minorticksvisible), true)
     end
-    ablines!(axD, 0, 1; color = :gray, linestyle = :dash)
-    errorbars!(axD, df_soh.s0_meas, df_soh.s0_rgp, df_soh.s0_rgp_σ; color = (c_rgp, 0.35), whiskerwidth = 0)
-    errorbars!(axD, df_soh.s0_meas, df_soh.s0_rgp, df_soh.s0_meas_σ; color = (c_rgp, 0.35), whiskerwidth = 0, direction = :x)
-    scatter!(axD, df_soh.s0_meas, df_soh.s0_rgp; color = c_rgp, markersize = 11, strokewidth = 0.5, strokecolor = :white)
+
+    # grid cells exclude the axis decorations, so a cell-centred legend sits half the left
+    # protrusion right of the visual centre; shrink its box on the right by that amount
+    leg = Legend(
+        fig[3, 1:2], axC; framevisible = false, orientation = :horizontal, nbanks = 1,
+        patchsize = (12, 12), colgap = 14, tellheight = true,
+    )
+    colsize!(fig.layout, 1, Relative(0.58))
+    leg.margin = (0, axA.layoutobservables.protrusions[].left, 0, 0)
 
     for ax in (axA, axB, axC, axD)
         hidespines!(ax, :t, :r)
@@ -449,7 +478,36 @@ function plot_cell_ocv_validation(df_shape, curves, df_soh)
     for (ax, l) in ((axA, "A"), (axB, "B"), (axC, "C"), (axD, "D"))
         text!(ax, 0.02, 0.98; text = l, space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
     end
-    colsize!(fig.layout, 1, Relative(0.6))
+    return fig
+end
+
+
+# Supplementary: distribution of the per-cell OCV RMSE, stacked by module (1 mV bins). The tail
+# above ~7 mV is the knee-bearing cells (their windows reach the steep low knee); plateau cells
+# sit at 3–5 mV.
+function plot_validation_rmse(vals, labels; bins = 0:1:16)
+    cols = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
+    nb = length(bins) - 1
+    counts = zeros(Int, nb, length(vals))
+    for (j, v) in enumerate(vals), r in v.df_shape.ocv_rmse
+        counts[clamp(floor(Int, r) + 1, 1, nb), j] += 1
+    end
+
+    fig = Figure(size = (500, 350))
+    ax = Axis(
+        fig[1, 1]; xlabel = "OCV RMSE / mV", ylabel = "cells",
+        limits = (first(bins), last(bins), 0, 50), xticks = first(bins):4:last(bins),
+        xgridvisible = false, ygridvisible = false,
+    )
+    xs = repeat(collect(bins[1:end-1]) .+ 0.5, length(vals))
+    grp = repeat(1:length(vals); inner = nb)
+    barplot!(ax, xs, vec(counts); stack = grp, color = cols[grp], gap = 0.05, strokewidth = 0.5, strokecolor = :white)
+    Legend(
+        fig[1, 1], [PolyElement(color = cols[j]) for j in eachindex(vals)], labels;
+        tellwidth = false, tellheight = false, halign = :right, valign = :top, framevisible = false,
+        patchsize = (10, 10), rowgap = 1, nbanks = 2,
+    )
+    hidespines!(ax, :t, :r)
     return fig
 end
 
@@ -499,6 +557,22 @@ function extrapolate_ocv(composite; n_samples = 100)
     v_of_soc = LinearInterpolation(v, soc; extrapolation = ExtrapolationType.Linear)        # SOC → V
     soc_of_v = invert_ocv(v_of_soc; n_samples, extrapolation = ExtrapolationType.Linear)    # V → SOC
     return (; v_of_soc, soc_of_v)
+end
+
+# The absolute SOC gauge a reference OCV measurement implies: extrapolate the composite linearly
+# to the voltage limits, call `V_min` 0 % SOC and `V_max` 100 % (datasheet: 4.1 V is 100 %), and
+# read the anchor points for `rescale_composite_ocv` off it:
+#
+#     g = soc_gauge(meas_composite)
+#     refs = (; v_low = 3.62, soc_low = g.soc_of_v(3.62), v_high = 4.05, soc_high = g.soc_of_v(4.05))
+function soc_gauge(composite; V_min = 2.9, V_max = 4.1)
+    (; v_of_soc, soc_of_v) = extrapolate_ocv(composite)
+    soc_min = soc_of_v(V_min)
+    soc_span = soc_of_v(V_max) - soc_min
+    return (;
+        soc_of_v = v -> (soc_of_v(v) - soc_min) / soc_span,
+        v_of_soc = s -> v_of_soc(soc_min + s * soc_span),
+    )
 end
 
 # Estimate the usable SOC window of the measured composite by linearly extrapolating the
