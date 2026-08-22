@@ -533,7 +533,7 @@ function plot_ecms_comparison(
         end
         ax[1].title = title
         ax[1].ylabel = "OCV / V"
-        ax[2].ylabel = rich("R", subscript("DC"), " / mΩ")
+        ax[2].ylabel = rich("R", subscript("Σ"), " / mΩ")
         ax[2].xlabel = "Charge / Ah"
         ax[1].xgridvisible = false
         ax[1].ygridvisible = false
