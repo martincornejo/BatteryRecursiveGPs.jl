@@ -1316,7 +1316,7 @@ function plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ
     pct(v) = (x = v * 100; isapprox(x, round(x); atol = 1.0e-9) ? string(round(Int, x)) : string(round(x; digits = 1)))
     function overlay!(ax, vc, vm; bins, ymax, ystep)
         ax.ytickformat = vs -> pct.(vs)
-        ylims!(ax, nothing, ymax)
+        ylims!(ax, 0, ymax)
         ax.yticks = 0:ystep:ymax
         ax.yminorticks = IntervalsBetween(2)
         ax.yminorticksvisible = true
@@ -1333,6 +1333,15 @@ function plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ
 
     axA = Axis(fig[1, 1]; xlabel = rich("R", subscript("1"), " ($(v_ref) V) / mΩ"), ylabel = "Share / %")
     overlay!(axA, df.R1, isnothing(df_mod) ? nothing : df_mod.R1; bins = edges, ymax = 0.25, ystep = 0.1)
+
+    # name the R1 outlier cells in place — their single-cell bars are barely visible at this scale
+    fence = quantile(df.R1, 0.75) + 1.5 * (quantile(df.R1, 0.75) - quantile(df.R1, 0.25))
+    for r in eachrow(df[df.R1 .> fence, :])
+        text!(
+            axA, r.R1, 1 / nrow(df) + 0.012; text = "P$(r.id.p)M$(r.id.m)C$(r.id.c)",
+            rotation = π / 2, align = (:left, :center), fontsize = 9, color = c_cell
+        )
+    end
 
     axC = Axis(fig[2, 1]; xlabel = rich("R", subscript("0"), " / mΩ"), ylabel = "Share / %")
     overlay!(axC, df.R0, isnothing(df_mod) ? nothing : df_mod.R0; bins = edges, ymax = 0.5, ystep = 0.2)
