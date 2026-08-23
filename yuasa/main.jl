@@ -52,7 +52,7 @@ fig_ecm_params = plot_ecm_parameters(ecm_cell, ecm_module)
 df_v_cell = calc_v_summary(cell_models, cell_sols_ol, cell_ids)
 df_v_module = calc_module_v_summary(cell_models, cell_sols_ol, module_models, module_sols_ol, module_ids)
 
-fig_v_overview = let id = (; p = 1, m = 1, c = 1)  # Fig 7: example fit (A) + system-wide accuracy (B)
+fig_v_overview = let id = (; p = 3, m = 4, c = 2)  # Fig 7: example fit (A) + system-wide accuracy (B)
     plot_v_accuracy_overview(cell_models[id], cell_sols_ol[id], df_v_cell, df_v_module; title = "Cell P$(id.p)M$(id.m)C$(id.c)")
 end
 
