@@ -1102,6 +1102,9 @@ function plot_soc_diagnostic(diag; color = :dodgerblue)
     linkyaxes!(ax[1, 1], ax[1, 2])
     linkyaxes!(ax[2, 1], ax[2, 2])
     rowsize!(fig.layout, 2, Relative(0.3))
+    for (a, tag) in zip((ax[1, 1], ax[1, 2], ax[2, 1], ax[2, 2]), ("A", "B", "C", "D"))
+        text!(a, 0.02, 0.98; text = tag, space = :relative, align = (:left, :top), font = :bold, fontsize = 20)
+    end
     Legend(fig[3, 1:2], fig.content[1]; orientation = :horizontal, merge = true, framevisible = false)
     return fig
 end
