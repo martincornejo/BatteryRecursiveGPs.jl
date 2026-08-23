@@ -90,8 +90,8 @@ fig_cell_soh_hist = plot_cell_soh_hist(cell_fit)
 
 # closed-loop run: frozen ECM parameters, 2-state EKF estimates charge + RC voltage
 # tuning in physical units: q in Ah, rc in V
-θ_soc_cell = (; q = (; σ0 = 0.3, σ1 = 1.5e-3), rc = (; σ0 = 25.0e-3, σ1 = 50.0e-6))
-θ_soc_module = (; q = (; σ0 = 0.3, σ1 = 1.5e-3), rc = (; σ0 = 12 * 25.0e-3, σ1 = 12 * 50.0e-6))
+θ_soc_cell = (; q = (; σ0 = 0.3, σ1 = 3.0e-4), rc = (; σ0 = 25.0e-3, σ1 = 50.0e-6))
+θ_soc_module = (; q = (; σ0 = 0.3, σ1 = 3.0e-4), rc = (; σ0 = 12 * 25.0e-3, σ1 = 12 * 50.0e-6))
 @time cell_soc = fit_soc_models(cell_models, cell_sols, cell_ids; θ = θ_soc_cell);
 @time module_soc = fit_soc_models(module_models, module_sols, module_ids; θ = θ_soc_module);
 
@@ -121,7 +121,7 @@ df_q_err = calc_charge_error(cell_soc.models, cell_soc.sols, data, ti, p1m9_ids,
 
 # evaluate EKF with current sensor fault scenario
 id_diag = (; p = 1, m = 9, c = 2)
-soc_scenarios = ((; offset = 0.0, bias = 0.0), (; offset = 3.0, bias = 0.2))  # Ah, A
+soc_scenarios = ((; offset = 0.0, bias = 0.0), (; offset = 3.0, bias = 0.1))  # Ah, A
 soc_diag = calc_soc_diagnostic(cell_models[id_diag], cell_sols[id_diag], data, ti, id_diag.c, soc_scenarios; θ = θ_soc_cell)
 
 fig_charge_error = plot_charge_error(df_q_err)  # charge accuracy vs oscilloscope (SOC %)
