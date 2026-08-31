@@ -566,7 +566,7 @@ function plot_ecms_comparison(
         ax[1].title = title
         ax[1].ylabel = "OCV / V"
         ax[2].ylabel = rich("R", subscript("Σ"), " / mΩ")
-        ax[2].xlabel = "Charge / Ah"
+        ax[2].xlabel = "Cumulative charge / Ah"
         ax[1].xgridvisible = false
         ax[1].ygridvisible = false
         ax[2].xgridvisible = false
@@ -1381,6 +1381,15 @@ function plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ
     axC = Axis(fig[2, 1]; xlabel = rich("R", subscript("0"), " / mΩ"), ylabel = "Share / %")
     overlay!(axC, df.R0, isnothing(df_mod) ? nothing : df_mod.R0; bins = edges, ymax = 0.5, ystep = 0.2)
     linkxaxes!(axA, axC)
+    # the same cells flagged in (A); their R0 values coincide, so one label carries both
+    out = df[df.R1 .> fence, :]
+    if !isempty(out)
+        text!(
+            axC, mean(out.R0), nrow(out) / nrow(df) + 0.024;
+            text = join(("P$(r.id.p)M$(r.id.m)C$(r.id.c)" for r in eachrow(out)), "\n"),
+            rotation = π / 2, align = (:left, :center), fontsize = 9, color = c_cell, offset = (6, 0)
+        )
+    end
 
     axB = Axis(fig[1, 2]; xlabel = "τ / s", ylabel = "Share / %")
     overlay!(axB, df.τ, isnothing(df_mod) ? nothing : df_mod.τ; bins = τ_edges, ymax = 0.25, ystep = 0.1)
