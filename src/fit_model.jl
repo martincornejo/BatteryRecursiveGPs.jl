@@ -23,7 +23,7 @@ function eval_model(model, sol)
         sol_eval = run_kf!(model, u, y; tt = 0)
     end
     sol_eval = reduce_sol(model, sol_eval)
-    return (;sol_eval, time = stats.time)
+    return (; sol_eval, time = stats.time)
 end
 
 function fit_models_threaded(make_model, make_uy, ids, θ, zt)

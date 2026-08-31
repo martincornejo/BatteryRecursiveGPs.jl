@@ -162,4 +162,3 @@ function calc_soc_pack(Q, soc::AbstractMatrix)
     Q_ch = vec(minimum((1 .- soc) .* Q'; dims = 2))
     return Q_dch ./ (Q_dch .+ Q_ch)
 end
-
