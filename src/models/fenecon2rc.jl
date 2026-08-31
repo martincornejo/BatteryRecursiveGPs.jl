@@ -67,7 +67,7 @@ function _build_fenecon2rc_kf(θ, u, zt; n = 21)
         σ1 = StatsBase.transform(zt.r, [θ.r0.σ1]) |> first,
     )
 
-    # RC (two branches) — reuse helper from yuasa2rc.jl
+    # RC (two branches) — `_build_rc` lives in components.jl
     rc1 = _build_rc(θ.rc1, zt)
     rc2 = _build_rc(θ.rc2, zt)
 

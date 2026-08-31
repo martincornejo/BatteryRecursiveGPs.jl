@@ -66,6 +66,23 @@ function RC(; v0, r0, τ0, σ0_v, σ0_r, σ0_τ, σ1_v, σ1_r, σ1_τ)
 end
 
 
+# Build an `RC` from a θ sub-tuple, converting each entry into the filter's z-scored units.
+# Multi-branch models call this once per branch (`θ.rc1`, `θ.rc2`, …).
+function _build_rc(θrc, zt)
+    return RC(;
+        v0 = StatsBase.transform(zt.σ, [θrc.v0]) |> first,
+        σ0_v = StatsBase.transform(zt.σ, [θrc.σ0_v]) |> first,
+        σ1_v = StatsBase.transform(zt.σ, [θrc.σ1_v]) |> first,
+        r0 = StatsBase.transform(zt.r, [θrc.r0]) |> first,
+        σ0_r = StatsBase.transform(zt.r, [θrc.σ0_r]) |> first,
+        σ1_r = StatsBase.transform(zt.r, [θrc.σ1_r]) |> first,
+        τ0 = θrc.τ0,
+        σ0_τ = θrc.σ0_τ,
+        σ1_τ = θrc.σ1_τ,
+    )
+end
+
+
 function dynamics_rc(rc, i, Ts; kT = 1.0)
     (; v, r, τ) = rc
 

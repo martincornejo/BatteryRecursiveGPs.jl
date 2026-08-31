@@ -22,17 +22,12 @@ abstract type AbstractBatteryModel end
 abstract type AbstractBatteryStateModel <: AbstractBatteryModel end
 
 include("models/components.jl")
-include("models/yuasa.jl")
-include("models/yuasa2rc.jl")
 include("models/fenecon.jl")
 include("models/fenecon2rc.jl")
 include("models/rcgp.jl")
-include("models/rcgp2rc.jl")
-include("models/yuasa_soc.jl")
 include("models/fenecon_soc.jl")
 include("models/fenecon2rc_soc.jl")
 include("models/rcgp_soc.jl")
-include("models/rcgp2rc_soc.jl")
 include("runner.jl")
 include("fit_model.jl")
 include("analysis.jl")
@@ -40,8 +35,8 @@ include("composite_ocv.jl")
 
 # model types
 export AbstractBatteryModel, AbstractBatteryStateModel
-export YuasaModel, Yuasa2RCModel, FeneconModel, Fenecon2RCModel, RCGPModel, RCGP2RCModel
-export YuasaStateModel, FeneconStateModel, Fenecon2RCStateModel, RCGPStateModel, RCGP2RCStateModel
+export FeneconModel, Fenecon2RCModel, RCGPModel
+export FeneconStateModel, Fenecon2RCStateModel, RCGPStateModel
 
 # runner
 export run_kf!, reduce_sol, reinit_kf!
