@@ -713,10 +713,10 @@ function plot_composite_ocv!(layout, comp_fit, cells; xaxis = :soc, vertical = t
 end
 
 # distribution of cell SOH (capacity relative to nominal) across the fleet
-function plot_cell_soh_hist(comp_fit; Q_nom = 100)
+function plot_cell_soh_hist(comp_fit; Q_nom = 100, size = (420, 380))
     soh = Measurements.value.(comp_fit.Q_cell) ./ Q_nom .* 100
 
-    fig = Figure(size = (450, 400))
+    fig = Figure(; size)
     ax = Axis(fig[1, 1], xlabel = "Cell SOH / %", ylabel = "Cell count")
 
     bins = 35:1:85
@@ -1083,8 +1083,8 @@ end
 # charge-estimation accuracy on the reference module: time-resolved SOC error vs the oscilloscope
 # ground truth, one line per cell. Shows the error magnitude, its temporal structure, and the
 # cell-to-cell consistency in one view.
-function plot_charge_error(df; color = Makie.wong_colors()[1])
-    fig = Figure(size = (700, 320))
+function plot_charge_error(df; color = Makie.wong_colors()[1], size = (550, 250))
+    fig = Figure(; size)
     ax = Axis(fig[1, 1], xlabel = "Time / h", ylabel = "SOC error / %")
     cols = filter(!=("t"), names(df))
 
