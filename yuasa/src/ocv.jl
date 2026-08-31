@@ -257,10 +257,10 @@ function calc_soh_validation(Q_meas, s0_meas, Q_rgp, s0_rgp)
     k = mean(qr) / mean(qm)
     return DataFrame(
         cell = collect(eachindex(qm)),
-        Q_meas = qm, 
+        Q_meas = qm,
         Q_rgp = qr,
         ΔQ = qr ./ k .- qm,
-        Q_meas_σ = Measurements.uncertainty.(Q_meas), 
+        Q_meas_σ = Measurements.uncertainty.(Q_meas),
         Q_rgp_σ = Measurements.uncertainty.(Q_rgp),
         soh_meas = (qm ./ mean(qm) .- 1) .* 100,
         soh_rgp = (qr ./ mean(qr) .- 1) .* 100,
@@ -357,14 +357,14 @@ function build_validation_export(comp_fit, ocvs, ids, ref_ids, refs)
         "refs" => Dict(String(k) => v for (k, v) in pairs(refs)),
         "cells" => [
             let i = pos[id]
-                Dict(
-                    "id" => "$(id.p)_$(id.m)_$(id.c)",
-                    "Q" => Measurements.value(comp_fit.Q_cell[i]),
-                    "Q_sigma" => Measurements.uncertainty(comp_fit.Q_cell[i]),
-                    "s0" => Measurements.value(comp_fit.s0[i]),
-                    "s0_sigma" => Measurements.uncertainty(comp_fit.s0[i]),
-                    "q" => collect(ocvs[i].q), "v" => collect(ocvs[i].μ),
-                )
+                    Dict(
+                        "id" => "$(id.p)_$(id.m)_$(id.c)",
+                        "Q" => Measurements.value(comp_fit.Q_cell[i]),
+                        "Q_sigma" => Measurements.uncertainty(comp_fit.Q_cell[i]),
+                        "s0" => Measurements.value(comp_fit.s0[i]),
+                        "s0_sigma" => Measurements.uncertainty(comp_fit.s0[i]),
+                        "q" => collect(ocvs[i].q), "v" => collect(ocvs[i].μ),
+                    )
             end for id in ref_ids
         ],
     )
@@ -395,17 +395,17 @@ function plot_validation(vals, labels)
     cols = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
     c_meas = :gray55
 
-    fig = Figure(size = (700, 530))
+    fig = Figure(size = (630, 450))
 
     axA = Axis(
         fig[1, 1]; xlabel = "SOC / %", ylabel = "OCV / V",
         limits = (0, 100, nothing, nothing), xgridvisible = false, ygridvisible = false,
     )
     for v in vals, cv in v.curves
-        lines!(axA, cv.soc_meas, cv.v_meas; color = (c_meas, 0.6))
+        lines!(axA, cv.soc_meas, cv.v_meas; color = (c_meas, 0.8))
     end
     for (j, v) in enumerate(vals), cv in v.curves
-        lines!(axA, cv.soc_rgp, cv.v_rgp; color = (cols[j], 0.7), linestyle = :dash)
+        lines!(axA, cv.soc_rgp, cv.v_rgp; color = (cols[j], 0.8), linestyle = :dash)
     end
     axislegend(
         axA,
@@ -420,7 +420,7 @@ function plot_validation(vals, labels)
         xgridvisible = false, ygridvisible = false, limits = (0, 100, -25, 15),
     )
     for (j, v) in enumerate(vals), cv in v.curves
-        lines!(axB, cv.soc, cv.r; color = (cols[j], 0.5), linewidth = 0.8)
+        lines!(axB, cv.soc, cv.r; color = (cols[j], 0.5))
     end
     hlines!(axB, [0]; color = :black, linestyle = :dot)
     linkxaxes!(axA, axB)
@@ -451,9 +451,9 @@ function plot_validation(vals, labels)
         d = v.df_soh
         errorbars!(axC, d.Q_meas, d.Q_rgp, d.Q_rgp_σ; color = (cols[j], 0.3), whiskerwidth = 0)
         errorbars!(axC, d.Q_meas, d.Q_rgp, d.Q_meas_σ; color = (cols[j], 0.3), whiskerwidth = 0, direction = :x)
-        scatter!(axC, d.Q_meas, d.Q_rgp; color = cols[j], markersize = 8, strokewidth = 0.5, strokecolor = :white, label = labels[j])
+        scatter!(axC, d.Q_meas, d.Q_rgp; color = cols[j], markersize = 8, strokewidth = 0.1, strokecolor = :white, label = labels[j])
         errorbars!(axD, d.s0_meas, d.s0_rgp, d.s0_rgp_σ; color = (cols[j], 0.3), whiskerwidth = 0)
-        scatter!(axD, d.s0_meas, d.s0_rgp; color = cols[j], markersize = 8, strokewidth = 0.5, strokecolor = :white)
+        scatter!(axD, d.s0_meas, d.s0_rgp; color = cols[j], markersize = 8, strokewidth = 0.1, strokecolor = :white)
     end
     for a in (:x, :y)
         setproperty!(axC, Symbol(a, :minorticks), IntervalsBetween(2))
@@ -499,7 +499,7 @@ function plot_validation_rmse(vals, labels; bins = 0:1:16)
         limits = (first(bins), last(bins), 0, 50), xticks = first(bins):4:last(bins),
         xgridvisible = false, ygridvisible = false,
     )
-    xs = repeat(collect(bins[1:end-1]) .+ 0.5, length(vals))
+    xs = repeat(collect(bins[1:(end - 1)]) .+ 0.5, length(vals))
     grp = repeat(1:length(vals); inner = nb)
     barplot!(ax, xs, vec(counts); stack = grp, color = cols[grp], gap = 0.05, strokewidth = 0.5, strokecolor = :white)
     Legend(
