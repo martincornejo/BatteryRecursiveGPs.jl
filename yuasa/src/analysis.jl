@@ -215,7 +215,7 @@ function calc_soc_diagnostic(model, sol, data, ti, c, scenarios; θ, Ts = 1.0, z
         # inject the bias into the input current and accumulate it into the charge channel so the
         # module-current Coulomb-counting reference (sol.ut.q) drifts with it
         u = [(; i = ui.i + bias_z, q = ui.q + bias_z * (k / 3600), ui.T) for (k, ui) in enumerate(sol.u)]
-        sm = RCGPStateModel(model; q0 = offset, Ts, θ)
+        sm = YuasaStateModel(model; q0 = offset, Ts, θ)
         s = reduce_sol(sm, run_kf!(sm, u, sol.y))
         t = s.idx
         (;

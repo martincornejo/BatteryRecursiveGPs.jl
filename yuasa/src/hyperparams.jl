@@ -28,7 +28,7 @@ end
 function fit_units_init(pool, ids, unit_data, ϑ, zt; n = 1)
     tasks = Dict(
         id => remotecall(
-                fit_ocv_curve, pool, RCGPModel,
+                fit_ocv_curve, pool, YuasaModel,
                 unit_data[id].u, unit_data[id].y,
                 scale_θ(unit_data[id].u, unit_data[id].y, ϑ; n), zt
             )
@@ -67,7 +67,7 @@ function escalate_units(
     tasks = Dict(
         (id, ℓ_ocv, ℓ_r1) =>
             remotecall(
-                fit_ocv_curve, pool, RCGPModel, unit_data[id].u, unit_data[id].y,
+                fit_ocv_curve, pool, YuasaModel, unit_data[id].u, unit_data[id].y,
                 scale_θ(
                     unit_data[id].u, unit_data[id].y,
                     merge(
@@ -155,7 +155,7 @@ end
 
 # Data-scaled GP hyperparameters per unit in physical units: length scales in Ah (ℓ from
 # scale_θ is in z-scored charge → × zt.q scale), σ as the PRIOR STD per cell in mV (OCV) /
-# mΩ (R1) — θ.σ multiplies the kernel, i.e. it is a variance, so the std is √θσ (rcgp.jl).
+# mΩ (R1) — θ.σ multiplies the kernel, i.e. it is a variance, so the std is √θσ (yuasa.jl).
 # The selected nominal values are carried along for the figure's color coding.
 function calc_scaled_hyperparams(sel, unit_data, zt)
     (; picks, ids, ϑ, n) = sel

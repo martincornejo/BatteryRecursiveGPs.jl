@@ -1,6 +1,20 @@
 """
-OCV as RGP, R0 as a scalar constant (random walk),
-with Arrhenius temperature dependence and two parallel RC branches.
+    Fenecon2RCModel(θ, u, zt; n = 21)
+
+As [`FeneconModel`](@ref), but with two RC branches in series — a fast and a slow one — so
+`θ` supplies `rc1` and `rc2` instead of a single `rc`.
+
+| axis        | value              |
+|-------------|--------------------|
+| GP curves   | OCV                |
+| R0          | scalar random walk |
+| R1, R2      | scalar random walks (inside the RC states) |
+| temperature | Arrhenius          |
+| GP domain   | charge (Ah)        |
+| RC branches | 2                  |
+
+`n` sets the number of GP basis points. This is the only multi-branch model in the package,
+so it is also the reference for how a multi-RC layout is assembled.
 """
 struct Fenecon2RCModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
@@ -88,29 +102,15 @@ end
 
 
 """
-    reinit_kf!(model::Fenecon2RCModel; x=model.kf.x, R=model.kf.R)
+    reinit_kf!(model::Fenecon2RCModel; x = model.kf.x, R = model.kf.R)
 
-Reinit the 2-RC KF for a second pass: reset charge and both RC voltages to 0,
-clear CC cross-correlations, keep GP/RC/Arrhenius/scalar-R0 posteriors.
+Reinitialize for a second pass over the same data, warm-starting from a previous run.
+
+Resets the Coulomb-counted charge and **both** RC voltages to 0, and clears the charge
+state's cross-covariances. Keeps the OCV GP posterior, the scalar R0, both branches'
+parameters (r, τ) and the Arrhenius state.
 """
-function reinit_kf!(model::Fenecon2RCModel; x = model.kf.x, R = model.kf.R)
-    kf = model.kf
-    (; xid, Σid) = kf.p
-
-    x_new = ComponentVector(copy(x), xid)
-    x_new.cc.q = 0.0
-    x_new.rc1.v = 0.0
-    x_new.rc2.v = 0.0
-    kf.x .= x_new
-
-    Σ_new = ComponentMatrix(copy(R), Σid)
-    Σ_new[:cc, :] .= 0
-    Σ_new[:, :cc] .= 0
-    Σ_new[:cc, :cc] .= 0.0
-    kf.R .= Σ_new
-
-    return model
-end
+reinit_kf!(model::Fenecon2RCModel; x = model.kf.x, R = model.kf.R) = _reinit_kf!(model, :rc1, :rc2; x, R)
 
 
 # === reduce_sol

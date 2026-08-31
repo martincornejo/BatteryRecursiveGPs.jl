@@ -1,19 +1,19 @@
 """
 Reduced 2-state model for SOC estimation with frozen ECM parameters.
-Built from a fitted RCGPModel: scalar R0, RC time constant τ1, and Arrhenius
+Built from a fitted YuasaModel: scalar R0, RC time constant τ1, and Arrhenius
 parameters are fixed; R1 stays as a GP function of charge (frozen weights from
 the parent KF). Only charge (q) and RC voltage (vrc) are estimated online.
 """
-struct RCGPStateModel <: AbstractBatteryStateModel
+struct YuasaStateModel <: AbstractBatteryStateModel
     kf::ExtendedKalmanFilter
 end
 
-RCGPStateModel(model::RCGPModel; q0, Ts, θ) = RCGPStateModel(_build_rcgp_soc_kf(model.kf; q0, Ts, θ))
+YuasaStateModel(model::YuasaModel; q0, Ts, θ) = YuasaStateModel(_build_yuasa_soc_kf(model.kf; q0, Ts, θ))
 
 
 # === private dynamics / measurement / R2
 
-function _rcgp_dynamics_soc(x, u, p, t)
+function _yuasa_dynamics_soc(x, u, p, t)
     (; kf, Ts, τ1, T0, k) = p
     (; i, T) = u
 
@@ -32,7 +32,7 @@ function _rcgp_dynamics_soc(x, u, p, t)
     return SA[q⁺, vrc⁺]
 end
 
-function _rcgp_measurement_soc(x, u, p, t)
+function _yuasa_measurement_soc(x, u, p, t)
     (; kf, T0, k, r0) = p
     kfx = ComponentVector(kf.x, kf.p.xid)
     q = x[1]
@@ -46,7 +46,7 @@ function _rcgp_measurement_soc(x, u, p, t)
     return ocv + i * r0 * kT + vrc |> SVector{1}
 end
 
-function _rcgp_R2_soc(x, u, p, t)
+function _yuasa_R2_soc(x, u, p, t)
     (; kf) = p
     q = x[1]
     ocv = uncertainty_gp(kf.p.ocv, q)
@@ -56,7 +56,7 @@ end
 
 # === builder
 
-function _build_rcgp_soc_kf(kf1; q0, Ts, θ)
+function _build_yuasa_soc_kf(kf1; q0, Ts, θ)
     xid = kf1.p.xid
     T0 = kf1.p.arr.T0
     vσ² = kf1.p.vσ²
@@ -78,5 +78,5 @@ function _build_rcgp_soc_kf(kf1; q0, Ts, θ)
     Σ = @SMatrix [σ̂q0^2 0; 0 σ̂v0^2]
     d0 = LLPF.SimpleMvNormal(x0, Σ)
     R1 = @SMatrix [σ̂q1^2 0; 0 σ̂v1^2]
-    return ExtendedKalmanFilter(_rcgp_dynamics_soc, _rcgp_measurement_soc, R1, _rcgp_R2_soc, d0; nx = 2, nu = 1, ny = 1, p)
+    return ExtendedKalmanFilter(_yuasa_dynamics_soc, _yuasa_measurement_soc, R1, _yuasa_R2_soc, d0; nx = 2, nu = 1, ny = 1, p)
 end

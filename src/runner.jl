@@ -67,6 +67,32 @@ function run_kf!(kf, u, y; tt = length(u))
 end
 
 
+# Shared body for the per-model `reinit_kf!` methods. Charge and its covariance block are
+# hard-coded: every model here Coulomb-counts, and re-anchoring `cc.q` to 0 always makes its
+# accumulated correlations stale. Only the RC branch names differ, so each model passes its
+# own. No method on `AbstractBatteryModel` — a model that has not declared how it
+# reinitializes should raise a MethodError rather than inherit a guess.
+function _reinit_kf!(model, rc_branches...; x, R)
+    kf = model.kf
+    (; xid, Σid) = kf.p
+
+    x_new = ComponentVector(copy(x), xid)
+    x_new.cc.q = 0.0
+    for branch in rc_branches
+        getproperty(x_new, branch).v = 0.0
+    end
+    kf.x .= x_new
+
+    Σ_new = ComponentMatrix(copy(R), Σid)
+    Σ_new[:cc, :] .= 0
+    Σ_new[:, :cc] .= 0
+    Σ_new[:cc, :cc] .= 0.0
+    kf.R .= Σ_new
+
+    return model
+end
+
+
 function reduce_sol(model::AbstractBatteryStateModel, sol)
     (; xt, Rt) = sol
     qμ = [x[1] for x in xt]

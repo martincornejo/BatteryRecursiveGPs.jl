@@ -143,7 +143,7 @@ function cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore())
 
     q = cumsum(df_î.value) * Ts / 3600
 
-    # temperature — RCGPModel's measurement function reads u.T (Arrhenius factor)
+    # temperature — YuasaModel's measurement function reads u.T (Arrhenius factor)
     df_T = copy(data[:battery_temperature])
     select!(df_T, "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
     df_T = interpolate(df_T, ti; Ts)
@@ -210,7 +210,7 @@ function fit_cells(data, ϑ, ti, ids)
     zt = fit_zscore()
     make_uy = id -> cell_dataset(data, ti, id.p, id.m, id.c; zt)
     make_θ = (u, y, id) -> scale_θ(u, y, ϑ[id])
-    (; models, sols) = fit_models_thread(RCGPModel, make_uy, make_θ, ids, zt)
+    (; models, sols) = fit_models_thread(YuasaModel, make_uy, make_θ, ids, zt)
     return (; cell_models = models, cell_sols = sols)
 end
 
@@ -218,7 +218,7 @@ function fit_modules(data, ϑ, ti, ids)
     zt = fit_zscore(12)
     make_uy = id -> module_dataset(data, ti, id.p, id.m; zt)
     make_θ = (u, y, id) -> scale_θ(u, y, ϑ[id]; n = 12)  # module-scale priors (12 series cells), matching zt = fit_zscore(12)
-    (; models, sols) = fit_models_thread(RCGPModel, make_uy, make_θ, ids, zt)
+    (; models, sols) = fit_models_thread(YuasaModel, make_uy, make_θ, ids, zt)
     return (; module_models = models, module_sols = sols)
 end
 
@@ -260,7 +260,7 @@ end
 # closed-loop run: frozen ECM parameters, 2-state EKF estimates charge + RC voltage
 function fit_soc_models(models, sols, ids; q0 = 0.0, Ts = 1.0, θ)
     runs = thread_map(ids) do id
-        sm = RCGPStateModel(models[id]; q0, Ts, θ)
+        sm = YuasaStateModel(models[id]; q0, Ts, θ)
         sol = run_kf!(sm, sols[id].u, sols[id].y)
         sol = reduce_sol(sm, sol)
         (; model = sm, sol)

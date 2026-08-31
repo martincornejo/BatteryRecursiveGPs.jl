@@ -376,7 +376,7 @@ function plot_q_estimation(q_ref, sol, model::AbstractBatteryModel)
     return fig
 end
 
-# Figure showing the RCGP ECM (OCV + R0/R1) at one filter step, next to the measured voltage and
+# Figure showing the ECM (OCV + R0/R1) at one filter step, next to the measured voltage and
 # the voltage the ECM reproduces on its own, with a cursor marking how much data the filter has
 # seen. Returns the figure plus a `set_frame!(i)` closure that moves it to frame `i` — shared by
 # `animate_model` and `plot_animation_snapshot`.
@@ -391,7 +391,7 @@ end
 #
 # Mutates `model.kf` (see `predict_v` below) — the ECM curves read the passed-in x/R rather than
 # the filter state, so the sol stays valid, but do not rely on `model` afterwards.
-function _model_frame(model::RCGPModel, sol; prior = nothing)
+function _model_frame(model::YuasaModel, sol; prior = nothing)
     kf = model.kf
     zt = kf.p.zt
     (; yt) = sol
@@ -484,13 +484,13 @@ function _model_frame(model::RCGPModel, sol; prior = nothing)
     return (; fig, set_frame!, n_frames = length(xt))
 end
 
-# Animate the RCGP ECM as the filter learns over the dataset. `step` is the stride in filter steps
+# Animate the ECM as the filter learns over the dataset. `step` is the stride in filter steps
 # between rendered frames; duration is `length(1:step:n_frames) / framerate` seconds. See
 # `_model_frame` for what `model`/`sol`/`prior` must be.
 # NOTE: each frame re-simulates the whole dataset open-loop (~3 s), so a full run costs roughly
 # `n_frames / step × 3 s` — check the frame count before starting. Stretching the duration via
 # `framerate` is free; doing it via `step` is not.
-function animate_model(file, model::RCGPModel, sol; step = 60, framerate = 24, prior = nothing)
+function animate_model(file, model::YuasaModel, sol; step = 60, framerate = 24, prior = nothing)
     (; fig, set_frame!, n_frames) = _model_frame(model, sol; prior)
     return record(set_frame!, fig, file, 1:step:n_frames; framerate)
 end
@@ -498,16 +498,16 @@ end
 # Single frame of the learning animation, at frame `i` — debugging aid for checking the figure
 # without paying for the full video. Unexported: call it as `YuasaAnalysis.plot_animation_snapshot`.
 # With `prior` given, frame 1 is the pre-observation state and filter step `k` is frame `k + 1`.
-function plot_animation_snapshot(model::RCGPModel, sol, i; prior = nothing)
+function plot_animation_snapshot(model::YuasaModel, sol, i; prior = nothing)
     (; fig, set_frame!) = _model_frame(model, sol; prior)
     set_frame!(i)
     return fig
 end
 
 
-# ECM curves for one RCGP cell/module onto a 2-row axis (OCV top, R0+R1(q) bottom).
+# ECM curves for one cell/module onto a 2-row axis (OCV top, R0+R1(q) bottom).
 # Helper for plot_ecms_comparison below.
-function plot_ecm!(ax, model::RCGPModel, sol; color = nothing)
+function plot_ecm!(ax, model::YuasaModel, sol; color = nothing)
     kw = isnothing(color) ? (;) : (; color)
     kf = model.kf
     zt = kf.p.zt

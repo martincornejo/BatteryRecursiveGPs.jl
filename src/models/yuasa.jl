@@ -1,17 +1,34 @@
 """
-OCV as RGP, R0 as a scalar constant (random walk), R1 (RC resistance) as RGP,
-with Arrhenius temperature dependence and RC circuit dynamics.
+    YuasaModel(θ, u, zt; n = 21, pad = 0.05)
+
+Full identification model: OCV **and** the RC-branch resistance R1 are recursive GPs over
+charge, R0 is a scalar random walk.
+
+| axis        | value              |
+|-------------|--------------------|
+| GP curves   | OCV, R1            |
+| R0          | scalar random walk |
+| temperature | Arrhenius          |
+| GP domain   | charge (Ah)        |
+| RC branches | 1                  |
+
+`n` sets the number of GP basis points; `pad` extends the basis past each observed charge
+edge by that fraction of the span, so boundary basis points sit inside the data rather than
+on its edge.
+
+The type name is a study label — the cell manufacturer of the dataset it was built for — not
+a description of the model. The table above is the authority.
 """
-struct RCGPModel <: AbstractBatteryModel
+struct YuasaModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
 end
 
-RCGPModel(θ, u, zt; n = 21, pad = 0.05) = RCGPModel(_build_rcgp_kf(θ, u, zt; n, pad))
+YuasaModel(θ, u, zt; n = 21, pad = 0.05) = YuasaModel(_build_yuasa_kf(θ, u, zt; n, pad))
 
 
 # === private dynamics / measurement / R2
 
-function _rcgp_dynamics!(x⁺, x⁻, u, p, t)
+function _yuasa_dynamics!(x⁺, x⁻, u, p, t)
     (; xid, Ts) = p
     (; i, T) = u
     xc⁻ = ComponentVector(x⁻, xid)
@@ -26,7 +43,7 @@ function _rcgp_dynamics!(x⁺, x⁻, u, p, t)
     return nothing # IPD
 end
 
-function _rcgp_measurement(x, u, p, t)
+function _yuasa_measurement(x, u, p, t)
     (; xid) = p
     (; i, T) = u
     xc = ComponentVector(x, xid)
@@ -40,7 +57,7 @@ function _rcgp_measurement(x, u, p, t)
     return ocv + i * r0 + vrc |> SVector{1}
 end
 
-function _rcgp_R2(x, u, p, t)
+function _yuasa_R2(x, u, p, t)
     (; vσ², xid) = p
     xc = ComponentVector(x, xid)
     (; q) = xc.cc
@@ -51,7 +68,7 @@ end
 
 # === builder
 
-function _build_rcgp_kf(θ, u, zt; n = 21, pad = 0.05)
+function _build_yuasa_kf(θ, u, zt; n = 21, pad = 0.05)
     qmin, qmax = extrema([x.q for x in u])
     Δq = qmax - qmin
     b0 = range(qmin - pad * Δq, qmax + pad * Δq, n) |> collect
@@ -90,42 +107,25 @@ function _build_rcgp_kf(θ, u, zt; n = 21, pad = 0.05)
     p = (; arr = arr.p, Ts = θ.Ts, vσ², zt)
     components = (; ocv = rgp1, r1 = rgp2, r0, rc, arr, cc)
 
-    return ExtendedKalmanFilter(components, _rcgp_dynamics!, _rcgp_measurement, _rcgp_R2; p)
+    return ExtendedKalmanFilter(components, _yuasa_dynamics!, _yuasa_measurement, _yuasa_R2; p)
 end
 
 
 """
-    reinit_kf!(model::RCGPModel; x=model.kf.x, R=model.kf.R)
+    reinit_kf!(model::YuasaModel; x = model.kf.x, R = model.kf.R)
 
-Reinitialize the KF for a second pass on the same data, warm-starting GP and
-scalar posteriors from a previous run.
+Reinitialize for a second pass over the same data, warm-starting from a previous run.
 
-Keeps: GP (ocv, r1) state and covariance, scalar R0 state, RC parameters (τ),
-Arrhenius state.
-Resets: CC charge to q=0, RC voltage to 0, CC cross-correlations to 0.
+Resets the Coulomb-counted charge and the RC voltage to 0, and clears the charge state's
+cross-covariances. Keeps the OCV and R1 GP posteriors, the scalar R0, the RC time constant
+and the Arrhenius state.
 """
-function reinit_kf!(model::RCGPModel; x = model.kf.x, R = model.kf.R)
-    kf = model.kf
-    (; xid, Σid) = kf.p
-
-    x_new = ComponentVector(copy(x), xid)
-    x_new.cc.q = 0.0
-    x_new.rc.v = 0.0
-    kf.x .= x_new
-
-    Σ_new = ComponentMatrix(copy(R), Σid)
-    Σ_new[:cc, :] .= 0
-    Σ_new[:, :cc] .= 0
-    Σ_new[:cc, :cc] .= 0.0
-    kf.R .= Σ_new
-
-    return model
-end
+reinit_kf!(model::YuasaModel; x = model.kf.x, R = model.kf.R) = _reinit_kf!(model, :rc; x, R)
 
 
 # === reduce_sol
 
-function reduce_sol(model::RCGPModel, sol)
+function reduce_sol(model::YuasaModel, sol)
     kf = model.kf
     (; xid, Σid) = kf.p
     (; xt, Rt) = sol

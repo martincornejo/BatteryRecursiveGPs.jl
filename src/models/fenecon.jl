@@ -1,6 +1,22 @@
 """
-OCV as RGP, R0 as a scalar constant (random walk),
-with Arrhenius temperature dependence and RC circuit dynamics.
+    FeneconModel(θ, u, zt; n = 21)
+
+Full identification model: OCV is the only recursive GP; both resistances are scalar
+random-walk states.
+
+| axis        | value              |
+|-------------|--------------------|
+| GP curves   | OCV                |
+| R0          | scalar random walk |
+| R1          | scalar random walk (inside the RC state) |
+| temperature | Arrhenius          |
+| GP domain   | charge (Ah)        |
+| RC branches | 1                  |
+
+`n` sets the number of GP basis points.
+
+The type name is a study label, not a description of the model — the table above is the
+authority. Note it is used by two unrelated projects, including one on Yuasa cells.
 """
 struct FeneconModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
@@ -11,7 +27,7 @@ FeneconModel(θ, u, zt; n = 21) = FeneconModel(_build_fenecon_kf(θ, u, zt; n))
 
 # === private dynamics / measurement / R2
 
-function _cr0_dynamics!(x⁺, x⁻, u, p, t)
+function _fenecon_dynamics!(x⁺, x⁻, u, p, t)
     (; xid, Ts) = p
     (; i, T) = u
     xc⁻ = ComponentVector(x⁻, xid)
@@ -24,7 +40,7 @@ function _cr0_dynamics!(x⁺, x⁻, u, p, t)
     return nothing # IPD
 end
 
-function _cr0_measurement(x, u, p, t)
+function _fenecon_measurement(x, u, p, t)
     (; xid) = p
     (; i, T) = u
     xc = ComponentVector(x, xid)
@@ -38,7 +54,7 @@ function _cr0_measurement(x, u, p, t)
     return ocv + i * r0 + vrc |> SVector{1}
 end
 
-function _cr0_R2(x, u, p, t)
+function _fenecon_R2(x, u, p, t)
     (; vσ², xid) = p
     xc = ComponentVector(x, xid)
     (; q) = xc.cc
@@ -91,37 +107,20 @@ function _build_fenecon_kf(θ, u, zt; n = 21)
     p = (; arr = arr.p, Ts = θ.Ts, vσ², zt)
     components = (; ocv = rgp1, r0, rc, arr, cc)
 
-    return ExtendedKalmanFilter(components, _cr0_dynamics!, _cr0_measurement, _cr0_R2; p)
+    return ExtendedKalmanFilter(components, _fenecon_dynamics!, _fenecon_measurement, _fenecon_R2; p)
 end
 
 
 """
-    reinit_kf!(model::FeneconModel; x=model.kf.x, R=model.kf.R)
+    reinit_kf!(model::FeneconModel; x = model.kf.x, R = model.kf.R)
 
-Reinitialize the KF for a second pass on the same data, warm-starting the
-posterior from a previous run.
+Reinitialize for a second pass over the same data, warm-starting from a previous run.
 
-Keeps: GP OCV state and covariance, scalar R0 state, RC parameters (r, τ),
-Arrhenius state.
-Resets: CC charge to q=0, RC voltage to 0, CC cross-correlations to 0.
+Resets the Coulomb-counted charge and the RC voltage to 0, and clears the charge state's
+cross-covariances. Keeps the OCV GP posterior, the scalar R0, the RC parameters (r, τ) and
+the Arrhenius state.
 """
-function reinit_kf!(model::FeneconModel; x = model.kf.x, R = model.kf.R)
-    kf = model.kf
-    (; xid, Σid) = kf.p
-
-    x_new = ComponentVector(copy(x), xid)
-    x_new.cc.q = 0.0
-    x_new.rc.v = 0.0
-    kf.x .= x_new
-
-    Σ_new = ComponentMatrix(copy(R), Σid)
-    Σ_new[:cc, :] .= 0
-    Σ_new[:, :cc] .= 0
-    Σ_new[:cc, :cc] .= 0.0
-    kf.R .= Σ_new
-
-    return model
-end
+reinit_kf!(model::FeneconModel; x = model.kf.x, R = model.kf.R) = _reinit_kf!(model, :rc; x, R)
 
 
 # === reduce_sol

@@ -23,7 +23,7 @@ zt = fit_zscore()
 (; u, y) = cell_dataset(data, ti, id.p, id.m, id.c; zt)
 
 θ = scale_θ(u, y, cell_ϑ[id])
-model = RCGPModel(θ, u, zt)
+model = YuasaModel(θ, u, zt)
 prior = (; x = copy(model.kf.x), R = copy(model.kf.R))  # frame 1: before any observation
 
 @time sol_full = run_kf!(model, u, y);
