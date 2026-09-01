@@ -1,4 +1,4 @@
-function ColoumbCounting(; q0 = 0.0, σ0 = 0.0, σ1)
+function CoulombCounting(; q0 = 0.0, σ0 = 0.0, σ1)
     μ0 = ComponentVector(q = q0)
     Σ0 = false .* μ0 * μ0'
     Σ0[:q, :q] = σ0^2

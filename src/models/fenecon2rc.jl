@@ -4,17 +4,16 @@
 As [`FeneconModel`](@ref), but with two RC branches in series — a fast and a slow one — so
 `θ` supplies `rc1` and `rc2` instead of a single `rc`.
 
-| axis        | value              |
-|-------------|--------------------|
-| GP curves   | OCV                |
-| R0          | scalar random walk |
-| R1, R2      | scalar random walks (inside the RC states) |
-| temperature | Arrhenius          |
-| GP domain   | charge (Ah)        |
-| RC branches | 2                  |
+| axis        | value               |
+|-------------|---------------------|
+| GP curves   | OCV                 |
+| R0          | scalar random walk  |
+| R1, R2      | scalar random walks |
+| temperature | Arrhenius           |
+| GP domain   | charge (Ah)         |
+| RC branches | 2                   |
 
-`n` sets the number of GP basis points. This is the only multi-branch model in the package,
-so it is also the reference for how a multi-RC layout is assembled.
+`n` sets the number of GP basis points.
 """
 struct Fenecon2RCModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
@@ -81,7 +80,7 @@ function _build_fenecon2rc_kf(θ, u, zt; n = 21)
         σ1 = StatsBase.transform(zt.r, [θ.r0.σ1]) |> first,
     )
 
-    # RC (two branches) — `_build_rc` lives in components.jl
+    # RC (two branches)
     rc1 = _build_rc(θ.rc1, zt)
     rc2 = _build_rc(θ.rc2, zt)
 
@@ -89,7 +88,7 @@ function _build_fenecon2rc_kf(θ, u, zt; n = 21)
     arr = Arrhenius(; θ.arr...)
 
     # coulomb counting
-    cc = ColoumbCounting(; θ.cc...)
+    cc = CoulombCounting(; θ.cc...)
 
     # measurement noise
     vσ² = StatsBase.transform(zt.σ, [θ.vσ]) |> first |> abs2

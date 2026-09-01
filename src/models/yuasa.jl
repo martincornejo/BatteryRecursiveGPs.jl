@@ -15,9 +15,6 @@ charge, R0 is a scalar random walk.
 `n` sets the number of GP basis points; `pad` extends the basis past each observed charge
 edge by that fraction of the span, so boundary basis points sit inside the data rather than
 on its edge.
-
-The type name is a study label — the cell manufacturer of the dataset it was built for — not
-a description of the model. The table above is the authority.
 """
 struct YuasaModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
@@ -98,7 +95,7 @@ function _build_yuasa_kf(θ, u, zt; n = 21, pad = 0.05)
     )
 
     arr = Arrhenius(; θ.arr...)
-    cc = ColoumbCounting(;
+    cc = CoulombCounting(;
         σ0 = StatsBase.transform(zt.q, [θ.cc.σ0]) |> first,
         σ1 = StatsBase.transform(zt.q, [θ.cc.σ1]) |> first,
     )

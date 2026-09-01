@@ -8,15 +8,12 @@ random-walk states.
 |-------------|--------------------|
 | GP curves   | OCV                |
 | R0          | scalar random walk |
-| R1          | scalar random walk (inside the RC state) |
+| R1          | scalar random walk |
 | temperature | Arrhenius          |
 | GP domain   | charge (Ah)        |
 | RC branches | 1                  |
 
 `n` sets the number of GP basis points.
-
-The type name is a study label, not a description of the model — the table above is the
-authority. Note it is used by two unrelated projects, including one on Yuasa cells.
 """
 struct FeneconModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
@@ -99,7 +96,7 @@ function _build_fenecon_kf(θ, u, zt; n = 21)
     arr = Arrhenius(; θ.arr...)
 
     # coulomb counting
-    cc = ColoumbCounting(; θ.cc...)
+    cc = CoulombCounting(; θ.cc...)
 
     # measurement noise
     vσ² = StatsBase.transform(zt.σ, [θ.vσ]) |> first |> abs2

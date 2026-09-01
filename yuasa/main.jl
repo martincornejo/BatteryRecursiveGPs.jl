@@ -113,7 +113,7 @@ fig_soc_heatmap = plot_soc_discrepancy_heatmap(tg, soc_err)  # Fig S3
 
 # === EKF vs Coulomb counting ===
 
-# validate the EKF charge estimate against the Coloumb counting baseline
+# validate the EKF charge estimate against the Coulomb counting baseline
 p1m9_ids = [(; p = 1, m = 9, c) for c in 1:12]
 Q_p1m9 = cell_capacities(cell_fit, cell_ids, p1m9_ids)
 df_q_acc = calc_charge_accuracy(cell_soc.models, cell_soc.sols, data, ti, p1m9_ids, Q_p1m9)

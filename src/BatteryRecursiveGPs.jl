@@ -45,14 +45,13 @@ export fit_model, fit_models_threaded, fit_models_distributed, fit_ocv_curve
 export eval_model
 
 # model components
-export ColoumbCounting, dynamics_cc
+export CoulombCounting, dynamics_cc
 export Arrhenius, arrhenius_factor
 export R0, RC, dynamics_rc, RC_VTau, dynamics_rc_vτ
 
 # analysis
-export calc_deltaq, calc_Q, calc_soc0, calc_soh # single cell
-export gls_fit, calc_wls, gp_ocv, gp_r0, gp_r1, gp_r2, charge_trajectory, voltage_error # improved GLS-based estimation
-export calc_Q_pack, calc_soc_pack, calc_soh_pack, calc_Q_utilization # battery pack
+export gp_ocv, gp_r1, charge_trajectory, voltage_error # posteriors in physical units
+export calc_Q_pack, calc_soc_pack, calc_soh_pack # battery pack
 export fit_composite_ocv, rescale_composite_ocv, fit_cells_to_reference # composite OCV from cell posteriors
 
 end # module BatteryRecursiveGPs

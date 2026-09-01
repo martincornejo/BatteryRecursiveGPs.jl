@@ -39,32 +39,10 @@ function gp_ocv(model::AbstractBatteryModel, sol)
 end
 
 """
-    gp_r0(model, sol)
-
-Return the GP R0 posterior over the observed charge range as `(; q, μ, σ)`
-in physical units (Ah, Ω, Ω).
-"""
-function gp_r0(model::AbstractBatteryModel, sol)
-    kf = _gp_kf(model)
-    zt = kf.p.zt
-
-    q̂min, q̂max = _charge_range(model, sol)
-    q̂ = collect(q̂min:0.01:q̂max)
-    q = StatsBase.reconstruct(zt.q, q̂)
-
-    r0 = predict_gp(kf, q̂, :r0)
-    μ = StatsBase.reconstruct(zt.r, r0.μ)
-    σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r0.Σ)))
-
-    return (; q, μ, σ)
-end
-
-"""
     gp_r1(model, sol)
 
 Return the GP R1 posterior over the observed charge range as `(; q, μ, σ)`
-in physical units (Ah, Ω, Ω). For models with a 2-RC layout, `gp_r2` returns
-the second branch's posterior.
+in physical units (Ah, Ω, Ω).
 """
 function gp_r1(model::AbstractBatteryModel, sol)
     kf = _gp_kf(model)
@@ -77,21 +55,6 @@ function gp_r1(model::AbstractBatteryModel, sol)
     r1 = predict_gp(kf, q̂, :r1)
     μ = StatsBase.reconstruct(zt.r, r1.μ)
     σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ)))
-
-    return (; q, μ, σ)
-end
-
-function gp_r2(model::AbstractBatteryModel, sol)
-    kf = _gp_kf(model)
-    zt = kf.p.zt
-
-    q̂min, q̂max = _charge_range(model, sol)
-    q̂ = collect(q̂min:0.01:q̂max)
-    q = StatsBase.reconstruct(zt.q, q̂)
-
-    r2 = predict_gp(kf, q̂, :r2)
-    μ = StatsBase.reconstruct(zt.r, r2.μ)
-    σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r2.Σ)))
 
     return (; q, μ, σ)
 end
@@ -125,30 +88,10 @@ end
 
 calc_Q_pack(Q, soc) = minimum(soc .* Q) + minimum((1 .- soc) .* Q)
 
-function calc_Q_pack(params::AbstractDict)
-    Q = [cell[:Q] for cell in values(params)]
-    soc = [cell[:soc] for cell in values(params)]
-    return calc_Q_pack(Q, soc)
-end
-
 function calc_soh_pack(Q, soc, Q_nom; delta_soc = true)
     # delta_soc: Qloss due to degradation + Δsoc; otherwise degradation only
     Q_pack = delta_soc ? calc_Q_pack(Q, soc) : minimum(Q)
     return Q_pack / Q_nom
-end
-
-function calc_Q_utilization(params; delta_soc = true)
-    n_cells = length(params)
-    Q_cells_total = sum(params[cell_id][:Q] for cell_id in keys(params))
-
-    if delta_soc
-        # Qloss due to degradation + Δsoc
-        Q_pack = calc_Q_pack(params)
-    else
-        # Qloss only from degradation
-        Q_pack = minimum(params[cell_id][:Q] for cell_id in keys(params))
-    end
-    return (Q_pack * n_cells) / Q_cells_total
 end
 
 """
