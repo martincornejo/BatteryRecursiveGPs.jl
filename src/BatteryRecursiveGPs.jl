@@ -9,12 +9,10 @@ using Distributed: WorkerPool, workers, remotecall
 
 using StatsBase
 using StaticArrays
-import ComponentArrays: ComponentVector, ComponentMatrix, getaxes
+import ComponentArrays: ComponentVector, ComponentMatrix
 
 using DataInterpolations
-using DataFrames
 using Measurements
-using Printf
 
 abstract type AbstractBatteryModel end
 
