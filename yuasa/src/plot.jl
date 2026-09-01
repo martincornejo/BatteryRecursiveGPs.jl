@@ -126,9 +126,16 @@ function plot_data_resolution(data; completeness = nothing, yscale = log10)
     return fig
 end
 
-function plot_module_data(data; N = 5)
-    fig = Figure(size = (600, 500))
-    ax = [Axis(fig[i, 1]) for i in 1:3]
+# Over the full window the current panel fills the ±50 A band solid: every module switches
+# between carrying the phase current and zero, so 27 traces overlap into a block. Group B
+# resolves the shaded window of the same signals, where the uneven load share the MMC
+# assigns becomes visible, together with the voltage step each switching event produces.
+function plot_module_data(data; N = 5, zoom = (3.05, 3.22))
+    fig = Figure(size = (600, 660))
+    gl_full = fig[1, 1] = GridLayout()
+    gl_zoom = fig[2, 1] = GridLayout()
+    axf = [Axis(gl_full[i, 1]) for i in 1:3]
+    axz = [Axis(gl_zoom[i, 1]) for i in 1:2]
 
     # color = module ID M1–M9 (same across phases)
     colors = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
@@ -144,29 +151,54 @@ function plot_module_data(data; N = 5)
         df_T = select(data[:battery_temperature], "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
         for (k, df) in enumerate((df_V, df_i, df_T))
             df[!, :t] = Dates.value.(df.time .- t0) * 1.0e-3 / 3600
-            lines!(ax[k, 1], df.t[1:N:end], df.value[1:N:end]; color = colors[m])
+            lines!(axf[k], df.t[1:N:end], df.value[1:N:end]; color = colors[m])
+        end
+        # zoom: full resolution, no decimation, so the switching is not aliased away
+        for (k, df) in ((1, df_V), (2, df_i))
+            w = (df.t .>= zoom[1]) .& (df.t .<= zoom[2]) .& .!ismissing.(df.value)
+            lines!(axz[k], (df.t[w] .- zoom[1]) .* 60, df.value[w]; color = colors[m])
         end
     end
 
-    for i in eachindex(ax)
-        xlims!(ax[i], 0, t_end)
-        ax[i].xgridvisible = false
-        ax[i].ygridvisible = false
-        ax[i].xminorticksvisible = true
-        ax[i].xminorticks = IntervalsBetween(5)
+    for i in (1, 2)
+        vspan!(axf[i], zoom[1], zoom[2]; color = (:black, 0.30))
+    end
+
+    for i in eachindex(axf)
+        xlims!(axf[i], 0, t_end)
+        axf[i].xgridvisible = false
+        axf[i].ygridvisible = false
+        axf[i].xminorticksvisible = true
+        axf[i].xminorticks = IntervalsBetween(5)
 
         if i < 3
-            hidexdecorations!(ax[i], ticks = false, minorticks = false)
+            hidexdecorations!(axf[i], ticks = false, minorticks = false)
         end
     end
-    ax[1].ylabel = "Voltage / V"
-    ax[2].ylabel = "Current / A"
-    ax[3].ylabel = "Temperature / °C"
-    ax[3].xlabel = "Time / h"
+    for i in eachindex(axz)
+        xlims!(axz[i], 0, (zoom[2] - zoom[1]) * 60)
+        axz[i].xgridvisible = false
+        axz[i].ygridvisible = false
+        axz[i].xminorticksvisible = true
+        axz[i].xminorticks = IntervalsBetween(5)
+    end
+    hidexdecorations!(axz[1], ticks = false, minorticks = false)
+
+    axf[1].ylabel = "Voltage / V"
+    axf[2].ylabel = "Current / A"
+    axf[3].ylabel = "Temperature / °C"
+    axf[3].xlabel = "Time / h"
+    axz[1].ylabel = "Voltage / V"
+    axz[2].ylabel = "Current / A"
+    axz[2].xlabel = "Time / min"
+
+    rowsize!(fig.layout, 2, Relative(0.32))
+    Label(gl_full[1, 1, TopLeft()], "A"; font = :bold, fontsize = 16, padding = (0, 0, 2, 0))
+    Label(gl_zoom[1, 1, TopLeft()], "B"; font = :bold, fontsize = 16, padding = (0, 0, 2, 0))
 
     mod_elems = [LineElement(color = colors[m], linewidth = 3) for m in 1:9]
     Legend(
-        fig[1:3, 2], mod_elems, ["M$m" for m in 1:9], "Module ID";
+        fig[1:2, 2], mod_elems, ["M$m" for m in 1:9], "Module ID";
         orientation = :vertical, titleposition = :top, framevisible = false
     )
 
