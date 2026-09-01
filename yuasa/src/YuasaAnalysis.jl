@@ -22,7 +22,15 @@ include("model.jl")
 include("ocv.jl")
 include("hyperparams.jl")
 include("analysis.jl")
-include("plot.jl")
+
+include("plot/theme.jl")
+include("plot/datasets.jl")
+include("plot/ecm.jl")
+include("plot/ecm_animation.jl")
+include("plot/soh.jl")
+include("plot/soc.jl")
+include("plot/gp_hyperparams.jl")
+include("plot/validation.jl")
 
 # data preparation + model fitting (model.jl)
 export load_dataset
