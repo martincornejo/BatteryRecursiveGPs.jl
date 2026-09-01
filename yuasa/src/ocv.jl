@@ -252,8 +252,10 @@ per 10 mV.
 comparable, since the two datasets are different experiments started at different charge states.
 """
 function calc_soh_validation(Q_meas, s0_meas, Q_rgp, s0_rgp)
-    qm = Measurements.value.(Q_meas); qr = Measurements.value.(Q_rgp)
-    sm = Measurements.value.(s0_meas); sr = Measurements.value.(s0_rgp)
+    qm = Measurements.value.(Q_meas)
+    qr = Measurements.value.(Q_rgp)
+    sm = Measurements.value.(s0_meas)
+    sr = Measurements.value.(s0_rgp)
     k = mean(qr) / mean(qm)
     return DataFrame(
         cell = collect(eachindex(qm)),
@@ -353,20 +355,18 @@ end
 # `comp_fit`/`ocvs` indexed by `ids`, plus the anchor convention they are expressed in.
 function build_validation_export(comp_fit, ocvs, ids, ref_ids, refs)
     pos = Dict(id => i for (i, id) in enumerate(ids))
+    cell(id, i) = Dict(
+        "id" => id_key(id),
+        "Q" => Measurements.value(comp_fit.Q_cell[i]),
+        "Q_sigma" => Measurements.uncertainty(comp_fit.Q_cell[i]),
+        "s0" => Measurements.value(comp_fit.s0[i]),
+        "s0_sigma" => Measurements.uncertainty(comp_fit.s0[i]),
+        "q" => collect(ocvs[i].q),
+        "v" => collect(ocvs[i].μ),
+    )
     return Dict(
         "refs" => Dict(String(k) => v for (k, v) in pairs(refs)),
-        "cells" => [
-            let i = pos[id]
-                    Dict(
-                        "id" => "$(id.p)_$(id.m)_$(id.c)",
-                        "Q" => Measurements.value(comp_fit.Q_cell[i]),
-                        "Q_sigma" => Measurements.uncertainty(comp_fit.Q_cell[i]),
-                        "s0" => Measurements.value(comp_fit.s0[i]),
-                        "s0_sigma" => Measurements.uncertainty(comp_fit.s0[i]),
-                        "q" => collect(ocvs[i].q), "v" => collect(ocvs[i].μ),
-                    )
-            end for id in ref_ids
-        ],
+        "cells" => [cell(id, pos[id]) for id in ref_ids],
     )
 end
 

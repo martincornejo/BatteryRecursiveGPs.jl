@@ -29,7 +29,7 @@ df_chg = read_parquet(DataFrame, valdir * "combined_log_20260201_181000.parquet"
 # zeroed than the tek probe). Each module has ONE current sensor, so its 12 cells share a charge
 # axis and the per-cell (Q_cell, s0) are inferred under the shared-shape assumption, not measured.
 rig_ids = [(; m, c) for m in 1:9 for c in 1:12]
-(; fcs, fds, measured) = build_reference_curves(df_chg, df_dch, rig_ids)  # measured: midline (; q, μ)
+(; measured) = build_reference_curves(df_chg, df_dch, rig_ids)  # measured: midline (; q, μ)
 
 # one composite over all 108 cells (per-module composites differ from it by ≤0.3 % in Q_cell)
 meas_comp = fit_composite_ocv(measured; uq = true)

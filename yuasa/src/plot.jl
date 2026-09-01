@@ -161,7 +161,7 @@ function plot_module_data(data; N = 5, zoom = (3.05, 3.22))
     end
 
     for i in (1, 2)
-        vspan!(axf[i], zoom[1], zoom[2]; color = (:black, 0.30))
+        vspan!(axf[i], zoom[1], zoom[2]; color = (:black, 0.3))
     end
 
     for i in eachindex(axf)
@@ -1048,7 +1048,12 @@ function plot_v_accuracy!(layout, df_v_cell, df_v_module; legend = true, colors 
         cell_pt_el = MarkerElement(; marker = :circle, color = (colors[2], 0.55), markersize = 7)
         cell_comb_el = MarkerElement(; marker = :hline, color = colors[2], markersize = 15)
         mod_el = MarkerElement(; marker = :circle, color = colors[1], markersize = 9)
-        Legend(layout[2, 1], [cell_pt_el, cell_comb_el, mod_el], ["Cell-level (individual)", "Cell-level (virtual module)", "Module-level"]; orientation = :horizontal, framevisible = false)
+        Legend(
+            layout[2, 1],
+            [cell_pt_el, cell_comb_el, mod_el],
+            ["Cell-level (individual)", "Cell-level (virtual module)", "Module-level"];
+            orientation = :horizontal, framevisible = false,
+        )
     end
     return ax
 end

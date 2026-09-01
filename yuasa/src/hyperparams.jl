@@ -6,12 +6,13 @@
 
 # closure scoring an OCV curve against a fixed reference composite → RMSE in mV
 function make_scorer(comp_ref)
-    o_s = sortperm(comp_ref.soc_grid)
-    o_v = sortperm(comp_ref.v_grid)
-    v_of_soc = LinearInterpolation(comp_ref.v_grid[o_s], comp_ref.soc_grid[o_s]; extrapolation = ExtrapolationType.Constant)
-    soc_of_v = LinearInterpolation(comp_ref.soc_grid[o_v], comp_ref.v_grid[o_v]; extrapolation = ExtrapolationType.Constant)
+    order_soc = sortperm(comp_ref.soc_grid)
+    order_v = sortperm(comp_ref.v_grid)
+    flat = ExtrapolationType.Constant
+    v_of_soc = LinearInterpolation(comp_ref.v_grid[order_soc], comp_ref.soc_grid[order_soc]; extrapolation = flat)
+    soc_of_v = LinearInterpolation(comp_ref.soc_grid[order_v], comp_ref.v_grid[order_v]; extrapolation = flat)
     v_range = extrema(comp_ref.v_grid)
-    soc_lo, soc_hi = first(comp_ref.soc_grid[o_s]), last(comp_ref.soc_grid[o_s])
+    soc_lo, soc_hi = first(comp_ref.soc_grid[order_soc]), last(comp_ref.soc_grid[order_soc])
     function score(ocv)
         aligned = fit_cells_to_reference([(; ocv.q, ocv.μ)], soc_of_v, v_range)
         Q = Measurements.value(aligned.Q_cell[1])
@@ -23,80 +24,60 @@ function make_scorer(comp_ref)
     return score
 end
 
+# ϑ with the two selected length scales replaced
+_with_ℓ(ϑ, ℓ_ocv, ℓ_r1) =
+    merge(ϑ, (; ocv = merge(ϑ.ocv, (; ℓ = ℓ_ocv)), r1 = merge(ϑ.r1, (; ℓ = ℓ_r1))))
+
+# Fit one unit's OCV curve on a worker. θ is built here on the master, so the worker needs
+# nothing but BatteryRecursiveGPs.
+_fit_ocv(pool, d, ϑ, zt, n) =
+    remotecall(fit_ocv_curve, pool, YuasaModel, d.u, d.y, scale_θ(d.u, d.y, ϑ; n), zt)
+
 # Stage 1: fit every unit at ϑ. Any worker failure crashes — the init is a known-good
 # config, so a failure here is a real bug.
 function fit_units_init(pool, ids, unit_data, ϑ, zt; n = 1)
-    tasks = Dict(
-        id => remotecall(
-                fit_ocv_curve, pool, YuasaModel,
-                unit_data[id].u, unit_data[id].y,
-                scale_θ(unit_data[id].u, unit_data[id].y, ϑ; n), zt
-            )
-            for id in ids
-    )
-    return Dict(id => fetch(t) for (id, t) in tasks)
+    tasks = Dict(id => _fit_ocv(pool, unit_data[id], ϑ, zt, n) for id in ids)
+    return Dict(id => fetch(task) for (id, task) in tasks)
 end
 
 # Stage 2 + pick: per-unit argmin RMSE over `(ℓ_ocv_init, ℓ_ocv_grid...)`. Starts from each
 # unit's init curve; misfit units (rmse > thresh_mV against `comp_ref`) additionally fit each
 # grid ℓ in parallel and upgrade the pick when one beats the current best. Individual
 # escalation-ℓ failures are tolerated (logged + skipped).
-# Returns Dict{id, (; ℓ_ocv, ℓ_r1, rmse_mV, rmse_init, curve, escalated)} for every unit.
+# Returns Dict{id, (; ℓ_ocv, ℓ_r1, rmse, rmse_init, curve)} for every unit.
 function escalate_units(
         curves_init, comp_ref, pool, unit_data, zt;
         ϑ, ℓ_ocv_grid, ℓ_r1_grid = Float64[], thresh_mV, n = 1
     )
     score = make_scorer(comp_ref)
 
-    # initial pick = init curve for every unit
-    picks = Dict(
-        id => begin
-                r = score(curve)
-                (; ℓ_ocv = ϑ.ocv.ℓ, ℓ_r1 = ϑ.r1.ℓ, rmse_mV = r, rmse_init = r, curve, escalated = false)
-            end for (id, curve) in curves_init
-    )
+    picks = Dict()
+    for (id, curve) in curves_init
+        rmse = score(curve)
+        picks[id] = (; ℓ_ocv = ϑ.ocv.ℓ, ℓ_r1 = ϑ.r1.ℓ, rmse, rmse_init = rmse, curve)
+    end
 
-    # misfit units: joint (ocv.ℓ, r1.ℓ) grid, keep argmin vs current pick
-    misfits = [id for (id, p) in picks if p.rmse_mV > thresh_mV]
-    ℓ_ocv_all = [ϑ.ocv.ℓ; ℓ_ocv_grid]
-    ℓ_r1_all = [ϑ.r1.ℓ;  ℓ_r1_grid]
+    misfits = sort([id for (id, pick) in picks if pick.rmse > thresh_mV])
     challengers = [
-        (lo, lr) for lo in ℓ_ocv_all, lr in ℓ_r1_all
-            if !(lo == ϑ.ocv.ℓ && lr == ϑ.r1.ℓ)
+        (ℓ_ocv, ℓ_r1)
+            for ℓ_ocv in [ϑ.ocv.ℓ; ℓ_ocv_grid], ℓ_r1 in [ϑ.r1.ℓ; ℓ_r1_grid]
+            if (ℓ_ocv, ℓ_r1) != (ϑ.ocv.ℓ, ϑ.r1.ℓ)
     ]
+
     tasks = Dict(
-        (id, ℓ_ocv, ℓ_r1) =>
-            remotecall(
-                fit_ocv_curve, pool, YuasaModel, unit_data[id].u, unit_data[id].y,
-                scale_θ(
-                    unit_data[id].u, unit_data[id].y,
-                    merge(
-                        ϑ, (;
-                            ocv = merge(ϑ.ocv, (; ℓ = ℓ_ocv)),
-                            r1 = merge(ϑ.r1, (; ℓ = ℓ_r1)),
-                        )
-                    ); n
-                ), zt
-            )
+        (id, ℓ_ocv, ℓ_r1) => _fit_ocv(pool, unit_data[id], _with_ℓ(ϑ, ℓ_ocv, ℓ_r1), zt, n)
             for id in misfits, (ℓ_ocv, ℓ_r1) in challengers
     )
-    for id in misfits
-        current = picks[id]
-        for (ℓ_ocv, ℓ_r1) in challengers
-            try
-                curve = fetch(tasks[(id, ℓ_ocv, ℓ_r1)])
-                rmse = score(curve)
-                if rmse < current.rmse_mV
-                    current = (;
-                        ℓ_ocv, ℓ_r1, rmse_mV = rmse,
-                        current.rmse_init, curve, escalated = true,
-                    )
-                end
-            catch e
-                @warn "escalation fit failed: id=$id ℓ_ocv=$ℓ_ocv ℓ_r1=$ℓ_r1" exception = e
-            end
+
+    for id in misfits, (ℓ_ocv, ℓ_r1) in challengers
+        best = picks[id]
+        try
+            curve = fetch(tasks[(id, ℓ_ocv, ℓ_r1)])
+            rmse = score(curve)
+            rmse < best.rmse && (picks[id] = (; ℓ_ocv, ℓ_r1, rmse, best.rmse_init, curve))
+        catch e
+            @warn "escalation fit failed: id=$id ℓ_ocv=$ℓ_ocv ℓ_r1=$ℓ_r1" exception = e
         end
-        picks[id] = current
     end
 
     return picks
@@ -104,8 +85,7 @@ end
 
 # One full selection run for a level (cells or modules). The reference composite is built
 # coarse → outlier-filtered → refit, so a few badly misfit units cannot bias the target the
-# escalation is scored against. `comp_final` is the composite after adaptation, from the
-# units that end up within the threshold.
+# escalation is scored against.
 function select_hyperparams(
         pool, ids, unit_data, zt;
         ϑ, ℓ_ocv_grid, ℓ_r1_grid = Float64[], thresh_mV, n = 1, n_v_pair = 20
@@ -122,10 +102,7 @@ function select_hyperparams(
         ϑ, ℓ_ocv_grid, ℓ_r1_grid, thresh_mV, n
     )
 
-    keep = [picks[id].curve for id in ids if picks[id].rmse_mV <= thresh_mV]
-    comp_final = fit_composite_ocv(keep; uq = false, n_v_pair)
-
-    return (; curves_init, comp_ref, comp_final, picks, ids, ϑ, thresh_mV, n)
+    return (; curves_init, comp_ref, picks, ids, ϑ, thresh_mV, n)
 end
 
 # unit id → compact label, e.g. "P1M9C2" (cell) or "P1M9" (module)
@@ -186,39 +163,46 @@ end
 function calc_scaled_hyperparams(sel, unit_data, zt)
     (; picks, ids, ϑ, n) = sel
     return map(ids) do id
-        p = picks[id]
-        d = unit_data[id]
-        θ = scale_θ(
-            d.u, d.y,
-            merge(ϑ, (; ocv = merge(ϑ.ocv, (; ℓ = p.ℓ_ocv)), r1 = merge(ϑ.r1, (; ℓ = p.ℓ_r1)))); n
-        )
+        pick = picks[id]
+        unit = unit_data[id]
+        θ = scale_θ(unit.u, unit.y, _with_ℓ(ϑ, pick.ℓ_ocv, pick.ℓ_r1); n)
         (;
             name = unit_name(id),
             ℓ_ocv = θ.ocv.ℓ * zt.q.scale[1], ℓ_r1 = θ.r1.ℓ * zt.q.scale[1],
             σ_ocv = sqrt(θ.ocv.σ) * zt.σ.scale[1] / n * 1000, σ_r1 = sqrt(θ.r1.σ) * zt.r.scale[1] / n * 1000,
-            nom_ocv = p.ℓ_ocv, nom_r1 = p.ℓ_r1,
+            nom_ocv = pick.ℓ_ocv, nom_r1 = pick.ℓ_r1,
         )
     end |> DataFrame
 end
 
 # --- selection-figure data ---
 
-compcurve(comp) = (o = sortperm(comp.soc_grid); (collect(comp.soc_grid)[o], collect(comp.v_grid)[o]))
+function compcurve(comp)
+    order_soc = sortperm(comp.soc_grid)
+    return collect(comp.soc_grid)[order_soc], collect(comp.v_grid)[order_soc]
+end
 
 # SOC in %, derivative in mV per % — the units used for dV/dSOC elsewhere in the paper.
 # 1 V per unit SOC fraction = 1000 mV / 100 % = 10 mV/%.
 function dvdsoc(soc, v)
-    o = sortperm(soc); s = soc[o] .* 100; vv = v[o]
-    return ((s[1:(end - 1)] .+ s[2:end]) ./ 2, diff(vv) ./ diff(s) .* 1000)
+    order_soc = sortperm(soc)
+    soc_pct = soc[order_soc] .* 100
+    v_sorted = v[order_soc]
+    midpoints = (soc_pct[1:(end - 1)] .+ soc_pct[2:end]) ./ 2
+    return midpoints, diff(v_sorted) ./ diff(soc_pct) .* 1000
 end
 
 # align each unit's (q, μ) to a composite's SOC axis → vector of (; soc, μ) in `ids` order
 function align_units(curves_by_id, ids, comp)
-    o_v = sortperm(comp.v_grid)
-    soc_of_v = LinearInterpolation(comp.soc_grid[o_v], comp.v_grid[o_v]; extrapolation = ExtrapolationType.Constant)
+    order_v = sortperm(comp.v_grid)
+    soc_of_v = LinearInterpolation(comp.soc_grid[order_v], comp.v_grid[order_v]; extrapolation = ExtrapolationType.Constant)
     ocvs = [curves_by_id[id] for id in ids]
-    al = fit_cells_to_reference([(; o.q, o.μ) for o in ocvs], soc_of_v, extrema(comp.v_grid))
-    return [(; soc = ocvs[k].q ./ Measurements.value(al.Q_cell[k]) .+ Measurements.value(al.s0[k]), μ = ocvs[k].μ) for k in eachindex(ocvs)]
+    aligned = fit_cells_to_reference([(; o.q, o.μ) for o in ocvs], soc_of_v, extrema(comp.v_grid))
+    return map(eachindex(ocvs)) do k
+        Q = Measurements.value(aligned.Q_cell[k])
+        s0 = Measurements.value(aligned.s0[k])
+        return (; soc = ocvs[k].q ./ Q .+ s0, μ = ocvs[k].μ)
+    end
 end
 
 # Plot-ready view of one selection run, per-cell scaled (module curves and residuals ÷ n):
@@ -246,7 +230,7 @@ function calc_hyperparam_selection(sel)
     rmse = DataFrame(
         name = [(hasproperty(id, :c) ? "Cell " : "Module ") * unit_name(id) for id in ids],
         init = [picks[id].rmse_init / n for id in ids],
-        adapted = [picks[id].rmse_mV / n for id in ids],
+        adapted = [picks[id].rmse / n for id in ids],
     )
 
     return (; fans = DataFrame(rows), comp = DataFrame(soc = s[edge], dvdsoc = dv[edge]), rmse, thresh = thresh_mV / n)
