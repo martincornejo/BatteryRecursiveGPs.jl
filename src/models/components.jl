@@ -66,8 +66,7 @@ function RC(; v0, r0, τ0, σ0_v, σ0_r, σ0_τ, σ1_v, σ1_r, σ1_τ)
 end
 
 
-# Build an `RC` from a θ sub-tuple, converting each entry into the filter's z-scored units.
-# Multi-branch models call this once per branch (`θ.rc1`, `θ.rc2`, …).
+# Build an `RC` from a θ sub-tuple, in the filter's z-scored units.
 function _build_rc(θrc, zt)
     return RC(;
         v0 = StatsBase.transform(zt.σ, [θrc.v0]) |> first,

@@ -131,15 +131,41 @@ end
 # unit id → compact label, e.g. "P1M9C2" (cell) or "P1M9" (module)
 unit_name(id) = hasproperty(id, :c) ? "P$(id.p)M$(id.m)C$(id.c)" : "P$(id.p)M$(id.m)"
 
-# unit id → nominal ℓ/σ stored in JSON; scale_θ reconstructs the full θ from these
-function build_hyperparam_export(sel, id_key)
+# unit id → JSON key, e.g. "1_9_2" (cell) or "1_9" (module)
+id_key(id) = hasproperty(id, :c) ? "$(id.p)_$(id.m)_$(id.c)" : "$(id.p)_$(id.m)"
+
+"""
+    build_hyperparam_export(sel) -> Dict
+
+The selected nominal ℓ/σ per unit, keyed for JSON. Together with `default_θ`, these four
+numbers are all `scale_θ` needs to rebuild the full θ.
+"""
+function build_hyperparam_export(sel)
     return Dict(
         id_key(id) => Dict(
-                "ocv_ell" => p.ℓ_ocv, "ocv_sigma" => sel.ϑ.ocv.σ,
-                "r1_ell" => p.ℓ_r1, "r1_sigma" => sel.ϑ.r1.σ,
+                "ocv_ell" => pick.ℓ_ocv, "ocv_sigma" => sel.ϑ.ocv.σ,
+                "r1_ell" => pick.ℓ_r1, "r1_sigma" => sel.ϑ.r1.σ,
             )
-            for (id, p) in sel.picks
+            for (id, pick) in sel.picks
     )
+end
+
+"""
+    load_hyperparams(file, ids) -> Dict{id, ϑ}
+
+Read back what [`build_hyperparam_export`](@ref) wrote, as `(; ocv = (; ℓ, σ),
+r1 = (; ℓ, σ))` per unit — the `ϑ` that [`scale_θ`](@ref) expects.
+"""
+function load_hyperparams(file, ids)
+    json = JSON.parsefile(file, Dict{String, Dict{String, Any}})
+    ϑ = map(ids) do id
+        entry = json[id_key(id)]
+        return (;
+            ocv = (; ℓ = entry["ocv_ell"], σ = entry["ocv_sigma"]),
+            r1 = (; ℓ = entry["r1_ell"], σ = entry["r1_sigma"]),
+        )
+    end
+    return Dict(ids .=> ϑ)
 end
 
 # marginal counts of the selected nominal length scales — the paper's selection table

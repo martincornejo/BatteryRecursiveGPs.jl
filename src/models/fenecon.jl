@@ -14,6 +14,10 @@ random-walk states.
 | RC branches | 1                  |
 
 `n` sets the number of GP basis points.
+
+`θ` must supply `ocv = (; σ, ℓ)`, `r0 = (; σ0, σ1)`, `r0μ`, `vσ`, `Ts`,
+`rc = (; v0, σ0_v, σ1_v, r0, σ0_r, σ1_r, τ0, σ0_τ, σ1_τ)`, `cc` and
+`arr = (; T0, k0, σ0_k, σ1_k)`.
 """
 struct FeneconModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter

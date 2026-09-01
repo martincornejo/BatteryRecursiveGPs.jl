@@ -67,9 +67,7 @@ function run_kf!(kf, u, y; tt = length(u))
 end
 
 
-# Shared body for the per-model `reinit_kf!` methods. Re-anchoring `cc.q` to 0 makes its
-# accumulated correlations stale, so its covariance block goes too; the RC voltages are
-# zeroed but keep theirs, since they relax on their own.
+# Shared body for the per-model `reinit_kf!` methods.
 function _reinit_kf!(model, rc_branches...; x, R)
     kf = model.kf
     (; xid, Σid) = kf.p

@@ -15,6 +15,10 @@ charge, R0 is a scalar random walk.
 `n` sets the number of GP basis points; `pad` extends the basis past each observed charge
 edge by that fraction of the span, so boundary basis points sit inside the data rather than
 on its edge.
+
+`θ` must supply `ocv = (; σ, ℓ)`, `r1 = (; σ, ℓ)`, `r1μ`, `r0 = (; σ0, σ1)`, `r0μ`, `vσ`,
+`Ts`, `rc = (; v0, σ0_v, σ1_v, τ0, σ0_τ, σ1_τ)`, `cc = (; σ0, σ1)` and
+`arr = (; T0, k0, σ0_k, σ1_k)`.
 """
 struct YuasaModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter

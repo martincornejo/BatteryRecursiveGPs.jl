@@ -29,11 +29,11 @@ fig_data_resolution = plot_data_resolution(data; completeness = df_completeness)
 # === Model fits ===
 
 cell_ids = [(; p, m, c) for p in 1:3, m in 1:9, c in 1:12] |> vec |> sort
-cell_ϑ = load_hyperparams(paramdir * "cell_hyperparams.json", cell_ids, id -> "$(id.p)_$(id.m)_$(id.c)")
+cell_ϑ = load_hyperparams(paramdir * "cell_hyperparams.json", cell_ids)
 @time (; cell_models, cell_sols) = fit_cells(data, cell_ϑ, ti, cell_ids);
 
 module_ids = [(; p, m) for p in 1:3, m in 1:9] |> vec |> sort
-module_ϑ = load_hyperparams(paramdir * "module_hyperparams.json", module_ids, id -> "$(id.p)_$(id.m)")
+module_ϑ = load_hyperparams(paramdir * "module_hyperparams.json", module_ids)
 @time (; module_models, module_sols) = fit_modules(data, module_ϑ, ti, module_ids);
 
 fig_ecms = plot_ecms_comparison(cell_models, cell_sols, module_models, module_sols; n_mod = 12)  # Fig 2

@@ -1,8 +1,7 @@
 """
     Fenecon2RCModel(θ, u, zt; n = 21)
 
-As [`FeneconModel`](@ref), but with two RC branches in series — a fast and a slow one — so
-`θ` supplies `rc1` and `rc2` instead of a single `rc`.
+As [`FeneconModel`](@ref), but with two RC branches in series — a fast and a slow one.
 
 | axis        | value               |
 |-------------|---------------------|
@@ -14,6 +13,9 @@ As [`FeneconModel`](@ref), but with two RC branches in series — a fast and a s
 | RC branches | 2                   |
 
 `n` sets the number of GP basis points.
+
+`θ` is as [`FeneconModel`](@ref) but with `rc1` and `rc2` in place of `rc`, each carrying the
+same fields.
 """
 struct Fenecon2RCModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter

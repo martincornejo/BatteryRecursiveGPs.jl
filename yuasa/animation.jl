@@ -17,7 +17,7 @@ ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
 
 # === Model fit ===
 
-cell_ϑ = load_hyperparams(paramdir * "cell_hyperparams.json", [id], i -> "$(i.p)_$(i.m)_$(i.c)")
+cell_ϑ = load_hyperparams(paramdir * "cell_hyperparams.json", [id])
 
 zt = fit_zscore()
 (; u, y) = cell_dataset(data, ti, id.p, id.m, id.c; zt)

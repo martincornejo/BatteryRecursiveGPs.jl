@@ -27,7 +27,7 @@ include("plot.jl")
 # data preparation + model fitting (model.jl)
 export load_dataset
 export fit_zscore, scale_θ, cell_dataset, module_dataset, cell_dataset_osci
-export load_hyperparams, fit_cells, fit_modules, fit_soc_models, eval_models
+export fit_cells, fit_modules, fit_soc_models, eval_models
 
 # OCV reconstruction validation (ocv.jl)
 export clean_ocv, average_charge_discharge, build_reference_curves
@@ -38,7 +38,7 @@ export build_validation_export, load_validation_export
 export soc_gauge, compare_current_sources
 
 # GP hyperparameter selection (hyperparams.jl)
-export select_hyperparams, build_hyperparam_export, selection_counts
+export select_hyperparams, build_hyperparam_export, load_hyperparams, selection_counts
 export calc_scaled_hyperparams, calc_hyperparam_selection
 
 # analysis / metrics (analysis.jl)

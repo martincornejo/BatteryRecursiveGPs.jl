@@ -59,8 +59,8 @@ export_json = false
 export_figs = false
 
 if export_json
-    cell_hyperparams = build_hyperparam_export(cells, id -> "$(id.p)_$(id.m)_$(id.c)")
-    module_hyperparams = build_hyperparam_export(modules, id -> "$(id.p)_$(id.m)")
+    cell_hyperparams = build_hyperparam_export(cells)
+    module_hyperparams = build_hyperparam_export(modules)
     write(paramdir * "cell_hyperparams.json", JSON.json(cell_hyperparams, 2))
     write(paramdir * "module_hyperparams.json", JSON.json(module_hyperparams, 2))
 end

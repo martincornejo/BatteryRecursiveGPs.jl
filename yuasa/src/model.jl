@@ -160,22 +160,9 @@ function cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore())
 end
 
 
-function load_hyperparams(file, ids, id_str)
-    hyperparams = JSON.parsefile(file, Dict{String, Dict{String, Any}})
-    θ = map(ids) do id
-        params = hyperparams[id_str(id)]
-        (;
-            ocv = (; ℓ = params["ocv_ell"], σ = params["ocv_sigma"]),
-            r1 = (; ℓ = params["r1_ell"], σ = params["r1_sigma"]),
-        )
-    end
-    return Dict(ids .=> θ)
-end
-
+# Fixed priors for the cell/module fits; the selection supplies `ocv` and `r1` per unit.
 function default_θ(; n = 1)
     return (;
-        ocv = (; σ = 0.5, ℓ = 0.5),
-        r1 = (; σ = 0.1, ℓ = 0.5),
         r1μ = n * 1.0e-3,
         r0 = (; σ0 = n * 5.0e-4, σ1 = 0.0),  # scalar R0 random-walk
         r0μ = n * 1.0e-3,
@@ -200,6 +187,16 @@ function _scale_θ(u, y, θ)
     return merge(θ, (; ocv, r1))
 end
 
+"""
+    scale_θ(u, y, ϑ; n = 1) -> θ
+
+Complete the selected hyperparameters `ϑ` with [`default_θ`](@ref) and scale them to the
+data. `ϑ` must supply `ocv = (; ℓ, σ)` and `r1 = (; ℓ, σ)` — the two the selection chooses
+per unit; everything else comes from the defaults. `n` is the number of series cells.
+
+The returned `θ` is what a model builder consumes: `ocv.σ` and `r1.σ` scaled by the observed
+voltage span, and the length scales by the observed charge span.
+"""
 function scale_θ(u, y, ϑ; n = 1)
     θ = merge(default_θ(; n), ϑ)
     return _scale_θ(u, y, θ)
