@@ -61,6 +61,6 @@ fig_ocv_rmse = plot_validation_rmse(vals[comparable], labels[comparable])  # sup
 export_figs = false
 
 if export_figs
-    save("figs/ocv-validation.pdf", fig_ocv_validation)
-    save("figs/ocv-validation-rmse.pdf", fig_ocv_rmse)
+    save("yuasa/figs/ocv-validation.pdf", fig_ocv_validation)
+    save("yuasa/figs/ocv-validation-rmse.pdf", fig_ocv_rmse)
 end

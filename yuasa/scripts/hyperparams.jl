@@ -66,6 +66,6 @@ if export_json
 end
 
 if export_figs
-    save("figs/hyperparam-selection.pdf", fig_hyperparam_selection)
-    save("figs/hyperparam-scales.pdf", fig_hyperparam_scales)
+    save("yuasa/figs/hyperparam-selection.pdf", fig_hyperparam_selection)
+    save("yuasa/figs/hyperparam-scales.pdf", fig_hyperparam_scales)
 end

@@ -34,5 +34,5 @@ prior = (; x = copy(model.kf.x), R = copy(model.kf.R))  # frame 1: before any ob
 export_anim = false
 
 if export_anim
-    animate_model("figs/ecm-learning-P$(id.p)M$(id.m)C$(id.c).mp4", model, sol_full; step = 10, framerate = 24, prior)
+    animate_model("yuasa/figs/ecm-learning-P$(id.p)M$(id.m)C$(id.c).mp4", model, sol_full; step = 10, framerate = 24, prior)
 end

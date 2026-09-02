@@ -75,5 +75,5 @@ if export_csv
 end
 
 if export_figs
-    save("figs/ocv-extrapolation.pdf", fig_ocv_extrap)
+    save("yuasa/figs/ocv-extrapolation.pdf", fig_ocv_extrap)
 end
