@@ -172,11 +172,10 @@ cell's own `(Q_meas, s0_meas)` — the reference is never moved.
 Each entry is `(; soc_meas, v_meas, soc_rgp, v_rgp, soc, r)` — SOC in %, voltages in V, residual
 in mV over that cell's own window.
 
-SOC rather than charge because the residual is a function of electrode state, not of absolute
-charge: across cells it collapses 18 % tighter on this axis (2.66 → 2.18 mV), and plotting
-against charge instead smears it by each cell's own `s0` offset (~2.6 pp spread). Note the SOC
-values sit on the composite gauge — they are a labelling convention, not an absolute state of
-charge (see `calc_soh_validation`).
+The residual is reported against SOC rather than charge, since it is a function of electrode
+state; plotting it against charge smears it by each cell's own `s0` offset. The SOC values sit
+on the composite gauge, so they are a labelling convention rather than an absolute state of
+charge.
 """
 function calc_ocv_curves(measured, reconstructed, df_shape, Q_meas, s0_meas; n_v = 200)
     Q = Measurements.value.(Q_meas)
@@ -211,11 +210,11 @@ leaving it in would inflate the floor (~20 mV rather than ~11 mV). What remains 
 hysteresis + unrelaxed polarisation: rests are ~58 s against a slow-RC τ ≈ 800 s, so each branch
 carries residual polarisation and the midline cancels only the symmetric part.
 
-A residual below this floor is indistinguishable from a perfect reconstruction GIVEN this
-reference. CAVEAT: this is a lower bound on the reference's ambiguity, not a full uncertainty
-budget — it captures the dominant term but not voltage-sensor calibration or `clean_ocv`'s 0.1 Ah
-binning. It reads ~11 mV where earlier notes say ~8 mV; same phenomenon, but averaged over each
-cell's own comparison window rather than the full curve.
+A residual below this floor is indistinguishable from a perfect reconstruction given this
+reference. The floor is a lower bound on the reference's ambiguity rather than a full
+uncertainty budget: it captures the dominant term, but not voltage-sensor calibration or the
+0.1 Ah binning of the extraction. It is averaged over each cell's own comparison window, not
+over the full curve.
 """
 function calc_reference_floor(measured, reconstructed, fcs, fds; n_v = 200)
     return map(eachindex(measured)) do c

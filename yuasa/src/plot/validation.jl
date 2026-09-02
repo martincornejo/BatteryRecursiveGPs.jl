@@ -1,10 +1,17 @@
 # === validation plots ===
 
-# The validation figure, pooled over the comparable modules (one `validate_module` result per
-# module, `labels` = their names): (A) measured-vs-model OCV overlay, (B) the residual behind it
-# (clipped at the low-SOC knee, where the steep dV/dq amplifies a small charge error), (C)
-# absolute capacity per cell, (D) initial-SOC deviation from each module's mean (absolute initial
-# SOC is not comparable between the two experiments). Wong palette + black by module.
+"""
+    plot_validation(vals, labels) -> Figure
+
+Reconstructed OCV against the measured reference, pooled over modules: (A) the two curve sets
+overlaid, (B) their residual, (C) capacity per cell, and (D) initial-SOC deviation from each
+module's mean. `vals` holds one [`validate_module`](@ref) result per module and `labels` their
+names, coloured by module.
+
+Panel D shows deviations rather than absolute initial SOC, which is not comparable between the
+two experiments. Panel B is clipped at the low-SOC knee, where a steep dV/dq turns a small
+charge error into a large voltage one.
+"""
 function plot_validation(vals, labels)
     cols = MODULE_COLORS
     c_meas = :gray55
@@ -95,9 +102,12 @@ function plot_validation(vals, labels)
     return fig
 end
 
-# Supplementary: distribution of the per-cell OCV RMSE, stacked by module (1 mV bins). The tail
-# above ~7 mV is the knee-bearing cells (their windows reach the steep low knee); plateau cells
-# sit at 3–5 mV.
+"""
+    plot_validation_rmse(vals, labels; bins = 0:1:16) -> Figure
+
+Distribution of the per-cell OCV RMSE against the measured reference, in 1 mV bins stacked by
+module. Same `vals`/`labels` as [`plot_validation`](@ref).
+"""
 function plot_validation_rmse(vals, labels; bins = 0:1:16)
     cols = MODULE_COLORS
     nb = length(bins) - 1
@@ -126,8 +136,13 @@ end
 
 # === measured-OCV experiment diagnostics ===
 
-# Current-sensor cross-check on the rig data: the BMS module current vs the oscilloscope
-# (tek) reference probe, their integrated charge, and the running charge error between them.
+"""
+    compare_current_sources(df; m = 7) -> Figure
+
+Current-sensor cross-check on the rig data for module `m`: the BMS current against the
+oscilloscope reference probe, their integrated charge, and the charge error accumulating
+between them.
+"""
 function compare_current_sources(df; m = 7)
     df_bms = integrate_current(df; current_col = "m$(m)_current", negate = true)
     df_tek = integrate_current(df; current_col = "tek_m_cur_ref", negate = true, offset = find_tek_offset(df; m))
@@ -157,6 +172,12 @@ function compare_current_sources(df; m = 7)
     return fig
 end
 
+"""
+    plot_ocv_extrapolation(composite; V_min = 2.9, V_max = 4.1) -> Figure
+
+The measured composite OCV against its linear extrapolation out to `[V_min, V_max]`, showing
+how much of the SOC gauge from [`eval_soc_range`](@ref) is measured and how much extrapolated.
+"""
 function plot_ocv_extrapolation(composite; V_min = 2.9, V_max = 4.1)
     (; v_of_soc, soc_of_v) = extrapolate_ocv(composite)
     soc = collect(composite.t)
@@ -182,9 +203,14 @@ function plot_ocv_extrapolation(composite; V_min = 2.9, V_max = 4.1)
     return fig
 end
 
-# Diagnostic: overlay the cleaned OCV (clean_ocv) on the raw (q, v) measurement for one
-# cell/branch — shows how the per-bin extraction tracks the relaxed points within the
-# noisy loaded data. `q` shares clean_ocv's frame (current-integrated, zeroed at min).
+"""
+    plot_ocv_cleaning(df, id; dch, current_col = "tek", i_thresh = 0.5) -> Figure
+
+The extracted OCV over the raw `(q, v)` measurement for one cell and branch, showing how the
+per-bin extraction tracks the relaxed points inside the loaded data. `dch` selects the
+discharge branch, `i_thresh` the current below which a sample counts as relaxed. Charge is
+current-integrated and zeroed at its minimum.
+"""
 function plot_ocv_cleaning(df, id; dch::Bool, current_col = "tek", i_thresh = 0.5)
     col = current_col == "tek" ? "tek_m_cur_ref" : "m$(id.m)_current"
     offset = current_col == "tek" ? find_tek_offset(df; m = id.m) : 0.0

@@ -106,12 +106,17 @@ function _model_frame(model::YuasaModel, sol; prior = nothing)
     return (; fig, set_frame!, n_frames = length(xt))
 end
 
-# Animate the ECM as the filter learns over the dataset. `step` is the stride in filter steps
-# between rendered frames; duration is `length(1:step:n_frames) / framerate` seconds. See
-# `_model_frame` for what `model`/`sol`/`prior` must be.
-# NOTE: each frame re-simulates the whole dataset open-loop (~3 s), so a full run costs roughly
-# `n_frames / step × 3 s` — check the frame count before starting. Stretching the duration via
-# `framerate` is free; doing it via `step` is not.
+"""
+    animate_model(file, model, sol; step = 60, framerate = 24, prior = nothing)
+
+Animate the identified ECM as the filter learns over the dataset, writing to `file`. `step` is
+the stride in filter steps between frames, so the result runs `length(1:step:n_frames) /
+framerate` seconds. Pass the pre-fit state as `prior` to draw it behind the current estimate.
+
+Each frame re-simulates the whole dataset open loop, about 3 s, so a run costs roughly
+`n_frames / step × 3 s` — check the frame count first. Lengthening the animation through
+`framerate` is free; through `step` it is not.
+"""
 function animate_model(file, model::YuasaModel, sol; step = 60, framerate = 24, prior = nothing)
     (; fig, set_frame!, n_frames) = _model_frame(model, sol; prior)
     return record(set_frame!, fig, file, 1:step:n_frames; framerate)

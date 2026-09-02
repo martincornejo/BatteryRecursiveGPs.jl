@@ -29,6 +29,13 @@ function plot_soc_trajectories!(
     return ax
 end
 
+"""
+    plot_soc_comparison(df_norm, df_out; titles = ("", ""), colors = …) -> Figure
+
+SOC trajectories of two modules side by side, each from a [`calc_module_soc`](@ref) table: the
+12 cells in gray behind the aggregated string SOC and the module model's own estimate, all
+with 2σ bands.
+"""
 function plot_soc_comparison(df_norm, df_out; titles = ("", ""), colors = Makie.wong_colors()[[1, 2]])
     fig = Figure(size = (700, 320))
     gl = GridLayout(fig[1, 1])
@@ -67,12 +74,25 @@ function plot_soc_discrepancy!(layout, soc_err)
     return ax
 end
 
+"""
+    plot_soc_discrepancy(soc_err) -> Figure
+
+Distribution of each module's SOC error over time, as a boxplot per module, from a
+[`calc_soc_error`](@ref) matrix. `plot_soc_discrepancy!(layout, soc_err)` draws it into an
+existing layout.
+"""
 function plot_soc_discrepancy(soc_err)
     fig = Figure(size = (700, 300))
     plot_soc_discrepancy!(GridLayout(fig[1, 1]), soc_err)
     return fig
 end
 
+"""
+    plot_soc_overview(df_norm, df_out, soc_err; titles = ("", ""), colors = …) -> Figure
+
+The fleet SOC discrepancy over (A) [`plot_soc_discrepancy`](@ref) for all modules, and below
+it (B, C) the two example modules of [`plot_soc_comparison`](@ref).
+"""
 function plot_soc_overview(
         df_norm, df_out, soc_err;
         titles = ("", ""), colors = Makie.wong_colors()[[1, 2]],
@@ -106,18 +126,7 @@ function plot_soc_overview(
     return fig
 end
 
-# Fleet-wide open-loop voltage accuracy: every cell RMSE as a point, grouped by module,
-# with the combined cell-model tick (the 12 cells as a virtual module, Σ predicted vs Σ
-# measured cell voltage, ÷12), vs the dedicated module model on the per-cell scale (÷12).
-# The combined tick — not the per-cell mean/median — is the like-for-like counterpart to the
-# module model: both score a *sum* of cell voltages, so both keep the temporal cancellation
-# between cells (mean(RMSE) discards it and overstates the error on heterogeneous modules).
-# The strip
-# (rather than a boxplot) shows the actual within-module distribution — one stray cell vs a
-# broad spread — fits the cell-to-cell heterogeneity story, and avoids the unreliable Tukey
-# 1.5·IQR fence at n = 12 plus any glyph clash with the Tukey boxplots used elsewhere (e.g.
-# the SOC-error figure). The single off-scale cell (a current/voltage desync artifact) is
-# named in place; fleet stats belong in the caption.
+# strip of per-cell RMSEs by module, with the combined-cell and module-model ticks over it
 function plot_v_accuracy!(layout, df_v_cell, df_v_module; legend = true, colors = Makie.wong_colors()[[1, 2, 6]])
     ax = Axis(layout[1, 1])
     q99 = quantile(df_v_cell.rmse, 0.99)
@@ -183,14 +192,29 @@ function plot_v_accuracy!(layout, df_v_cell, df_v_module; legend = true, colors 
     return ax
 end
 
+"""
+    plot_v_accuracy(df_v_cell, df_v_module; colors = …) -> Figure
+
+Fleet-wide voltage accuracy, grouped by module: every cell's RMSE as a point, the 12 cells
+combined as a virtual module as a tick, and the dedicated module model as a second point.
+Consumes [`calc_v_summary`](@ref) and [`calc_module_v_summary`](@ref) tables.
+
+Module quantities are drawn per cell (÷12) so all three sit on one scale. The combined tick,
+not the mean of the per-cell RMSEs, is the like-for-like counterpart to the module model,
+since both score a sum of cell voltages. Cells above the axis limit are named in place.
+"""
 function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]])
     fig = Figure(size = (700, 360))
     plot_v_accuracy!(GridLayout(fig[1, 1]), df_v_cell, df_v_module; colors)
     return fig
 end
 
-# Combined voltage-accuracy figure: (A) one example open-loop cell fit + residual — the
-# qualitative story — over (B) the fleet-wide per-module accuracy — the quantitative one.
+"""
+    plot_v_accuracy_overview(model, sol, df_v_cell, df_v_module; Ts = 1.0, title = "") -> Figure
+
+One example open-loop cell fit from [`plot_sim`](@ref) over the fleet-wide accuracy of
+[`plot_v_accuracy`](@ref), as panels A and B.
+"""
 function plot_v_accuracy_overview(model::AbstractBatteryModel, sol, df_v_cell, df_v_module; Ts = 1.0, title = "")
     fig = Figure(size = (700, 550))
 
@@ -210,9 +234,12 @@ function plot_v_accuracy_overview(model::AbstractBatteryModel, sol, df_v_cell, d
     return fig
 end
 
-# charge-estimation accuracy on the reference module: time-resolved SOC error vs the oscilloscope
-# ground truth, one line per cell. Shows the error magnitude, its temporal structure, and the
-# cell-to-cell consistency in one view.
+"""
+    plot_charge_error(df; color = …, size = (550, 250)) -> Figure
+
+SOC error against the oscilloscope reference over time, one line per cell of the reference
+module. Consumes a [`calc_charge_error`](@ref) table.
+"""
 function plot_charge_error(df; color = Makie.wong_colors()[1], size = (550, 250))
     fig = Figure(; size)
     ax = Axis(fig[1, 1], xlabel = "Time / h", ylabel = "SOC error / %")
@@ -230,8 +257,13 @@ function plot_charge_error(df; color = Makie.wong_colors()[1], size = (550, 250)
     return fig
 end
 
-# fault-rejection diagnostic: per scenario (column), charge trajectory (top) and error (bottom) for
-# the oscilloscope reference, module-current Coulomb counting, and the EKF estimate (±2σ band).
+"""
+    plot_soc_diagnostic(diag; color = :dodgerblue) -> Figure
+
+One column per injected-fault scenario from [`calc_soc_diagnostic`](@ref): the charge
+trajectory on top and its error below, for the oscilloscope reference, Coulomb counting, and
+the filter estimate with a 2σ band.
+"""
 function plot_soc_diagnostic(diag; color = :dodgerblue)
     fig = Figure(size = (700, 400))
     ax = [Axis(fig[i, j]) for i in 1:2, j in 1:2]
@@ -271,7 +303,12 @@ function plot_soc_diagnostic(diag; color = :dodgerblue)
     return fig
 end
 
-# supplementary: time-resolved SOC error, module × time
+"""
+    plot_soc_discrepancy_heatmap(tg, soc_err) -> Figure
+
+The [`calc_soc_error`](@ref) trajectories as a module × time heatmap, keeping the temporal
+structure that [`plot_soc_discrepancy`](@ref) collapses.
+"""
 function plot_soc_discrepancy_heatmap(tg, soc_err)
     fig = Figure(size = (700, 340))
     ax = Axis(fig[1, 1], xlabel = "Time / h", ylabel = "Module ID")

@@ -1,3 +1,9 @@
+"""
+    plot_cell_voltage_system(data; panel_tags = true, highlights = …) -> Figure
+
+Cell voltages of the whole system, one panel per module in a 9 × 3 grid of module by phase.
+`highlights` maps a `(phase, module)` pair to the colour its panel is drawn in.
+"""
 function plot_cell_voltage_system(
         data; panel_tags = true,
         # highlight the outlier modules discussed in the text
@@ -76,8 +82,12 @@ function plot_cell_voltage_system(
     return fig
 end
 
-# Per-signal sampling-interval histograms. All tables share a single dense `_time`
-# column, so the sampling intervals are a property of each signal table.
+"""
+    plot_data_resolution(data; completeness = nothing, yscale = log10) -> Figure
+
+Sampling-interval histogram per signal table. Pass a [`calc_data_completeness`](@ref) table as
+`completeness` to annotate each panel with the fraction of expected samples present.
+"""
 function plot_data_resolution(data; completeness = nothing, yscale = log10)
     avail = isnothing(completeness) ? nothing : Dict(r.signal => r.completeness for r in eachrow(completeness))
     colors = Makie.wong_colors()
@@ -124,10 +134,13 @@ function plot_data_resolution(data; completeness = nothing, yscale = log10)
     return fig
 end
 
-# Over the full window the current panel fills the ±50 A band solid: every module switches
-# between carrying the phase current and zero, so 27 traces overlap into a block. Group B
-# resolves the shaded window of the same signals, where the uneven load share the MMC
-# assigns becomes visible, together with the voltage step each switching event produces.
+"""
+    plot_module_data(data; N = 5, zoom = (3.05, 3.22)) -> Figure
+
+Module voltage, current and temperature for all 27 modules, coloured by module ID. Group A
+covers the full window decimated by `N`; group B redraws the `zoom` hours shaded in A at full
+resolution, where the individual switching events are resolvable.
+"""
 function plot_module_data(data; N = 5, zoom = (3.05, 3.22))
     fig = Figure(size = (600, 660))
     gl_full = fig[1, 1] = GridLayout()
@@ -202,6 +215,12 @@ function plot_module_data(data; N = 5, zoom = (3.05, 3.22))
     return fig
 end
 
+"""
+    plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5)) -> Figure
+
+Two modules side by side over the full window, four rows each: cell voltages, module voltage,
+current and temperature. `id_norm` and `id_out` are the `(phase, module)` pairs to draw.
+"""
 function plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5))
     fig = Figure(size = (700, 450))
     colors = Makie.wong_colors()

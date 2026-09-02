@@ -1,6 +1,4 @@
-# terminal-voltage fit + innovation over time
-# draws the example open-loop fit into `gl` as two stacked panels (voltage + error,
-# error ≈ 1/3 height); returns (ax_v, ax_e). Measured = neutral gray, cell model = orange.
+# terminal-voltage fit over measurement, with the innovation below at ≈ 1/3 the height
 function plot_sim!(gl, model::AbstractBatteryModel, sol; Ts = 1.0)
     kf = model.kf
     zt = kf.p.zt
@@ -57,13 +55,25 @@ function plot_sim!(gl, model::AbstractBatteryModel, sol; Ts = 1.0)
     return (ax_v, ax_e)
 end
 
+"""
+    plot_sim(model, sol; Ts = 1.0) -> Figure
+
+Terminal voltage of one unit, measured against modelled, with the innovation in a panel below.
+Pair with [`eval_model`](@ref)'s solution for the open-loop fit rather than the one-step-ahead
+prediction. `plot_sim!(gl, model, sol)` draws the same pair into an existing layout.
+"""
 function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0)
     fig = Figure(size = (700, 300))
     plot_sim!(GridLayout(fig[1, 1]), model, sol; Ts)
     return fig
 end
 
-# charge estimate vs reference (Coulomb counting + filtered Q) with error panel
+"""
+    plot_q_estimation(q_ref, sol, model) -> Figure
+
+Filtered charge estimate against the reference `q_ref` and the Coulomb-counting baseline, with
+their errors in a panel below.
+"""
 function plot_q_estimation(q_ref, sol, model::AbstractBatteryModel)
     kf = model.kf
     (; zt) = kf.p
@@ -128,6 +138,14 @@ function plot_ecm!(ax, model::YuasaModel, sol; color = nothing)
     return nothing
 end
 
+"""
+    plot_ecms_comparison(cell_models, cell_sols, module_models, module_sols;
+                         n_cell = 1, n_mod = 12, tags = true, colors = MODULE_COLORS) -> Figure
+
+Identified OCV and RΣ(q) curves at both levels side by side: `n_cell` example cells on the
+left, `n_mod` modules on the right, coloured by module ID. Module curves are drawn per cell,
+so the two columns share a scale.
+"""
 function plot_ecms_comparison(
         cell_models, cell_sols, module_models, module_sols;
         n_cell = 1, n_mod = 12, tags = true,
@@ -181,15 +199,18 @@ function plot_ecms_comparison(
     return fig
 end
 
-# Fitted ECM parameters across the fleet (consumes `calc_ecm_parameters`).
-# Complements the ECM figure rather than repeating it: that one draws R_DC(q) curves for a handful
-# of example units, this one carries the fleet SPREAD and the scalar parameters, which it does not
-# show at all. Composite-free throughout — no SOC, no capacity, both of which come later.
-#
-# Cell and module fits are overlaid, modules on a per-cell basis (`n = 12` in the builder), because
-# the COMPARISON is the result: R1, τ and k agree between the two levels, but module R0 sits ~40 %
-# higher — the busbars and contacts that lie in a module's series path but not in a cell's own
-# voltage measurement. Densities, not counts, since there are 324 cells against 27 modules.
+"""
+    plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ = 5.0,
+                        T = 5:1:40, T0 = 25) -> Figure
+
+Fleet distribution of the fitted ECM parameters from a [`calc_ecm_parameters`](@ref) table:
+R1, R0, RΣ, τ and the Arrhenius correction over `T`. Pass `df_mod` to overlay the module fits
+on the cells.
+
+Shown as densities rather than counts, since the two levels have 324 and 27 units. Resistances
+are compared at `v_ref`, and the module table must come from a builder run with `n = 12` for
+the levels to share a scale.
+"""
 function plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ = 5.0, T = 5:1:40, T0 = 25)
     wong = Makie.wong_colors()
     c_cell = wong[2]

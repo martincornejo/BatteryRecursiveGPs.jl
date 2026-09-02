@@ -1,10 +1,15 @@
-# Paper figure (supplementary): two-stage hyperparameter selection. Columns = cells |
-# modules (module OCV ÷ n → per-cell scale); each column reads top-to-bottom as one story.
-# A/B: dV/dSOC fans at the shared initial ℓ, flagged units (> thresh at init) highlighted;
-# C/D: fans after per-unit adaptation; E/F: composite-OCV RMSE distribution, initial vs
-# adapted (linear mV axis; off-scale outliers annotated as text instead of squeezed in).
-# Selected-ℓ counts are tabulated separately (see selection_counts).
-# `cells`/`modules` are calc_hyperparam_selection bundles (; fans, comp, rmse, thresh).
+"""
+    plot_hyperparam_selection(cells, modules) -> Figure
+
+What the two-stage selection does to the fits, cells in the left column and modules in the
+right: dV/dSOC fans at the shared initial ℓ with the flagged units highlighted (A, B), the same
+fans after per-unit adaptation (C, D), and the composite-OCV RMSE before and after (E, F).
+Both arguments are [`calc_hyperparam_selection`](@ref) bundles.
+
+Module curves are drawn per cell so the columns share a scale, and RMSE outliers beyond the
+axis are annotated rather than squeezed in. [`selection_counts`](@ref) tabulates which ℓ each
+unit ended on.
+"""
 function plot_hyperparam_selection(cells, modules)
     fig = Figure(size = (700, 640), figure_padding = 8)
     wong = Makie.wong_colors()
@@ -85,13 +90,18 @@ function plot_hyperparam_selection(cells, modules)
     return fig
 end
 
-# Paper figure (supplementary): all four GP hyperparameters of every unit — histograms in
-# physical units (2 rows cells/modules × 4 equal columns ℓ_ocv/ℓ_r1/σ_ocv/σ_r1, ~40 bins
-# each so bar widths match; ℓ_ocv log-x). Bars are stack-colored by the selected
-# dimensionless ℓ (gray = 0.5 init, lipari steps for escalations) — the legend speaks the text's
-# vocabulary, and the σ columns come out all-gray since σ is never adapted. Units beyond
-# any cell capacity (ℓ_ocv > 100 Ah) are named; their 1-count bars would be invisible.
-# Inputs are calc_scaled_hyperparams DataFrames.
+"""
+    plot_hyperparam_scales(scaled_cells, scaled_mods) -> Figure
+
+All four GP hyperparameters of every unit in physical units, cells over modules in rows and
+`ℓ_ocv`, `ℓ_r1`, `σ_ocv`, `σ_r1` in columns. Both arguments are
+[`calc_scaled_hyperparams`](@ref) tables.
+
+Bars are stacked by the dimensionless ℓ the unit was selected on, gray for the init and lipari
+steps for the escalations; the σ columns come out all-gray because σ is never adapted. `ℓ_ocv`
+is on a log axis, and units whose ℓ exceeds any cell capacity are named, since their
+single-count bars are otherwise invisible.
+"""
 function plot_hyperparam_scales(scaled_cells, scaled_mods)
     # escalated ℓ values actually selected, ascending (0.5 is the init and gets its own color)
     ℓ_esc = sort(setdiff(union(scaled_cells.ℓ_ocv_rel, scaled_cells.ℓ_r1_rel, scaled_mods.ℓ_ocv_rel, scaled_mods.ℓ_r1_rel), [0.5]))

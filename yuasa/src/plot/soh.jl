@@ -1,3 +1,9 @@
+"""
+    plot_soh_heatmap(comp_fit) -> Figure
+
+Fitted capacity of all 324 cells as a cell × module heatmap, on the lipari scale in Ah.
+`plot_soh_heatmap!(layout, comp_fit)` draws it into an existing layout.
+"""
 function plot_soh_heatmap(comp_fit)
     fig = Figure(size = (300, 400))
     gl = GridLayout(fig[1, 1])
@@ -25,6 +31,13 @@ function plot_soh_heatmap!(layout, comp_fit)
     return nothing
 end
 
+"""
+    plot_composite_ocv(comp_fit, cells; xaxis = :soc) -> Figure
+
+Every cell's reconstructed OCV placed on the composite's gauge, coloured by capacity, with the
+consensus composite in black over them and dV/dSOC below. `xaxis = :ah` puts the x-axis in
+capacity instead of SOC. `plot_composite_ocv!(layout, …)` draws it into an existing layout.
+"""
 function plot_composite_ocv(comp_fit, cells; xaxis = :soc)
     fig = Figure(size = (400, 400))
     gl = GridLayout(fig[1, 1])
@@ -95,7 +108,11 @@ function plot_composite_ocv!(layout, comp_fit, cells; xaxis = :soc, vertical = t
     return
 end
 
-# distribution of cell SOH (capacity relative to nominal) across the fleet
+"""
+    plot_cell_soh_hist(comp_fit; Q_nom = 100, size = (420, 380)) -> Figure
+
+Histogram of cell SOH across the fleet, as capacity relative to `Q_nom` in %.
+"""
 function plot_cell_soh_hist(comp_fit; Q_nom = 100, size = (420, 380))
     soh = Measurements.value.(comp_fit.Q_cell) ./ Q_nom .* 100
 
@@ -116,6 +133,12 @@ function plot_cell_soh_hist(comp_fit; Q_nom = 100, size = (420, 380))
     return fig
 end
 
+"""
+    plot_cell_soh(comp_fit, cells; xaxis = :soc) -> Figure
+
+The composite-OCV fit as a pair: (A) [`plot_composite_ocv`](@ref) beside (B) the capacity
+[`plot_soh_heatmap`](@ref), sharing one capacity colour scale.
+"""
 function plot_cell_soh(comp_fit, cells; xaxis = :soc)
     fig = Figure(size = (700, 400))
     gl1 = GridLayout(fig[1, 1])
@@ -128,6 +151,13 @@ function plot_cell_soh(comp_fit, cells; xaxis = :soc)
     return fig
 end
 
+"""
+    plot_module_soh(df_soh; whiskers = true) -> Figure
+
+Per-module SOH from the cell fits against the module model's own estimate, one pair per
+module, from a [`calc_module_soh_summary`](@ref) table. `whiskers` draws the fit uncertainties.
+`plot_module_soh!(layout, df_soh)` draws it into an existing layout.
+"""
 function plot_module_soh(df_soh; whiskers = true)
     fig = Figure(size = (700, 360))
     gl = GridLayout(fig[1, 1])
@@ -179,6 +209,14 @@ function plot_module_soh!(
     return ax
 end
 
+"""
+    plot_module_inhomogeneity(df_soh; whiskers = true) -> Figure
+
+Capacity each module cannot use, split into the irreversible part from cell-to-cell capacity
+spread and the part a balancing cycle would recover, as stacked bars per module. Consumes a
+[`calc_module_soh_summary`](@ref) table. `plot_module_inhomogeneity!(layout, df_soh)` draws it
+into an existing layout.
+"""
 function plot_module_inhomogeneity(df_soh; whiskers = true)
     fig = Figure(size = (700, 360))
     gl = GridLayout(fig[1, 1])
@@ -229,6 +267,12 @@ function plot_module_inhomogeneity!(
     return ax
 end
 
+"""
+    plot_module_summary(df_soh; whiskers = true, soh_colors = …, bar_colors = …) -> Figure
+
+[`plot_module_soh`](@ref) stacked over [`plot_module_inhomogeneity`](@ref) on a shared module
+axis: the SOH each module reaches, and the capacity its cell spread costs.
+"""
 function plot_module_summary(
         df_soh; whiskers = true,
         soh_colors = Makie.wong_colors()[[1, 2]],
