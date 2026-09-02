@@ -176,10 +176,11 @@ end
 # as SOC % (charge / capacity, the downstream quantity and field-standard metric); absolute Ah and
 # the module-current Coulomb-counting baseline are kept for reference.
 function calc_charge_accuracy(soc_models, soc_sols, data, ti, ids, Qs; zt = fit_zscore())
+    q_probe = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, first(ids).c).u])
     return map(ids, Qs) do id, Q
         sol = soc_sols[id]
         (; q) = charge_trajectory(soc_models[id], sol)                                   # EKF estimate [Ah]
-        qref = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, id.c).u])[sol.idx]
+        qref = q_probe[sol.idx]
         q_cc = StatsBase.reconstruct(zt.q, [u.q for u in sol.ut])                         # module-current CC [Ah]
         e, e_cc = q .- qref, q_cc .- qref
         rmse = sqrt(mean(abs2, e))
@@ -194,9 +195,10 @@ end
 # time-resolved charge error as SOC %, interpolated onto the common grid `tg` (one column per cell).
 function calc_charge_error(soc_models, soc_sols, data, ti, ids, Qs; tg, zt = fit_zscore())
     df = DataFrame(t = collect(tg) ./ 3600)
+    q_probe = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, first(ids).c).u])
     for (id, Q) in zip(ids, Qs)
         (; t, q) = charge_trajectory(soc_models[id], soc_sols[id])
-        qref = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, id.c).u])[soc_sols[id].idx]
+        qref = q_probe[soc_sols[id].idx]
         f = LinearInterpolation(100 .* (q .- qref) ./ Q, t; extrapolation = ExtrapolationType.Constant)
         df[!, "c$(id.c)"] = f.(tg)
     end

@@ -29,7 +29,12 @@ function load_dataset(datadir; signals = nothing, oscilloscope = false)
 end
 
 
-function fill_missings(df, ts = Second(1); time = :time)
+"""
+    insert_missings(df, ts = Second(1); time = :time) -> DataFrame
+
+Put `df` on a regular `ts` grid spanning its own time range. Timestamps with no sample become `missing`.
+"""
+function insert_missings(df, ts = Second(1); time = :time)
     t0 = first(df[:, time])
     t1 = last(df[:, time])
 
@@ -61,36 +66,39 @@ function fit_zscore(n = 1)
 end
 
 
+# module sensor temperature, interpolated onto the ti grid
+function _temperature(data, ti, p, m; Ts)
+    df_T = copy(data[:battery_temperature])
+    select!(df_T, "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
+    return interpolate(df_T, ti; Ts)
+end
+
+# Coulomb-count the current and assemble the filter inputs. `df_v.value` must arrive z-scored.
+function _assemble_uy(df_v, df_i, df_T; Ts, zt)
+    q = cumsum(df_i.value) * Ts / 3600
+    î = StatsBase.transform(zt.i, df_i.value)
+    q̂ = StatsBase.transform(zt.q, q)
+    u = [(; i, q, T) for (i, q, T) in zip(î, q̂, df_T.value)]
+    y = [SA[v] for v in df_v.value]
+    return (; u, y)
+end
+
+
 function cell_dataset(data, ti, p, m, c; Ts = 1.0, zt = fit_zscore())
     # voltage
     df_v = copy(data[:cell_voltage])
     select!(df_v, "_time" => "time", "cell_voltage_$(p)_$(m)_1_$(c)" => "value")
     subset!(df_v, :time => ByRow(∈(ti)))
     df_v[!, :value] = StatsBase.transform(zt.v, df_v.value)
-    df_v = fill_missings(df_v, Second(Ts))
+    df_v = insert_missings(df_v, Second(Ts))
 
     # current
     df_i = copy(data[:module_current])
     select!(df_i, "_time" => "time", "module_average_current_$(p)_$(m)" => ByRow(x -> -x) => "value")
     df_i = interpolate(df_i, ti; Ts)
 
-    # coulomb counting
-    q = cumsum(df_i.value) * Ts / 3600
-
-    # temperature
-    df_T = copy(data[:battery_temperature])
-    select!(df_T, "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
-    df_T = interpolate(df_T, ti; Ts)
-
-    î = StatsBase.transform(zt.i, df_i.value)
-    q̂ = StatsBase.transform(zt.q, q)
-    T = df_T.value
-    v̂ = df_v.value
-
-    u = [(; i, q, T) for (i, q, T) in zip(î, q̂, T)]
-    y = [SA[v] for v in v̂]
-
-    return (; u, y)
+    df_T = _temperature(data, ti, p, m; Ts)
+    return _assemble_uy(df_v, df_i, df_T; Ts, zt)
 end
 
 
@@ -99,31 +107,16 @@ function module_dataset(data, ti, p, m; Ts = 1.0, zt = fit_zscore(12))
     df_v = copy(data[:module_voltage])
     select!(df_v, "_time" => "time", "module_voltage_$(p)_$(m)" => "value")
     df_v[!, :value] = StatsBase.transform(zt.v, df_v.value)
-    df_v = fill_missings(df_v, Second(Ts))
+    df_v = insert_missings(df_v, Second(Ts))
     subset!(df_v, :time => ByRow(∈(ti)))
 
     # current
     df_i = copy(data[:module_current])
     select!(df_i, "_time" => "time", "module_average_current_$(p)_$(m)" => ByRow(x -> -x) => "value")
-    df_i = interpolate(df_i, ti; Ts = 1.0)
+    df_i = interpolate(df_i, ti; Ts)
 
-    # coulomb counting
-    q = cumsum(df_i.value) * Ts / 3600
-
-    # temperature
-    df_T = copy(data[:battery_temperature])
-    select!(df_T, "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
-    df_T = interpolate(df_T, ti; Ts)
-
-    î = StatsBase.transform(zt.i, df_i.value)
-    q̂ = StatsBase.transform(zt.q, q)
-    T = df_T.value
-    v̂ = df_v.value
-
-    u = [(; i, q, T) for (i, q, T) in zip(î, q̂, T)]
-    y = [SA[v] for v in v̂]
-
-    return (; u, y)
+    df_T = _temperature(data, ti, p, m; Ts)
+    return _assemble_uy(df_v, df_i, df_T; Ts, zt)
 end
 
 
@@ -135,28 +128,14 @@ function cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore())
     select!(df_v, "_time" => "time", "cell_voltage_$(p)_$(m)_1_$(c)" => "value")
     subset!(df_v, :time => ByRow(∈(ti)))
     df_v[!, :value] = StatsBase.transform(zt.v, df_v.value)
-    df_v = fill_missings(df_v, Second(Ts))
+    df_v = insert_missings(df_v, Second(Ts))
 
     df_î = copy(data[:oscilloscope_current])
     select!(df_î, :timestamp_utc => "time", :MEAS1 => ByRow(x -> -x) => "value")
     df_î = interpolate(df_î, ti; Ts)
 
-    q = cumsum(df_î.value) * Ts / 3600
-
-    # temperature — YuasaModel's measurement function reads u.T (Arrhenius factor)
-    df_T = copy(data[:battery_temperature])
-    select!(df_T, "_time" => "time", "battery_sensor_temperature_$(p)_$(m)_1" => "value")
-    df_T = interpolate(df_T, ti; Ts)
-
-    î = StatsBase.transform(zt.i, df_î.value)
-    q̂ = StatsBase.transform(zt.q, q)
-    T = df_T.value
-    v̂ = df_v.value
-
-    u = [(; i, q, T) for (i, q, T) in zip(î, q̂, T)]
-    y = [SA[v] for v in v̂]
-
-    return (; u, y)
+    df_T = _temperature(data, ti, p, m; Ts)
+    return _assemble_uy(df_v, df_î, df_T; Ts, zt)
 end
 
 

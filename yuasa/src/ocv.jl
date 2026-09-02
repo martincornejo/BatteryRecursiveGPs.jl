@@ -148,8 +148,7 @@ function calc_ocv_shape_validation(measured, reconstructed, fcs, fds; n_v = 200)
         slope = _dv_dq(gr, v)
 
         b = mean(gr.(v) .- gm.(v))                       # only the charge origin is removed
-        a_fit, _ = hcat(gm.(v), ones(length(v))) \ gr.(v)
-        b_fit = mean(gr.(v) .- a_fit .* gm.(v))
+        a_fit, b_fit = hcat(gm.(v), ones(length(v))) \ gr.(v)
 
         rmse(a, b) = sqrt(mean(abs2, (gr.(v) .- (a .* gm.(v) .+ b)) .* slope .* 1000))
         r = rmse(1.0, b)

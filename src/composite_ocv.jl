@@ -190,7 +190,7 @@ Returns `(; Q_cell, s0)` as `Measurement{Float64}` vectors with OLS 1σ.
 """
 function fit_cells_to_reference(
         cells, ref_soc_of_v, v_range::Tuple{<:Real, <:Real};
-        n_v_grid::Int = 200,
+        n_v_grid = 200,
     )
     N = length(cells)
     Q_cell = Vector{Measurement{Float64}}(undef, N)
