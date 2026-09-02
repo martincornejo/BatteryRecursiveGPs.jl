@@ -354,7 +354,7 @@ end
 """
     calc_ecm_parameters(models, sols, ids; v_ref = 3.9, n = 1) -> DataFrame
 
-Per-unit ECM parameters, alongside the OCV: `R0`, `R1` and `R_DC = R0 + R1` at `v_ref` (mΩ), RC
+Per-unit ECM parameters, alongside the OCV: `R0`, `R1` and `RΣ = R0 + R1` at `v_ref` (mΩ), RC
 time constant `τ` (s) and Arrhenius coefficient `k` (K), each with its posterior standard
 deviation.
 
@@ -377,7 +377,7 @@ function calc_ecm_parameters(models, sols, ids; v_ref = 3.9, n = 1)
             id,
             R0, R0_sd = sqrt(max(sol.r0_σ[end], 0)) * zt.r.scale[1] * 1000 / n,
             R1 = r1.μ[j] * 1000 / n, R1_sd = r1.σ[j] * 1000 / n,
-            R_DC = R0 + r1.μ[j] * 1000 / n, R_DC_sd = r1.σ[j] * 1000 / n,
+            RΣ = R0 + r1.μ[j] * 1000 / n, RΣ_sd = r1.σ[j] * 1000 / n,
             τ = sol.rc_τμ[end], τ_sd = sqrt(max(sol.rc_τσ[end], 0)),
             k = sol.arr_kμ[end], k_sd = sqrt(max(sol.arr_kσ[end], 0)),
             v_in_range = minimum(ocv.μ) / n <= v_ref <= maximum(ocv.μ) / n,
@@ -394,7 +394,7 @@ Fleet spread of each ECM parameter against its median posterior uncertainty, fro
 function calc_parameter_summary(df)
     rows = map(
         (
-            (:R1, :R1_sd, "R1 / mΩ"), (:R0, :R0_sd, "R0 / mΩ"), (:R_DC, :R_DC_sd, "R_DC / mΩ"),
+            (:R1, :R1_sd, "R1 / mΩ"), (:R0, :R0_sd, "R0 / mΩ"), (:RΣ, :RΣ_sd, "RΣ / mΩ"),
             (:τ, :τ_sd, "τ / s"), (:k, :k_sd, "Arrhenius k / K"),
         )
     ) do (mc, sc, name)
