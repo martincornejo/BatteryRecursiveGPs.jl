@@ -124,8 +124,8 @@ function plot_ecm!(ax, model::YuasaModel, sol; color = nothing)
     # R0 scalar from the final state estimate
     xc = ComponentVector(sol.x_end, kf.p.xid)
     Σ = ComponentMatrix(sol.R_end, kf.p.Σid)
-    r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
-    r0σ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) |> first
+    r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) * 1.0e3 |> first
+    r0σ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) * 1.0e3 |> first
 
     # R1 GP curve overlaid on the R0 panel
     r1 = predict_gp(kf, q̂, :r1)
@@ -142,9 +142,11 @@ end
     plot_ecms_comparison(cell_models, cell_sols, module_models, module_sols;
                          n_cell = 1, n_mod = 12, tags = true, colors = MODULE_COLORS) -> Figure
 
-Identified OCV and RΣ(q) curves at both levels side by side: `n_cell` example cells on the
-left, `n_mod` modules on the right, coloured by module ID. Module curves are drawn per cell,
-so the two columns share a scale.
+Identified OCV and RΣ(q) curves at both levels side by side, cells on the left and modules on
+the right. Every unit in the dictionaries is drawn, coloured by module ID.
+
+`n_cell` and `n_mod` are the number of series cells each level represents; they set the axis
+limits and ticks, so each column reads in its own units rather than a shared one.
 """
 function plot_ecms_comparison(
         cell_models, cell_sols, module_models, module_sols;
@@ -183,7 +185,7 @@ function plot_ecms_comparison(
         end
 
         ylims!(ax[1], n * 3.35, n * 4.15)
-        ylims!(ax[2], n * 0.0, n * 15)
+        ylims!(ax[2], n * 0.0, n * 16)
         # 0.25 V/cell steps so module ticks (×12) land on integers (42, 45, 48)
         ax[1].yticks = (n * 3.5):(n * 0.25):(n * 4.0)
         ax[2].yticks = (0):(n * 5):(n * 15)
