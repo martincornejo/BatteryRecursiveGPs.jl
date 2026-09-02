@@ -87,16 +87,17 @@ end
 
 # Paper figure (supplementary): all four GP hyperparameters of every unit — histograms in
 # physical units (2 rows cells/modules × 4 equal columns ℓ_ocv/ℓ_r1/σ_ocv/σ_r1, ~40 bins
-# each so bar widths match; ℓ_ocv log-x). Bars are stack-colored by the selected NOMINAL
-# value (gray = 0.5 init, lipari steps for escalations) — the legend speaks the text's
+# each so bar widths match; ℓ_ocv log-x). Bars are stack-colored by the selected
+# dimensionless ℓ (gray = 0.5 init, lipari steps for escalations) — the legend speaks the text's
 # vocabulary, and the σ columns come out all-gray since σ is never adapted. Units beyond
 # any cell capacity (ℓ_ocv > 100 Ah) are named; their 1-count bars would be invisible.
 # Inputs are calc_scaled_hyperparams DataFrames.
 function plot_hyperparam_scales(scaled_cells, scaled_mods)
-    nom_esc = [0.3, 0.6, 0.85, 1.0, 1.5, 15.0]  # escalation-grid values (union of both ℓ grids)
-    colors = Dict(v => get(cgrad(:lipari), t) for (v, t) in zip(nom_esc, range(0.8, 0.12, length = length(nom_esc))))
+    # escalated ℓ values actually selected, ascending (0.5 is the init and gets its own color)
+    ℓ_esc = sort(setdiff(union(scaled_cells.ℓ_ocv_rel, scaled_cells.ℓ_r1_rel, scaled_mods.ℓ_ocv_rel, scaled_mods.ℓ_r1_rel), [0.5]))
+    colors = Dict(v => get(cgrad(:lipari), t) for (v, t) in zip(ℓ_esc, range(0.8, 0.12, length = length(ℓ_esc))))
     colors[0.5] = RGBAf(0.65, 0.65, 0.65, 1)    # init: neutral gray
-    nom_all = [0.5; nom_esc]                    # init drawn first (bottom of the stacks)
+    ℓ_all = [0.5; ℓ_esc]                        # init drawn first (bottom of the stacks)
 
     function stacked_hist!(ax, groups, edges; logx = false)
         centers = logx ? sqrt.(edges[1:(end - 1)] .* edges[2:end]) : (edges[1:(end - 1)] .+ edges[2:end]) ./ 2
@@ -109,14 +110,14 @@ function plot_hyperparam_scales(scaled_cells, scaled_mods)
         return
     end
 
-    # (value, nominal-for-color, xscale, xticks, xlims, bin edges, log-spaced?, label)
+    # (value, ℓ_rel-for-color, xscale, xticks, xlims, bin edges, log-spaced?, label)
     specs = [
         (
-            x -> x.ℓ_ocv, x -> x.nom_ocv, log10, ([10, 20, 50, 100, 200], ["10", "20", "50", "100", "200"]),
+            x -> x.ℓ_ocv, x -> x.ℓ_ocv_rel, log10, ([10, 20, 50, 100, 200], ["10", "20", "50", "100", "200"]),
             (9, 220), 10 .^ (log10(9):0.035:log10(220)), true, rich("ℓ", subscript("OCV"), " / Ah"),
         ),
         (
-            x -> x.ℓ_r1, x -> x.nom_r1, identity, (0:20:60, string.(0:20:60)),
+            x -> x.ℓ_r1, x -> x.ℓ_r1_rel, identity, (0:20:60, string.(0:20:60)),
             (5, 68), 5:1.5:68, false, rich("ℓ", subscript("R1"), " / Ah"),
         ),
         (
@@ -131,12 +132,12 @@ function plot_hyperparam_scales(scaled_cells, scaled_mods)
 
     fig = Figure(size = (700, 360), figure_padding = 8)
     axs = Matrix{Axis}(undef, 2, 4)
-    for (col, (val, nom, xscale, xticks, lims, bins, logx, xlab)) in enumerate(specs)
+    for (col, (val, rel, xscale, xticks, lims, bins, logx, xlab)) in enumerate(specs)
         # Modules*: σ shown per cell (module value ÷ n) for a scale comparable to the cells
         for (row, (a, name)) in enumerate(((scaled_cells, "Cells"), (scaled_mods, "Modules*")))
             ax = Axis(fig[row, col]; xscale, xticks)
             axs[row, col] = ax
-            groups = [(Float64[val(x) for x in eachrow(a) if nom(x) == v], colors[v]) for v in nom_all]
+            groups = [(Float64[val(x) for x in eachrow(a) if rel(x) == v], colors[v]) for v in ℓ_all]
             stacked_hist!(ax, groups, collect(bins); logx)
             xlims!(ax, lims...); ylims!(ax, 0, nothing)
             col == 1 && (ax.ylabel = "$name / count")
@@ -155,7 +156,7 @@ function plot_hyperparam_scales(scaled_cells, scaled_mods)
         text!(axs[1, 1], r.ℓ_ocv, 50; text = r.name, align = (:right, :bottom), fontsize = 9)
     end
     fmt(v) = v == floor(v) ? string(Int(v)) : string(v)
-    order = sort(nom_all)
+    order = sort(ℓ_all)
     Legend(
         fig[3, 1:4],
         [PolyElement(color = colors[v]) for v in order],

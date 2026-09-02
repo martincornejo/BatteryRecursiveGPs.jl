@@ -6,7 +6,7 @@
 # absolute capacity per cell, (D) initial-SOC deviation from each module's mean (absolute initial
 # SOC is not comparable between the two experiments). Wong palette + black by module.
 function plot_validation(vals, labels)
-    cols = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
+    cols = MODULE_COLORS
     c_meas = :gray55
 
     fig = Figure(size = (630, 450))
@@ -99,7 +99,7 @@ end
 # above ~7 mV is the knee-bearing cells (their windows reach the steep low knee); plateau cells
 # sit at 3–5 mV.
 function plot_validation_rmse(vals, labels; bins = 0:1:16)
-    cols = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
+    cols = MODULE_COLORS
     nb = length(bins) - 1
     counts = zeros(Int, nb, length(vals))
     for (j, v) in enumerate(vals), r in v.df_shape.ocv_rmse

@@ -11,13 +11,8 @@ function plot_soh_heatmap!(layout, comp_fit)
     ax.xminorticks = 1:12
     ax.xminorticksvisible = true
 
-    ax.ytickformat = values -> begin
-        map(values) do value
-            p, m = divrem(value, 9)
-            "P$(Int(p) + 1)M$(Int(m))"
-        end
-    end
-    ax.yticks = [1, 6, 10, 15, 19, 24] #27
+    ax.ytickformat = values -> module_label.(values)
+    ax.yticks = [1, 6, 10, 15, 19, 24]
     ax.yminorticks = 1:27
     ax.yminorticksvisible = true
 
@@ -69,7 +64,6 @@ function plot_composite_ocv!(layout, comp_fit, cells; xaxis = :soc, vertical = t
     s0_μ = Measurements.value.(s0)
     colormap = :lipari
     colorrange = (60, 82)
-    lowclip = :black
     for i in eachindex(cells)
         q = cells[i].q
         v = cells[i].μ

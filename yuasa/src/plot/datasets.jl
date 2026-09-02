@@ -135,8 +135,7 @@ function plot_module_data(data; N = 5, zoom = (3.05, 3.22))
     axf = [Axis(gl_full[i, 1]) for i in 1:3]
     axz = [Axis(gl_zoom[i, 1]) for i in 1:2]
 
-    # color = module ID M1–M9 (same across phases)
-    colors = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)])
+    colors = MODULE_COLORS
 
     t0 = data[:module_voltage]._time[begin]
     t_end = Dates.value(data[:module_voltage]._time[end] - t0) * 1.0e-3 / 3600

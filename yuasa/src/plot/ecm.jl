@@ -131,9 +131,7 @@ end
 function plot_ecms_comparison(
         cell_models, cell_sols, module_models, module_sols;
         n_cell = 1, n_mod = 12, tags = true,
-        # color = module ID M1–M9 (same across phases);
-        # Wong palette extended to 9 with black + gray
-        colors = vcat(Makie.wong_colors(), [RGBAf(0, 0, 0, 1), RGBAf(0.6, 0.6, 0.6, 1)]),
+        colors = MODULE_COLORS,
     )
     fig = Figure(size = (700, 450))
     gl1 = GridLayout(fig[1, 1])

@@ -114,7 +114,7 @@ id_key(id) = hasproperty(id, :c) ? "$(id.p)_$(id.m)_$(id.c)" : "$(id.p)_$(id.m)"
 """
     build_hyperparam_export(sel) -> Dict
 
-The selected nominal ℓ/σ per unit, keyed for JSON. Together with `default_θ`, these four
+The selected dimensionless ℓ/σ per unit, keyed for JSON. Together with `default_θ`, these four
 numbers are all `scale_θ` needs to rebuild the full θ.
 """
 function build_hyperparam_export(sel)
@@ -145,7 +145,7 @@ function load_hyperparams(file, ids)
     return Dict(ids .=> ϑ)
 end
 
-# marginal counts of the selected nominal length scales — the paper's selection table
+# marginal counts of the selected length scales — the paper's selection table
 function selection_counts(cells, modules)
     cnt(f, ps) = countmap([f(p) for p in values(ps)])
     cols = [
@@ -159,7 +159,7 @@ end
 # Data-scaled GP hyperparameters per unit in physical units: length scales in Ah (ℓ from
 # scale_θ is in z-scored charge → × zt.q scale), σ as the PRIOR STD per cell in mV (OCV) /
 # mΩ (R1) — θ.σ multiplies the kernel, i.e. it is a variance, so the std is √θσ (yuasa.jl).
-# The selected nominal values are carried along for the figure's color coding.
+# The dimensionless selected ℓ is carried along as ℓ_*_rel for the figure's color coding.
 function calc_scaled_hyperparams(sel, unit_data, zt)
     (; picks, ids, ϑ, n) = sel
     return map(ids) do id
@@ -170,7 +170,7 @@ function calc_scaled_hyperparams(sel, unit_data, zt)
             name = unit_name(id),
             ℓ_ocv = θ.ocv.ℓ * zt.q.scale[1], ℓ_r1 = θ.r1.ℓ * zt.q.scale[1],
             σ_ocv = sqrt(θ.ocv.σ) * zt.σ.scale[1] / n * 1000, σ_r1 = sqrt(θ.r1.σ) * zt.r.scale[1] / n * 1000,
-            nom_ocv = pick.ℓ_ocv, nom_r1 = pick.ℓ_r1,
+            ℓ_ocv_rel = pick.ℓ_ocv, ℓ_r1_rel = pick.ℓ_r1,
         )
     end |> DataFrame
 end
