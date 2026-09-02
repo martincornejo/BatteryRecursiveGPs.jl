@@ -1,5 +1,10 @@
 # === model accuracy ===
 
+"""
+    calc_v_summary(models, sols, ids) -> DataFrame
+
+Voltage-fit accuracy per unit: the RMSE of the innovation series in mV, one row per id.
+"""
 function calc_v_summary(models, sols, ids)
     df = map(ids) do id
         (; e) = voltage_error(models[id], sols[id])
@@ -8,10 +13,17 @@ function calc_v_summary(models, sols, ids)
     return df
 end
 
-# module-level comparison on equal footing: the module model is scored against the
-# measured module voltage it was fit on; the cell models as a virtual module,
-# Σ predicted vs Σ measured cell voltage. Σ cells vs measured module voltage is NOT
-# comparable — wiring drops between the two measurements reach several 100 mV.
+"""
+    calc_module_v_summary(cell_models, cell_sols, module_models, module_sols, module_ids) -> DataFrame
+
+Module-level voltage accuracy from both directions, in mV: `rmse_module` scores the module
+model against the module voltage it was fitted on, and `rmse_cells` scores the 12 cell models
+as a virtual module, summed prediction against summed cell voltage. Both are sums of cell
+voltages, so they compare directly.
+
+Do not score summed cell voltages against the measured module voltage instead: the wiring
+drops between those two measurements reach several hundred mV.
+"""
 function calc_module_v_summary(cell_models, cell_sols, module_models, module_sols, module_ids)
     df = map(module_ids) do id
         (; p, m) = id
@@ -34,6 +46,17 @@ end
 
 # === SOH estimation ===
 
+"""
+    calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit; Q_nom = 100) -> DataFrame
+
+Per-module SOH from the cell fits and from the module fit, with the cell-to-cell spread that
+separates them. `soh` is the string's usable capacity over `Q_nom` and `soh_module` the module
+model's own estimate; `Δsoc_max`, `Δsoh_max`, `σ_soc` and `σ_soh` give the within-module
+spread.
+
+The unusable capacity splits into `loss_soh`, the irreversible part from capacity spread, and
+`loss_soc`, the part a balancing cycle would recover. Both as a fraction of `Q_nom`.
+"""
 function calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit; Q_nom = 100)
     cell_idx = Dict(cell_ids .=> eachindex(cell_ids))
     df_soh = map(enumerate(module_ids)) do (k, id)
@@ -63,10 +86,15 @@ function calc_module_soh_summary(cell_ids, cell_fit, module_ids, module_fit; Q_n
     return df_soh
 end
 
-# Per-module spread of the per-cell composite-OCV fit, in PHYSICAL units: SOH as capacity (Ah)
-# and initial SOC (%). Complements `calc_module_soh_summary`, which reports the same quantities
-# normalised by Q_nom and only as σ/Δ — this one keeps mean/min/max in the units the paper
-# quotes. Fit uncertainties propagate through, so the columns are `Measurement`s.
+"""
+    calc_cell_spread(cell_fit, cell_ids) -> DataFrame
+
+Per-module spread of the per-cell composite-OCV fit in physical units — capacity in Ah, initial
+SOC in % — as mean, standard deviation, min and max. [`calc_module_soh_summary`](@ref) reports
+the same quantities normalised by `Q_nom` and only as σ/Δ.
+
+Fit uncertainties propagate through, so the columns hold `Measurement`s.
+"""
 function calc_cell_spread(cell_fit, cell_ids)
     df = map(cell_fit.Q_cell, cell_fit.s0, cell_ids) do Q, s0, id
         (; p, m, c) = id
@@ -89,11 +117,16 @@ function calc_cell_spread(cell_fit, cell_ids)
     )
 end
 
-# Per-cell misfit to the consensus OCV from `fit_composite_ocv`: each cell is placed on the
-# composite's absolute-SOC gauge via its own (Q_cell, s0), then compared to the composite
-# curve over their shared SOC overlap. Same construction as the measured-OCV validation, but the
-# reference is the fit's own consensus instead of the measured OCV — i.e. the voltage error
-# the alignment leaves behind. `ocv_rmse`, `ocv_max` in mV, per cell.
+"""
+    calc_composite_rmse(comp_fit, cells, ids; n_soc = 200) -> DataFrame
+
+Per-cell misfit to the consensus OCV from [`fit_composite_ocv`](@ref): each cell is placed on
+the composite's SOC gauge through its own `(Q_cell, s0)`, then compared to the composite over
+the SOC range the two share. `ocv_rmse` and `ocv_max` in mV, one row per cell.
+
+The reference is the fit's own consensus, so this measures the voltage error the alignment
+leaves behind, not agreement with a measurement.
+"""
 function calc_composite_rmse(comp_fit, cells, ids; n_soc = 200)
     (; soc_grid, v_grid, Q_cell, s0) = comp_fit
     Q = Measurements.value.(Q_cell)
@@ -117,6 +150,13 @@ end
 
 # === SOC estimation ===
 
+"""
+    calc_soc_trajectories(models, sols, fit, ids; tg) -> Matrix{Measurement}
+
+SOC of every unit on the shared time grid `tg`, from each one's filtered charge trajectory
+placed on its composite-fit capacity and initial SOC. `length(tg)` × `length(ids)`, carrying
+the filter and fit uncertainties.
+"""
 function calc_soc_trajectories(models, sols, fit, ids; tg)
     trajs = map(enumerate(ids)) do (k, id)
         (; t, q, qσ) = charge_trajectory(models[id], sols[id])
@@ -126,6 +166,13 @@ function calc_soc_trajectories(models, sols, fit, ids; tg)
     return stack(trajs)  # length(tg) × length(ids), eltype Measurement{Float64}
 end
 
+"""
+    calc_module_soc(id, tg, soc_cell, soc_module, cell_fit, cell_ids, module_ids) -> DataFrame
+
+The SOC trajectories of one module on the grid `tg`: its 12 cells as `soc_cell_1` …
+`soc_cell_12`, those 12 aggregated into a string SOC as `soc_pack`, and the module model's own
+estimate as `soc_module`.
+"""
 function calc_module_soc(id, tg, soc_cell, soc_module, cell_fit, cell_ids, module_ids)
     (; p, m) = id
     cell_idx = Dict(cell_ids .=> eachindex(cell_ids))
@@ -141,7 +188,12 @@ function calc_module_soc(id, tg, soc_cell, soc_module, cell_fit, cell_ids, modul
     )
 end
 
-# module SOC error trajectories: e(t) = soc_module − aggregated cell soc, length(tg) × n_modules
+"""
+    calc_soc_error(soc_cell, soc_module, cell_fit, cell_ids, module_ids) -> Matrix
+
+What the module model gets wrong about SOC: `soc_module − aggregated cell SOC` per time step,
+`length(tg)` × `length(module_ids)`.
+"""
 function calc_soc_error(soc_cell, soc_module, cell_fit, cell_ids, module_ids)
     cell_idx = Dict(cell_ids .=> eachindex(cell_ids))
     E = map(enumerate(module_ids)) do (k, id)
@@ -153,6 +205,12 @@ function calc_soc_error(soc_cell, soc_module, cell_fit, cell_ids, module_ids)
     return stack(E)
 end
 
+"""
+    calc_module_soc_summary(soc_err, module_ids) -> DataFrame
+
+Collapse the [`calc_soc_error`](@ref) trajectories to one row per module: `bias`, `rmse` and
+worst-case `max`.
+"""
 function calc_module_soc_summary(soc_err, module_ids)
     df_soc = map(enumerate(module_ids)) do (k, id)
         e = soc_err[:, k]
@@ -161,20 +219,29 @@ function calc_module_soc_summary(soc_err, module_ids)
     return df_soc
 end
 
-# Per-cell capacities (Ah, point estimates) for the subset `ids`, looked up in a composite fit
-# whose `Q_cell` is indexed parallel to `cell_ids`. The `Qs` argument of the charge-accuracy
-# functions below; kept separate from them so the capacity source stays swappable.
+"""
+    cell_capacities(fit, cell_ids, ids) -> Vector{Float64}
+
+Capacities in Ah for the subset `ids`, as point estimates, looked up in a composite `fit` whose
+`Q_cell` is indexed parallel to `cell_ids`. This is the `Qs` argument of
+[`calc_charge_accuracy`](@ref) and [`calc_charge_error`](@ref).
+"""
 function cell_capacities(fit, cell_ids, ids)
     idx = Dict(cell_ids .=> eachindex(cell_ids))
     return [Measurements.value(fit.Q_cell[idx[id]]) for id in ids]
 end
 
-# charge-estimation accuracy on the reference module (only P1M9 carries an oscilloscope current
-# probe → accurate ground-truth charge). The probe measures one shared string current, so q_ref is
-# common to all 12 cells and only the per-cell voltage differs: 12 estimates against one reference.
-# `ids` are the reference-module cells; `Qs` their capacities (aligned to `ids`). Error is reported
-# as SOC % (charge / capacity, the downstream quantity and field-standard metric); absolute Ah and
-# the module-current Coulomb-counting baseline are kept for reference.
+"""
+    calc_charge_accuracy(soc_models, soc_sols, data, ti, ids, Qs; zt = fit_zscore()) -> DataFrame
+
+Charge-estimation accuracy against the oscilloscope reference, one row per cell. `ids` are
+cells of the reference module P1M9 — the only module carrying a current probe — and `Qs` their
+capacities, aligned to `ids`. The probe measures the one shared string current, so all 12 cells
+are scored against the same reference and only their voltages differ.
+
+`rmse_soc` and `max_soc` are in % SOC, `rmse` and `max` the same errors in Ah, and `rmse_cc`
+the module-current Coulomb-counting baseline.
+"""
 function calc_charge_accuracy(soc_models, soc_sols, data, ti, ids, Qs; zt = fit_zscore())
     q_probe = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, first(ids).c).u])
     return map(ids, Qs) do id, Q
@@ -192,7 +259,12 @@ function calc_charge_accuracy(soc_models, soc_sols, data, ti, ids, Qs; zt = fit_
     end |> DataFrame
 end
 
-# time-resolved charge error as SOC %, interpolated onto the common grid `tg` (one column per cell).
+"""
+    calc_charge_error(soc_models, soc_sols, data, ti, ids, Qs; tg, zt = fit_zscore()) -> DataFrame
+
+The [`calc_charge_accuracy`](@ref) error over time rather than collapsed to an RMSE: charge
+error in % SOC on the grid `tg`, with `t` in hours and one column `c<n>` per cell.
+"""
 function calc_charge_error(soc_models, soc_sols, data, ti, ids, Qs; tg, zt = fit_zscore())
     df = DataFrame(t = collect(tg) ./ 3600)
     q_probe = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, first(ids).c).u])
@@ -205,10 +277,17 @@ function calc_charge_error(soc_models, soc_sols, data, ti, ids, Qs; tg, zt = fit
     return df
 end
 
-# fault-rejection diagnostic for one reference cell: run the SOC EKF under injected faults — an
-# initial-SOC error (`offset`, Ah) and a constant current-sensor bias (`bias`, A) — and return,
-# per scenario, the charge trajectories vs the oscilloscope reference and module-current Coulomb
-# counting. Faults are in physical units so the Coulomb-counting error reads directly off the axis.
+"""
+    calc_soc_diagnostic(model, sol, data, ti, c, scenarios; θ, Ts = 1.0, zt = model.kf.p.zt)
+
+Fault-rejection diagnostic for one reference cell. Each entry of `scenarios` gives an
+`offset` in Ah, a wrong initial charge, and a `bias` in A, a constant current-sensor error;
+the SOC filter is rerun under each and the charge trajectory returned alongside the
+oscilloscope reference `q_ref` and the Coulomb-counting baseline `q_cc`.
+
+The faults are injected in physical units, so the Coulomb-counting error reads directly off a
+charge axis.
+"""
 function calc_soc_diagnostic(model, sol, data, ti, c, scenarios; θ, Ts = 1.0, zt = model.kf.p.zt)
     scale = only(zt.q.scale)  # shared i/q z-score scale → integrate current in z-scored units
     q_ref = StatsBase.reconstruct(zt.q, [ui.q for ui in cell_dataset_osci(data, ti, c).u])
@@ -230,7 +309,12 @@ function calc_soc_diagnostic(model, sol, data, ti, c, scenarios; θ, Ts = 1.0, z
 end
 
 
-# total charge throughput (Ah) over a module's current trace
+"""
+    calc_throughput(data, p, m) -> Float64
+
+Total charge throughput in Ah over module `m` of phase `p`, integrating the absolute current
+across its whole trace.
+"""
 function calc_throughput(data, p, m)
     df_i = select(data[:module_current], "_time" => "time", "module_average_current_$(p)_$(m)" => "value")
     dt = [Dates.value.(diff(df_i.time)) * 1.0e-3; 0]
@@ -240,10 +324,13 @@ end
 
 # === data availability ===
 
-# how much data is actually available: per signal table, the fraction of expected samples
-# present over `ti`. Each table shares one `_time` column but its channels carry missings,
-# so we count non-missing values across all channels against the count expected at the
-# nominal sampling rate. Complements the median-timestep view in `plot_data_resolution`.
+"""
+    calc_data_completeness(data, ti) -> DataFrame
+
+How much data each signal table actually carries over the window `ti`: non-missing values
+across all its channels against the count expected at that signal's nominal sampling rate, as
+`actual`, `expected` and their ratio `completeness`.
+"""
 function calc_data_completeness(data, ti)
     nominal_dt = Dict(  # nominal sampling period [s] per signal table
         :cell_voltage => 10.0,
@@ -298,8 +385,12 @@ function calc_ecm_parameters(models, sols, ids; v_ref = 3.9, n = 1)
     end |> DataFrame
 end
 
-# Fleet spread of each parameter against its median posterior uncertainty. Ratios below ~2 mean
-# the cell-to-cell differences are not resolved and the spread is mostly the prior showing through.
+"""
+    calc_parameter_summary(df) -> DataFrame
+
+Fleet spread of each ECM parameter against its median posterior uncertainty, from a
+[`calc_ecm_parameters`](@ref) table: `median`, `post_sd`, `fleet_sd` and their `ratio`.
+"""
 function calc_parameter_summary(df)
     rows = map(
         (

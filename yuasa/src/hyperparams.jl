@@ -83,9 +83,18 @@ function escalate_units(
     return picks
 end
 
-# One full selection run for a level (cells or modules). The reference composite is built
-# coarse → outlier-filtered → refit, so a few badly misfit units cannot bias the target the
-# escalation is scored against.
+"""
+    select_hyperparams(pool, ids, unit_data, zt; ϑ, ℓ_ocv_grid, ℓ_r1_grid = Float64[],
+                       thresh_mV, n = 1, n_v_pair = 20) -> (; curves_init, comp_ref, picks, ids, ϑ, thresh_mV, n)
+
+Choose a GP length scale per unit for one level, cells or modules. Every unit is first fitted
+at the shared init `ϑ`; units whose OCV then sits further than `thresh_mV` from the reference
+composite are refitted over `ℓ_ocv_grid` × `ℓ_r1_grid` on `pool`, keeping whichever ℓ lands
+closest. `n` is the number of series cells.
+
+The reference composite is built coarse, filtered to the units within `thresh_mV`, then
+refitted, so badly misfit units cannot bias the target they are scored against.
+"""
 function select_hyperparams(
         pool, ids, unit_data, zt;
         ϑ, ℓ_ocv_grid, ℓ_r1_grid = Float64[], thresh_mV, n = 1, n_v_pair = 20
@@ -145,7 +154,12 @@ function load_hyperparams(file, ids)
     return Dict(ids .=> ϑ)
 end
 
-# marginal counts of the selected length scales — the paper's selection table
+"""
+    selection_counts(cells, modules) -> DataFrame
+
+How many units ended on each length scale, one row per ℓ and one column per level and curve
+(`cells_ocv`, `modules_ocv`, `cells_r1`, `modules_r1`).
+"""
 function selection_counts(cells, modules)
     cnt(f, ps) = countmap([f(p) for p in values(ps)])
     cols = [
@@ -156,10 +170,16 @@ function selection_counts(cells, modules)
     return DataFrame("ℓ" => ls, (name => [get(c, l, 0) for l in ls] for (name, c) in cols)...)
 end
 
-# Data-scaled GP hyperparameters per unit in physical units: length scales in Ah (ℓ from
-# scale_θ is in z-scored charge → × zt.q scale), σ as the PRIOR STD per cell in mV (OCV) /
-# mΩ (R1) — θ.σ multiplies the kernel, i.e. it is a variance, so the std is √θσ (yuasa.jl).
-# The dimensionless selected ℓ is carried along as ℓ_*_rel for the figure's color coding.
+"""
+    calc_scaled_hyperparams(sel, unit_data, zt) -> DataFrame
+
+The selected hyperparameters of every unit in physical units: `ℓ_ocv`/`ℓ_r1` in Ah, and
+`σ_ocv`/`σ_r1` as the prior standard deviation per cell in mV and mΩ. `ℓ_ocv_rel`/`ℓ_r1_rel`
+carry the dimensionless values as selected, before scaling.
+
+Each unit's ℓ is scaled by its own observed charge span, so units that ended on the same
+`ℓ_*_rel` still differ in Ah.
+"""
 function calc_scaled_hyperparams(sel, unit_data, zt)
     (; picks, ids, ϑ, n) = sel
     return map(ids) do id
@@ -205,11 +225,15 @@ function align_units(curves_by_id, ids, comp)
     end
 end
 
-# Plot-ready view of one selection run, per-cell scaled (module curves and residuals ÷ n):
-# `fans` are the dV/dSOC curves of every unit aligned to the reference composite, before
-# (`:init`) and after (`:adapted`) adaptation, with `flagged` marking the stage-1 misfits;
-# `comp` is the reference composite itself, trimmed at the steep edges where the numerical
-# derivative blows up; `rmse` is the composite-OCV residual per unit in both stages.
+"""
+    calc_hyperparam_selection(sel) -> (; fans, comp, rmse, thresh)
+
+Plot-ready view of one [`select_hyperparams`](@ref) run, scaled per cell so cells and modules
+are comparable. `fans` holds every unit's dV/dSOC curve aligned to the reference composite,
+once at `:init` and once `:adapted`, with `flagged` marking the units that missed
+`thresh_mV`. `comp` is the reference composite, trimmed at the steep edges where the
+numerical derivative blows up, and `rmse` the composite-OCV residual per unit in both stages.
+"""
 function calc_hyperparam_selection(sel)
     (; curves_init, picks, comp_ref, ids, thresh_mV, n) = sel
     curves_final = Dict(id => picks[id].curve for id in ids)

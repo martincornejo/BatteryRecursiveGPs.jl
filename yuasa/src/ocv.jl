@@ -275,9 +275,13 @@ function calc_soh_validation(Q_meas, s0_meas, Q_rgp, s0_rgp)
     )
 end
 
-# The headline validation numbers. SOH/SOC are correlations of the per-cell deviations (absolute
-# scale is unidentifiable); the shape claim is `n_below_floor` — how many cells disagree with the
-# reference by less than the reference's own ambiguity.
+"""
+    calc_validation_summary(df_shape, df_soh) -> NamedTuple
+
+Headline numbers for one module's validation. SOH and SOC are reported as correlations of the
+per-cell deviations, since their absolute scale is unidentifiable. `n_below_floor` counts the
+cells whose disagreement with the reference is smaller than the reference's own ambiguity.
+"""
 function calc_validation_summary(df_shape, df_soh)
     return (;
         ocv_rmse = median(df_shape.ocv_rmse),
@@ -306,9 +310,13 @@ function validate_module(measured, reconstructed, fcs, fds, Q_meas, s0_meas, Q_r
     return (; df_shape, curves, df_soh, summary = calc_validation_summary(df_shape, df_soh))
 end
 
-# One row per module from `validate_module` results: the shape numbers, the SOH/SOC numbers, the
-# module-mean capacities on both sides and their ratio `k` (the module-wide scale the per-cell
-# comparison removes).
+"""
+    calc_validation_table(vals, labels) -> DataFrame
+
+One row per module from [`validate_module`](@ref) results: the shape and SOH/SOC numbers, the
+module-mean capacity on each side, and their ratio `k` — the module-wide scale that the
+per-cell comparison divides out.
+"""
 function calc_validation_table(vals, labels)
     return DataFrame(
         id = labels,
@@ -327,10 +335,14 @@ function calc_validation_table(vals, labels)
     )
 end
 
-# The headline numbers pooled over the comparable modules: the per-cell shape RMSE (median over
-# all cells and how many lie below their own reference floor), the pooled SOC and SOH
-# correlations of the module-centred deviations, and the module-level capacity agreement (mean
-# offset and spread of the per-module ratio `k`, correlation of the module means).
+"""
+    calc_pooled_validation(vals) -> NamedTuple
+
+The validation numbers pooled over all comparable modules: median per-cell shape RMSE and how
+many cells lie below their own reference floor, the SOC and SOH correlations of the
+module-centred deviations, and the module-level capacity agreement — mean and spread of the
+per-module ratio `k`, plus the correlation of the module means.
+"""
 function calc_pooled_validation(vals)
     rmse = vcat([v.df_shape.ocv_rmse for v in vals]...)
     floors = vcat([v.df_shape.floor for v in vals]...)
@@ -350,8 +362,13 @@ end
 # in main.jl. It cannot rederive that from 12 cells, so main.jl hands over the per-cell
 # parameters and curves directly.
 
-# Per-cell `(Q_cell, s0)` + reconstructed OCV curves for `ref_ids`, taken from the full-fleet
-# `comp_fit`/`ocvs` indexed by `ids`, plus the anchor convention they are expressed in.
+"""
+    build_validation_export(comp_fit, ocvs, ids, ref_ids, refs) -> Dict
+
+Per-cell `(Q_cell, s0)` and reconstructed OCV curve for each id in `ref_ids`, pulled from the
+full-fleet `comp_fit`/`ocvs` indexed by `ids`, together with the anchor convention `refs` they
+are expressed in. Keyed for JSON; [`load_validation_export`](@ref) reads it back.
+"""
 function build_validation_export(comp_fit, ocvs, ids, ref_ids, refs)
     pos = Dict(id => i for (i, id) in enumerate(ids))
     cell(id, i) = Dict(
@@ -369,7 +386,11 @@ function build_validation_export(comp_fit, ocvs, ids, ref_ids, refs)
     )
 end
 
-# Inverse of `build_validation_export` → (; curves, Q, s0, refs, ids)
+"""
+    load_validation_export(file) -> (; curves, Q, s0, refs, ids)
+
+Read back what [`build_validation_export`](@ref) wrote.
+"""
 function load_validation_export(file)
     d = JSON.parsefile(file)
     cells = d["cells"]
@@ -397,12 +418,16 @@ function extrapolate_ocv(composite; n_samples = 100)
     return (; v_of_soc, soc_of_v)
 end
 
-# The absolute SOC gauge a reference OCV measurement implies: extrapolate the composite linearly
-# to the voltage limits, call `V_min` 0 % SOC and `V_max` 100 % (datasheet: 4.1 V is 100 %), and
-# read the anchor points for `rescale_composite_ocv` off it:
-#
-#     g = soc_gauge(meas_composite)
-#     refs = (; v_low = 3.62, soc_low = g.soc_of_v(3.62), v_high = 4.05, soc_high = g.soc_of_v(4.05))
+"""
+    soc_gauge(composite; V_min = 2.9, V_max = 4.1) -> (; soc_of_v, v_of_soc)
+
+Absolute SOC gauge implied by a reference OCV measurement: the composite extrapolated
+linearly to the voltage limits, with `V_min` called 0 % SOC and `V_max` 100 % (4.1 V is the
+datasheet's 100 %). Read the anchors for [`rescale_composite_ocv`](@ref) off `soc_of_v`:
+
+    g = soc_gauge(meas_composite)
+    refs = (; v_low = 3.62, soc_low = g.soc_of_v(3.62), v_high = 4.05, soc_high = g.soc_of_v(4.05))
+"""
 function soc_gauge(composite; V_min = 2.9, V_max = 4.1)
     (; v_of_soc, soc_of_v) = extrapolate_ocv(composite)
     soc_min = soc_of_v(V_min)
@@ -413,11 +438,17 @@ function soc_gauge(composite; V_min = 2.9, V_max = 4.1)
     )
 end
 
-# Estimate the usable SOC window of the measured composite by linearly extrapolating the
-# OCV to the full voltage window [V_min, V_max]. Returns the extrapolated interpolants and
-# the SOC bounds — `soc_of_v` maps any voltage to its SOC on the extrapolated composite and
-# is exactly the `ref_soc_of_v` reference that `fit_cells_to_reference` consumes to scale the
-# reconstructed cell OCVs onto this full-window gauge.
+"""
+    eval_soc_range(composite; V_min = 2.9, V_max = 4.1) -> NamedTuple
+
+Usable SOC window of a measured composite, found by extrapolating its OCV linearly to the
+voltage window `[V_min, V_max]`. Returns the extrapolated interpolants, the SOC at each
+voltage limit and the span between them, the measured data's own SOC and voltage bounds, and
+`soc_used_lo`/`soc_used_hi` — where the measurement sits within the full gauge, in %.
+
+`soc_of_v` maps a voltage to its SOC on the extrapolated gauge, and is the `ref_soc_of_v`
+that [`fit_cells_to_reference`](@ref) takes.
+"""
 function eval_soc_range(composite; V_min = 2.9, V_max = 4.1)
     (; v_of_soc, soc_of_v) = extrapolate_ocv(composite)
     soc = collect(composite.t)

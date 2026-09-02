@@ -56,6 +56,15 @@ function interpolate(df, ti; Ts = 1)
 end
 
 
+"""
+    fit_zscore(n = 1) -> (; v, σ, i, q, r)
+
+Z-score transforms taking the filter's signals to normalized units: `v` for voltage, `σ` for
+voltage spreads and standard deviations, `i` for current, `q` for charge and `r` for
+resistance. `n` is the number of series cells, so `fit_zscore(12)` gives module-scale
+transforms. The ranges are fixed rather than fitted to a dataset, so every unit shares one
+scaling.
+"""
 function fit_zscore(n = 1)
     v = StatsBase.fit(ZScoreTransform, (n * 3.3):(n * 0.01):(n * 4.1))
     σ = StatsBase.fit(ZScoreTransform, (n * 3.3):(n * 0.01):(n * 4.1), center = false)
@@ -84,6 +93,15 @@ function _assemble_uy(df_v, df_i, df_T; Ts, zt)
 end
 
 
+"""
+    cell_dataset(data, ti, p, m, c; Ts = 1.0, zt = fit_zscore()) -> (; u, y)
+
+Filter inputs and observations for cell `c` of module `m` in phase `p`, over the window `ti`
+on a `Ts`-second grid. `u` holds `(; i, q, T)` per step — current, Coulomb-counted charge and
+module temperature — and `y` the cell voltage. Both are in `zt`'s normalized units, except
+`T`, which stays in °C for the Arrhenius correction. Voltage samples missing from the grid
+come through as `missing`, which [`run_kf!`](@ref) skips.
+"""
 function cell_dataset(data, ti, p, m, c; Ts = 1.0, zt = fit_zscore())
     # voltage
     df_v = copy(data[:cell_voltage])
@@ -102,6 +120,13 @@ function cell_dataset(data, ti, p, m, c; Ts = 1.0, zt = fit_zscore())
 end
 
 
+"""
+    module_dataset(data, ti, p, m; Ts = 1.0, zt = fit_zscore(12)) -> (; u, y)
+
+As [`cell_dataset`](@ref), but `y` is the terminal voltage of the whole module. Pass a
+module-scale `zt` and fit with `n = 12`, so the identified parameters come out on the same
+scale as the summed cell voltages.
+"""
 function module_dataset(data, ti, p, m; Ts = 1.0, zt = fit_zscore(12))
     # voltage
     df_v = copy(data[:module_voltage])
@@ -120,6 +145,13 @@ function module_dataset(data, ti, p, m; Ts = 1.0, zt = fit_zscore(12))
 end
 
 
+"""
+    cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore()) -> (; u, y)
+
+As [`cell_dataset`](@ref) for cell `c` of P1M9, but with the current taken from the
+oscilloscope reference probe instead of the BMS sensor. The probe measures the one string
+current shared by all 12 cells, so `u` is the same for every `c`.
+"""
 function cell_dataset_osci(data, ti, c; Ts = 1.0, zt = fit_zscore())
     p = 1
     m = 9
@@ -182,6 +214,13 @@ function scale_θ(u, y, ϑ; n = 1)
 end
 
 
+"""
+    fit_cells(data, ϑ, ti, ids) -> (; cell_models, cell_sols)
+
+Fit a [`YuasaModel`](@ref) per cell in `ids` over the window `ti`, threaded. `ϑ` maps each id
+to its selected hyperparameters, which [`scale_θ`](@ref) completes and scales per unit. Ids
+whose fit throws are logged and dropped, so both dictionaries can be shorter than `ids`.
+"""
 function fit_cells(data, ϑ, ti, ids)
     zt = fit_zscore()
     make_uy = id -> cell_dataset(data, ti, id.p, id.m, id.c; zt)
@@ -190,6 +229,12 @@ function fit_cells(data, ϑ, ti, ids)
     return (; cell_models = models, cell_sols = sols)
 end
 
+"""
+    fit_modules(data, ϑ, ti, ids) -> (; module_models, module_sols)
+
+As [`fit_cells`](@ref), but one model per module, fitted on the module terminal voltage with
+module-scale priors (`n = 12`).
+"""
 function fit_modules(data, ϑ, ti, ids)
     zt = fit_zscore(12)
     make_uy = id -> module_dataset(data, ti, id.p, id.m; zt)
@@ -225,7 +270,13 @@ function fit_models_thread(make_model, make_uy, make_θ, ids, zt)
     return (; models, sols)
 end
 
-# open-loop run: frozen parameters, no correction (tt = 0) — pure voltage prediction
+"""
+    eval_models(models, sols, ids) -> Dict
+
+Replay each fitted model over its own inputs open loop, giving the voltage it predicts from
+the identified parameters alone. Returns one reduced solution per id. See
+[`eval_model`](@ref).
+"""
 function eval_models(models, sols, ids)
     return thread_map(ids) do id
         (; sol_eval) = eval_model(models[id], sols[id])
@@ -233,7 +284,14 @@ function eval_models(models, sols, ids)
     end
 end
 
-# closed-loop run: frozen ECM parameters, 2-state EKF estimates charge + RC voltage
+"""
+    fit_soc_models(models, sols, ids; q0 = 0.0, Ts = 1.0, θ) -> (; models, sols)
+
+Build a [`YuasaStateModel`](@ref) from each fitted model and run it closed loop over the same
+data. The ECM parameters stay frozen at their identified values while a two-state filter
+tracks charge and RC voltage, starting from charge `q0`. `θ` supplies the state model's
+process and measurement noise.
+"""
 function fit_soc_models(models, sols, ids; q0 = 0.0, Ts = 1.0, θ)
     runs = thread_map(ids) do id
         sm = YuasaStateModel(models[id]; q0, Ts, θ)

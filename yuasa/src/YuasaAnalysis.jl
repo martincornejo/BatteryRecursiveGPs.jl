@@ -38,7 +38,7 @@ export fit_zscore, scale_θ, cell_dataset, module_dataset, cell_dataset_osci
 export fit_cells, fit_modules, fit_soc_models, eval_models
 
 # OCV reconstruction validation (ocv.jl)
-export clean_ocv, average_charge_discharge, build_reference_curves
+export build_reference_curves
 export calc_ocv_shape_validation, calc_ocv_curves, calc_reference_floor
 export calc_soh_validation, calc_validation_summary
 export validate_module, calc_validation_table, calc_pooled_validation
@@ -57,7 +57,7 @@ export cell_capacities, calc_charge_accuracy, calc_charge_error, calc_soc_diagno
 export calc_throughput, calc_data_completeness
 export calc_ecm_parameters, calc_parameter_summary
 
-# figures (plot.jl)
+# figures (plot/*.jl)
 export plot_dataset_overview, plot_cell_voltage_system, plot_module_data, plot_data_resolution
 export plot_ecms_comparison, plot_sim, plot_q_estimation
 export plot_v_accuracy, plot_v_accuracy_overview
