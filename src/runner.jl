@@ -1,3 +1,18 @@
+"""
+    run_kf!(model, u, y; tt = length(u)) -> (; idx, u, y, ut, yt, xt, Rt, et, yμ, yΣ, ll, tt)
+
+Run the filter over inputs `u` and observations `y`, mutating `model`'s filter state and
+parameter posterior. Re-running a model that has already been fitted continues from its
+learned posterior rather than starting over.
+
+`tt` is the last step at which the filter corrects on an observation; past it the run is open
+loop, predicting without updating. `tt = 0` therefore evaluates the current posterior without
+changing it. Steps with a `missing` observation are predicted through without correction.
+
+`yμ` and `yΣ` are the one-step-ahead voltage prediction and its variance, `et` the
+innovation, `xt` and `Rt` the state and covariance after each correction, `idx` the indices
+of the observed steps and `ll` the total log-likelihood.
+"""
 run_kf!(model::AbstractBatteryModel, u, y; tt = length(u)) = run_kf!(model.kf, u, y; tt)
 
 function run_kf!(kf, u, y; tt = length(u))
@@ -34,7 +49,7 @@ function run_kf!(kf, u, y; tt = length(u))
             Rt[k] = covariance(kf) |> copy
 
             # output
-            v = predict_kf(kf, u[i]) # TODO: check performance
+            v = predict_kf(kf, u[i])
             yμ[k] = v.μ
             yΣ[k] = v.Σ
 
@@ -46,7 +61,7 @@ function run_kf!(kf, u, y; tt = length(u))
 
     for i in trange_2
         if !any(y[i] .=== missing) # skip correcting step for missing values
-            v = predict_kf(kf, u[i]) # TODO: check performance
+            v = predict_kf(kf, u[i])
             e = y[i] - v.μ
             ut[k] = u[i]
             yt[k] = y[i]
@@ -89,6 +104,15 @@ function _reinit_kf!(model, rc_branches...; x, R)
 end
 
 
+"""
+    reduce_sol(model, sol) -> NamedTuple
+
+Pull the per-step states and variances a model cares about out of a [`run_kf!`](@ref)
+solution, as named series in place of the raw `xt`/`Rt` arrays. Every model type defines its
+own method, so the series differ between models; all of them carry `sol`'s inputs,
+observations, innovations and log-likelihood through, plus `x_end` and `R_end` for
+warm-starting a later run.
+"""
 function reduce_sol(model::AbstractBatteryStateModel, sol)
     (; xt, Rt) = sol
     qμ = [x[1] for x in xt]
@@ -104,6 +128,13 @@ function reduce_sol(model::AbstractBatteryStateModel, sol)
     )
 end
 
+"""
+    run_kf_smoother!(model, u, y) -> (; x, xt, R, Rt, u, y, ll)
+
+Forward filter pass that keeps the state and covariance both before (`x`, `R`) and after
+(`xt`, `Rt`) each correction, which is what the backward smoothing pass needs. Mutates
+`model`. Use [`smooth_kf!`](@ref) for the full smoother.
+"""
 function run_kf_smoother!(kf, u, y)
     T = length(u)
     x = Vector{particletype(kf)}(undef, T)
@@ -133,6 +164,12 @@ end
 
 run_kf_smoother!(model::AbstractBatteryModel, u, y) = run_kf_smoother!(model.kf, u, y)
 
+"""
+    smooth_kf!(model, u, y)
+
+Run [`run_kf_smoother!`](@ref) and then the backward RTS pass, giving states conditioned on
+the whole window rather than only on the past. Mutates `model`.
+"""
 function smooth_kf!(kf, u, y)
     sol = run_kf_smoother!(kf, u, y)
     return LLPF.smooth(sol, kf, u, y)

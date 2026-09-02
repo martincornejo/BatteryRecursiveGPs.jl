@@ -1,5 +1,3 @@
-# TODO: rename functions
-
 # === Private helpers for multi-model dispatch ===
 
 # Returns the KF that holds the GP posterior (OCV/R0 hyperparameters).
@@ -60,10 +58,10 @@ function gp_r1(model::AbstractBatteryModel, sol)
 end
 
 """
-    charge_trajectory(model, sol)
+    charge_trajectory(model, sol) -> (; t, q, qσ)
 
-Filtered charge estimate over the fit window as `(; t, q)` in physical
-units (s, Ah). Charge is relative to the window start.
+Filtered charge estimate and its standard deviation over the fit window, in physical units
+(s, Ah). Charge is relative to the window start.
 """
 function charge_trajectory(model::AbstractBatteryModel, sol)
     zt = _gp_kf(model).p.zt
@@ -86,10 +84,23 @@ function voltage_error(model::AbstractBatteryModel, sol)
     return (; t, e)
 end
 
+"""
+    calc_Q_pack(Q, soc) -> Float64
+
+Usable capacity of a series string from its per-cell capacities `Q` and SOCs `soc`: the
+weakest cell's remaining discharge plus the weakest cell's remaining charge. Cell-to-cell SOC
+spread reduces it below `minimum(Q)`.
+"""
 calc_Q_pack(Q, soc) = minimum(soc .* Q) + minimum((1 .- soc) .* Q)
 
+"""
+    calc_soh_pack(Q, soc, Q_nom; delta_soc = true) -> Float64
+
+String SOH against nominal capacity `Q_nom`. With `delta_soc = true` the usable capacity from
+[`calc_Q_pack`](@ref) is used, so the figure includes the loss from SOC spread; with `false`
+it is `minimum(Q)`, degradation only.
+"""
 function calc_soh_pack(Q, soc, Q_nom; delta_soc = true)
-    # delta_soc: Qloss due to degradation + Δsoc; otherwise degradation only
     Q_pack = delta_soc ? calc_Q_pack(Q, soc) : minimum(Q)
     return Q_pack / Q_nom
 end

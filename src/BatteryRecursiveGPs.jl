@@ -14,9 +14,16 @@ import ComponentArrays: ComponentVector, ComponentMatrix
 using DataInterpolations
 using Measurements
 
+"""
+Supertype of the battery models. A subtype wraps an `ExtendedKalmanFilter` in its `kf` field
+and defines [`reduce_sol`](@ref) and, for full models, `reinit_kf!`.
+"""
 abstract type AbstractBatteryModel end
 
-# state-only models: frozen ECM parameters, online estimation of charge (+ RC voltage)
+"""
+Supertype of the state-only models: the ECM parameters are frozen from an earlier fit and only
+the charge (and RC voltage) are estimated online.
+"""
 abstract type AbstractBatteryStateModel <: AbstractBatteryModel end
 
 include("models/components.jl")
