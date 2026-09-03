@@ -16,7 +16,8 @@
 function _model_frame(model::YuasaModel, sol; prior = nothing, size = (900, 400))
     kf = model.kf
     zt = kf.p.zt
-    (; yt) = sol
+    (; idx, yt) = sol
+    th = (idx .- 1) .* kf.p.Ts ./ 3600  # observation times in hours
 
     xt = isnothing(prior) ? sol.xt : vcat([prior.x], sol.xt)
     Rt = isnothing(prior) ? sol.Rt : vcat([prior.R], sol.Rt)
@@ -60,10 +61,13 @@ function _model_frame(model::YuasaModel, sol; prior = nothing, size = (900, 400)
         (; μ, σ)
     end
 
+    title_at = i -> "Observed data: $(round(th[cursor_at(i)]; digits = 1)) / $(round(last(th); digits = 1)) h"
+
     fig = Figure(; size)
-    axo = Axis(fig[1, 2]; ylabel = "OCV / V")
-    axr = Axis(fig[2, 2]; ylabel = "R / mΩ", xlabel = "Charge / Ah")
-    axv = Axis(fig[1:2, 1]; ylabel = "Voltage / V", xlabel = "Step")
+    axo = Axis(fig[1, 2]; ylabel = "OCV / V", title = "Learned OCV")
+    axr = Axis(fig[2, 2]; ylabel = rich("R", subscript("Σ"), " / mΩ"), xlabel = "Cumulative charge / Ah", title = "Learned resistance")
+    axv = Axis(fig[1:2, 1]; ylabel = "Voltage / V", xlabel = "Time / h", title = "Terminal voltage")
+    counter = Label(fig[0, 1:2], title_at(1); font = :bold, tellwidth = false)
     linkxaxes!(axo, axr)
     hidexdecorations!(axo; ticks = false, grid = false)
 
@@ -74,13 +78,12 @@ function _model_frame(model::YuasaModel, sol; prior = nothing, size = (900, 400)
     br = band!(axr, q, rμ + 2rσ, rμ - 2rσ; color = Cycled(1), alpha = 0.3)
 
     v = StatsBase.reconstruct(zt.v, first.(yt))
-    k = eachindex(v)
     v̂ = predict_v(xt[1], Rt[1])
-    lines!(axv, k, v; color = :gray, label = "Measured")
-    lv = lines!(axv, k, v̂.μ; color = Cycled(2), label = "Model")
-    bv = band!(axv, k, v̂.μ - 2v̂.σ, v̂.μ + 2v̂.σ; color = Cycled(2), alpha = 0.3)
-    cursor = vlines!(axv, cursor_at(1); color = :red)
-    axislegend(axv; position = :rb)
+    lines!(axv, th, v; color = :gray, label = "Measured")
+    lv = lines!(axv, th, v̂.μ; color = Cycled(1), label = "Model: μ ± 2σ")
+    bv = band!(axv, th, v̂.μ - 2v̂.σ, v̂.μ + 2v̂.σ; color = Cycled(1), alpha = 0.3, label = "Model: μ ± 2σ")
+    cursor = vlines!(axv, th[cursor_at(1)]; color = :black, linestyle = :dash, linewidth = 1)
+    axislegend(axv; position = (0.35, 0.02), merge = true, backgroundcolor = (:white, 0.85))
 
     # Fixed limits: the prior bands are far wider than the converged ones, so autoscaling would
     # make the early frames unreadable and the late ones flat. Anchor each ECM panel on its own
@@ -96,7 +99,7 @@ function _model_frame(model::YuasaModel, sol; prior = nothing, size = (900, 400)
 
     vlo, vhi = extrema(v)
     ylims!(axv, vlo - 0.15(vhi - vlo), vhi + 0.15(vhi - vlo))
-    xlims!(axv, first(k), last(k))
+    xlims!(axv, first(th), last(th))
 
     set_frame! = i -> begin
         (; ocvμ, ocvσ, rμ, rσ) = ecm(xt[i], Rt[i])
@@ -107,7 +110,8 @@ function _model_frame(model::YuasaModel, sol; prior = nothing, size = (900, 400)
         v̂ = predict_v(xt[i], Rt[i])
         Makie.update!(lv, arg2 = v̂.μ)
         Makie.update!(bv, arg2 = v̂.μ - 2v̂.σ, arg3 = v̂.μ + 2v̂.σ)
-        Makie.update!(cursor, arg1 = cursor_at(i))
+        Makie.update!(cursor, arg1 = th[cursor_at(i)])
+        counter.text = title_at(i)
     end
 
     return (; fig, set_frame!, n_frames = length(xt))

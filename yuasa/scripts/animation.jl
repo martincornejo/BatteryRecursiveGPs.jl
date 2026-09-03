@@ -9,7 +9,7 @@ using CairoMakie
 
 datadir = "yuasa/data/cycles/"
 paramdir = "yuasa/data/hyperparams/"
-id = (; p = 1, m = 1, c = 1)
+id = (; p = 3, m = 4, c = 2)  # same cell as the paper's example figures
 
 data = load_dataset(datadir; signals = (:cell_voltage, :module_current, :battery_temperature))
 ti = Interval(DateTime("2025-12-10T14:00:20"), DateTime("2025-12-11T02:30:20"))
