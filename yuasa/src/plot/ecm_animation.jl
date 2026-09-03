@@ -31,11 +31,18 @@ function _model_frame(model::YuasaModel, sol; prior = nothing)
         ocvμ = StatsBase.reconstruct(zt.v, ocv.μ)
         ocvσ = StatsBase.reconstruct(zt.σ, sqrt.(diag(ocv.Σ)))
         xc = ComponentVector(x, kf.p.xid)
-        r0μ = (StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first) * 1.0e3
+        Σ = ComponentMatrix(R, kf.p.Σid)
+        r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
+        r0σ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) |> first
+        r0 = r0μ ± r0σ
+
         r1 = predict_gp(kf, q̂, x, R, :r1)
-        r1μ = StatsBase.reconstruct(zt.r, r1.μ) * 1.0e3
-        r1σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ))) * 1.0e3
-        (; ocvμ, ocvσ, rμ = r0μ .+ r1μ, rσ = r1σ)
+        r1μ = StatsBase.reconstruct(zt.r, r1.μ)
+        r1σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ)))
+        r1 = r1μ .± r1σ
+
+        rΣ = (r0 .+ r1) .* 1.0e3 # mΩ
+        (; ocvμ, ocvσ, rμ = Measurements.value.(rΣ), rσ = Measurements.uncertainty.(rΣ))
     end
 
     # Voltage the ECM frozen at (x, R) reproduces on its own: `reinit_kf!` resets charge and RC

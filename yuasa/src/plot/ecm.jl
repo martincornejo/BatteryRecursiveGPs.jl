@@ -124,15 +124,19 @@ function plot_ecm!(ax, model::YuasaModel, sol; color = nothing)
     # R0 scalar from the final state estimate
     xc = ComponentVector(sol.x_end, kf.p.xid)
     Σ = ComponentMatrix(sol.R_end, kf.p.Σid)
-    r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) * 1.0e3 |> first
-    r0σ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) * 1.0e3 |> first
+    r0μ = StatsBase.reconstruct(zt.r, [abs(xc.r0.r)]) |> first
+    r0σ = StatsBase.reconstruct(zt.r, [sqrt(Σ[:r0, :r0][:r, :r])]) |> first
+    r0 = r0μ ± r0σ
 
     # R1 GP curve overlaid on the R0 panel
     r1 = predict_gp(kf, q̂, :r1)
-    r1μ = StatsBase.reconstruct(zt.r, r1.μ) * 1.0e3
-    r1σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ))) * 1.0e3
-    rμ = r0μ .+ r1μ
-    rσ = r0σ .+ r1σ
+    r1μ = StatsBase.reconstruct(zt.r, r1.μ)
+    r1σ = StatsBase.reconstruct(zt.r, sqrt.(diag(r1.Σ)))
+    r1 = r1μ .± r1σ
+
+    rΣ = (r0 .+ r1) .* 1.0e3 # mΩ
+    rμ = Measurements.value.(rΣ)
+    rσ = Measurements.uncertainty.(rΣ)
     lines!(ax[2], q, rμ; kw...)
     band!(ax[2], q, rμ + 2rσ, rμ - 2rσ; alpha = 0.8, kw...)
     return nothing
