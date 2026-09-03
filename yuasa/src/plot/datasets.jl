@@ -1,11 +1,12 @@
 """
-    plot_cell_voltage_system(data; panel_tags = true, highlights = …) -> Figure
+    plot_cell_voltage_system(data; N = 1, panel_tags = true, highlights = …) -> Figure
 
 Cell voltages of the whole system, one panel per module in a 9 × 3 grid of module by phase.
-`highlights` maps a `(phase, module)` pair to the colour its panel is drawn in.
+`highlights` maps a `(phase, module)` pair to the colour its panel is drawn in. `N` decimates
+the traces to every `N`-th sample, which keeps the exported vector file small.
 """
 function plot_cell_voltage_system(
-        data; panel_tags = true,
+        data; N = 3, panel_tags = true,
         # highlight the outlier modules discussed in the text
         highlights = Dict((3, 5) => :firebrick, (1, 6) => :firebrick),
         size = (700, 600),
@@ -19,9 +20,10 @@ function plot_cell_voltage_system(
     phases = 1:3
     modules = 1:9
 
+    t = df.t[1:N:end] ./ 3600
     for p in phases, m in modules
         for i in 1:12
-            lines!(ax[m, p], df.t / 3600, df[:, "cell_voltage_$(p)_$(m)_1_$(i)"])
+            lines!(ax[m, p], t, df[1:N:end, "cell_voltage_$(p)_$(m)_1_$(i)"])
         end
     end
 
