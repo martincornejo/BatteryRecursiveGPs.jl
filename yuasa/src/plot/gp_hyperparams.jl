@@ -10,8 +10,8 @@ Module curves are drawn per cell so the columns share a scale, and RMSE outliers
 axis are annotated rather than squeezed in. [`selection_counts`](@ref) tabulates which ℓ each
 unit ended on.
 """
-function plot_hyperparam_selection(cells, modules)
-    fig = Figure(size = (700, 640), figure_padding = 8)
+function plot_hyperparam_selection(cells, modules; size = (700, 640))
+    fig = Figure(; size, figure_padding = 8)
     wong = Makie.wong_colors()
     c_flag = wong[6]  # vermillion: flagged at init (> threshold)
     c_bulk = (:gray, 0.35)
@@ -102,7 +102,7 @@ steps for the escalations; the σ columns come out all-gray because σ is never 
 is on a log axis, and units whose ℓ exceeds any cell capacity are named, since their
 single-count bars are otherwise invisible.
 """
-function plot_hyperparam_scales(scaled_cells, scaled_mods)
+function plot_hyperparam_scales(scaled_cells, scaled_mods; size = (700, 360))
     # escalated ℓ values actually selected, ascending (0.5 is the init and gets its own color)
     ℓ_esc = sort(setdiff(union(scaled_cells.ℓ_ocv_rel, scaled_cells.ℓ_r1_rel, scaled_mods.ℓ_ocv_rel, scaled_mods.ℓ_r1_rel), [0.5]))
     colors = Dict(v => get(cgrad(:lipari), t) for (v, t) in zip(ℓ_esc, range(0.8, 0.12, length = length(ℓ_esc))))
@@ -140,7 +140,7 @@ function plot_hyperparam_scales(scaled_cells, scaled_mods)
         ),
     ]
 
-    fig = Figure(size = (700, 360), figure_padding = 8)
+    fig = Figure(; size, figure_padding = 8)
     axs = Matrix{Axis}(undef, 2, 4)
     for (col, (val, rel, xscale, xticks, lims, bins, logx, xlab)) in enumerate(specs)
         # Modules*: σ shown per cell (module value ÷ n) for a scale comparable to the cells

@@ -62,8 +62,8 @@ Terminal voltage of one unit, measured against modelled, with the innovation in 
 Pair with [`eval_model`](@ref)'s solution for the open-loop fit rather than the one-step-ahead
 prediction. `plot_sim!(gl, model, sol)` draws the same pair into an existing layout.
 """
-function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0)
-    fig = Figure(size = (700, 300))
+function plot_sim(model::AbstractBatteryModel, sol; Ts = 1.0, size = (700, 300))
+    fig = Figure(; size)
     plot_sim!(GridLayout(fig[1, 1]), model, sol; Ts)
     return fig
 end
@@ -74,7 +74,7 @@ end
 Filtered charge estimate against the reference `q_ref` and the Coulomb-counting baseline, with
 their errors in a panel below.
 """
-function plot_q_estimation(q_ref, sol, model::AbstractBatteryModel)
+function plot_q_estimation(q_ref, sol, model::AbstractBatteryModel; size = (600, 450))
     kf = model.kf
     (; zt) = kf.p
 
@@ -84,7 +84,7 @@ function plot_q_estimation(q_ref, sol, model::AbstractBatteryModel)
     qσ = StatsBase.reconstruct(zt.q, sqrt.(sol.qσ))
     q_ref_t = q_ref[t]
 
-    fig = Figure()
+    fig = Figure(; size)
     ax = [Axis(fig[i, 1]) for i in 1:2]
 
     lines!(ax[1], t / 3600, q_ref_t; color = :black, label = "Reference")
@@ -156,8 +156,9 @@ function plot_ecms_comparison(
         cell_models, cell_sols, module_models, module_sols;
         n_cell = 1, n_mod = 12, tags = true,
         colors = MODULE_COLORS,
+        size = (700, 450),
     )
-    fig = Figure(size = (700, 450))
+    fig = Figure(; size)
     gl1 = GridLayout(fig[1, 1])
     gl2 = GridLayout(fig[1, 2])
 
@@ -217,13 +218,13 @@ Shown as densities rather than counts, since the two levels have 324 and 27 unit
 are compared at `v_ref`, and the module table must come from a builder run with `n = 12` for
 the levels to share a scale.
 """
-function plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ = 5.0, T = 5:1:40, T0 = 25)
+function plot_ecm_parameters(df, df_mod = nothing; v_ref = 3.9, Δr = 0.06, Δτ = 5.0, T = 5:1:40, T0 = 25, size = (700, 400))
     wong = Makie.wong_colors()
     c_cell = wong[2]
     c_mod = wong[1]
     c_cell_med = wong[6]
 
-    fig = Figure(size = (700, 400))
+    fig = Figure(; size)
 
     pct(v) = (x = v * 100; isapprox(x, round(x); atol = 1.0e-9) ? string(round(Int, x)) : string(round(x; digits = 1)))
     function overlay!(ax, vc, vm; bins, ymax, ystep)

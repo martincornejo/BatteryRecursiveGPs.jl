@@ -4,8 +4,8 @@
 Fitted capacity of all 324 cells as a cell × module heatmap, on the lipari scale in Ah.
 `plot_soh_heatmap!(layout, comp_fit)` draws it into an existing layout.
 """
-function plot_soh_heatmap(comp_fit)
-    fig = Figure(size = (300, 400))
+function plot_soh_heatmap(comp_fit; size = (300, 400))
+    fig = Figure(; size)
     gl = GridLayout(fig[1, 1])
     plot_soh_heatmap!(gl, comp_fit)
     return fig
@@ -38,8 +38,8 @@ Every cell's reconstructed OCV placed on the composite's gauge, coloured by capa
 consensus composite in black over them and dV/dSOC below. `xaxis = :ah` puts the x-axis in
 capacity instead of SOC. `plot_composite_ocv!(layout, …)` draws it into an existing layout.
 """
-function plot_composite_ocv(comp_fit, cells; xaxis = :soc)
-    fig = Figure(size = (400, 400))
+function plot_composite_ocv(comp_fit, cells; xaxis = :soc, size = (400, 400))
+    fig = Figure(; size)
     gl = GridLayout(fig[1, 1])
     plot_composite_ocv!(gl, comp_fit, cells; xaxis)
     return fig
@@ -139,8 +139,8 @@ end
 The composite-OCV fit as a pair: (A) [`plot_composite_ocv`](@ref) beside (B) the capacity
 [`plot_soh_heatmap`](@ref), sharing one capacity colour scale.
 """
-function plot_cell_soh(comp_fit, cells; xaxis = :soc)
-    fig = Figure(size = (700, 400))
+function plot_cell_soh(comp_fit, cells; xaxis = :soc, size = (700, 400))
+    fig = Figure(; size)
     gl1 = GridLayout(fig[1, 1])
     gl2 = GridLayout(fig[1, 2])
     plot_composite_ocv!(gl1, comp_fit, cells; xaxis, vertical = true)
@@ -158,8 +158,8 @@ Per-module SOH from the cell fits against the module model's own estimate, one p
 module, from a [`calc_module_soh_summary`](@ref) table. `whiskers` draws the fit uncertainties.
 `plot_module_soh!(layout, df_soh)` draws it into an existing layout.
 """
-function plot_module_soh(df_soh; whiskers = true)
-    fig = Figure(size = (700, 360))
+function plot_module_soh(df_soh; whiskers = true, size = (700, 360))
+    fig = Figure(; size)
     gl = GridLayout(fig[1, 1])
     plot_module_soh!(gl, df_soh; whiskers)
     return fig
@@ -217,8 +217,8 @@ spread and the part a balancing cycle would recover, as stacked bars per module.
 [`calc_module_soh_summary`](@ref) table. `plot_module_inhomogeneity!(layout, df_soh)` draws it
 into an existing layout.
 """
-function plot_module_inhomogeneity(df_soh; whiskers = true)
-    fig = Figure(size = (700, 360))
+function plot_module_inhomogeneity(df_soh; whiskers = true, size = (700, 360))
+    fig = Figure(; size)
     gl = GridLayout(fig[1, 1])
     plot_module_inhomogeneity!(gl, df_soh; whiskers)
     return fig
@@ -277,8 +277,9 @@ function plot_module_summary(
         df_soh; whiskers = true,
         soh_colors = Makie.wong_colors()[[1, 2]],
         bar_colors = Makie.wong_colors()[[4, 3]],
+        size = (700, 350),
     )
-    fig = Figure(size = (700, 350))
+    fig = Figure(; size)
     gl = GridLayout(fig[1, 1])
     gl1 = GridLayout(gl[1, 1])
     gl2 = GridLayout(gl[2, 1])

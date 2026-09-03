@@ -12,11 +12,11 @@ Panel D shows deviations rather than absolute initial SOC, which is not comparab
 two experiments. Panel B is clipped at the low-SOC knee, where a steep dV/dq turns a small
 charge error into a large voltage one.
 """
-function plot_validation(vals, labels)
+function plot_validation(vals, labels; size = (665, 475))
     cols = MODULE_COLORS
     c_meas = :gray55
 
-    fig = Figure(size = (630, 450))
+    fig = Figure(; size)
 
     axA = Axis(
         fig[1, 1]; xlabel = "SOC / %", ylabel = "OCV / V",
@@ -108,7 +108,7 @@ end
 Distribution of the per-cell OCV RMSE against the measured reference, in 1 mV bins stacked by
 module. Same `vals`/`labels` as [`plot_validation`](@ref).
 """
-function plot_validation_rmse(vals, labels; bins = 0:1:16)
+function plot_validation_rmse(vals, labels; bins = 0:1:16, size = (500, 350))
     cols = MODULE_COLORS
     nb = length(bins) - 1
     counts = zeros(Int, nb, length(vals))
@@ -116,7 +116,7 @@ function plot_validation_rmse(vals, labels; bins = 0:1:16)
         counts[clamp(floor(Int, r) + 1, 1, nb), j] += 1
     end
 
-    fig = Figure(size = (500, 350))
+    fig = Figure(; size)
     ax = Axis(
         fig[1, 1]; xlabel = "OCV RMSE / mV", ylabel = "cells",
         limits = (first(bins), last(bins), 0, 50), xticks = first(bins):4:last(bins),
@@ -143,11 +143,11 @@ Current-sensor cross-check on the rig data for module `m`: the BMS current again
 oscilloscope reference probe, their integrated charge, and the charge error accumulating
 between them.
 """
-function compare_current_sources(df; m = 7)
+function compare_current_sources(df; m = 7, size = (900, 700))
     df_bms = integrate_current(df; current_col = "m$(m)_current", negate = true)
     df_tek = integrate_current(df; current_col = "tek_m_cur_ref", negate = true, offset = find_tek_offset(df; m))
 
-    fig = Figure(size = (900, 700))
+    fig = Figure(; size)
     ax1 = Axis(fig[1, 1], ylabel = "Current / A", title = "BMS vs Oscilloscope Current (Module $(m))")
     ax2 = Axis(fig[2, 1], ylabel = "Charge / Ah")
     ax3 = Axis(fig[3, 1], ylabel = "Charge Error / Ah", xlabel = "Time")
@@ -178,14 +178,14 @@ end
 The measured composite OCV against its linear extrapolation out to `[V_min, V_max]`, showing
 how much of the SOC gauge from [`eval_soc_range`](@ref) is measured and how much extrapolated.
 """
-function plot_ocv_extrapolation(composite; V_min = 2.9, V_max = 4.1)
+function plot_ocv_extrapolation(composite; V_min = 2.9, V_max = 4.1, size = (900, 500))
     (; v_of_soc, soc_of_v) = extrapolate_ocv(composite)
     soc = collect(composite.t)
 
     soc_at_Vmin = soc_of_v(V_min)
     soc_at_Vmax = soc_of_v(V_max)
 
-    fig = Figure(size = (900, 500))
+    fig = Figure(; size)
     ax = Axis(
         fig[1, 1], ylabel = "Voltage / V", xlabel = "SOC",
         title = "OCV with linear extrapolation"
@@ -211,7 +211,7 @@ per-bin extraction tracks the relaxed points inside the loaded data. `dch` selec
 discharge branch, `i_thresh` the current below which a sample counts as relaxed. Charge is
 current-integrated and zeroed at its minimum.
 """
-function plot_ocv_cleaning(df, id; dch::Bool, current_col = "tek", i_thresh = 0.5)
+function plot_ocv_cleaning(df, id; dch::Bool, current_col = "tek", i_thresh = 0.5, size = (800, 500))
     col = current_col == "tek" ? "tek_m_cur_ref" : "m$(id.m)_current"
     offset = current_col == "tek" ? find_tek_offset(df; m = id.m) : 0.0
     df_i = integrate_current(df; current_col = col, negate = true, offset)
@@ -221,7 +221,7 @@ function plot_ocv_cleaning(df, id; dch::Bool, current_col = "tek", i_thresh = 0.
     f = clean_ocv(df, id; dch, i_thresh, current_col)  # interp knots: f.t=q grid, f.u=v
 
     wong = Makie.wong_colors()
-    fig = Figure(size = (800, 500))
+    fig = Figure(; size)
     ax = Axis(
         fig[1, 1]; xlabel = "Charge / Ah", ylabel = "Voltage / V",
         title = "OCV cleaning — cell m$(id.m) c$(id.c) ($(dch ? "discharge" : "charge"))",

@@ -13,7 +13,7 @@
 #
 # Mutates `model.kf` (see `predict_v` below) — the ECM curves read the passed-in x/R rather than
 # the filter state, so the sol stays valid, but do not rely on `model` afterwards.
-function _model_frame(model::YuasaModel, sol; prior = nothing)
+function _model_frame(model::YuasaModel, sol; prior = nothing, size = (900, 400))
     kf = model.kf
     zt = kf.p.zt
     (; yt) = sol
@@ -60,7 +60,7 @@ function _model_frame(model::YuasaModel, sol; prior = nothing)
         (; μ, σ)
     end
 
-    fig = Figure(size = (900, 400))
+    fig = Figure(; size)
     axo = Axis(fig[1, 2]; ylabel = "OCV / V")
     axr = Axis(fig[2, 2]; ylabel = "R / mΩ", xlabel = "Charge / Ah")
     axv = Axis(fig[1:2, 1]; ylabel = "Voltage / V", xlabel = "Step")
@@ -124,16 +124,16 @@ Each frame re-simulates the whole dataset open loop, about 3 s, so a run costs r
 `n_frames / step × 3 s` — check the frame count first. Lengthening the animation through
 `framerate` is free; through `step` it is not.
 """
-function animate_model(file, model::YuasaModel, sol; step = 60, framerate = 24, prior = nothing)
-    (; fig, set_frame!, n_frames) = _model_frame(model, sol; prior)
+function animate_model(file, model::YuasaModel, sol; step = 60, framerate = 24, prior = nothing, size = (900, 400))
+    (; fig, set_frame!, n_frames) = _model_frame(model, sol; prior, size)
     return record(set_frame!, fig, file, 1:step:n_frames; framerate)
 end
 
 # Single frame of the learning animation, at frame `i` — debugging aid for checking the figure
 # without paying for the full video. Unexported: call it as `YuasaAnalysis.plot_animation_snapshot`.
 # With `prior` given, frame 1 is the pre-observation state and filter step `k` is frame `k + 1`.
-function plot_animation_snapshot(model::YuasaModel, sol, i; prior = nothing)
-    (; fig, set_frame!) = _model_frame(model, sol; prior)
+function plot_animation_snapshot(model::YuasaModel, sol, i; prior = nothing, size = (900, 400))
+    (; fig, set_frame!) = _model_frame(model, sol; prior, size)
     set_frame!(i)
     return fig
 end

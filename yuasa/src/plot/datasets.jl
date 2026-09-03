@@ -8,9 +8,10 @@ function plot_cell_voltage_system(
         data; panel_tags = true,
         # highlight the outlier modules discussed in the text
         highlights = Dict((3, 5) => :firebrick, (1, 6) => :firebrick),
+        size = (700, 600),
     )
     df = copy(data[:cell_voltage])
-    fig = Figure(size = (700, 600))
+    fig = Figure(; size)
     ax = [Axis(fig[i, j]) for i in 1:9, j in 1:3]
 
     t0 = first(df._time)
@@ -88,7 +89,7 @@ end
 Sampling-interval histogram per signal table. Pass a [`calc_data_completeness`](@ref) table as
 `completeness` to annotate each panel with the fraction of expected samples present.
 """
-function plot_data_resolution(data; completeness = nothing, yscale = log10)
+function plot_data_resolution(data; completeness = nothing, yscale = log10, size = (600, 550))
     avail = isnothing(completeness) ? nothing : Dict(r.signal => r.completeness for r in eachrow(completeness))
     colors = Makie.wong_colors()
     # signal → color mapping matches plot_dataset_overview
@@ -100,7 +101,7 @@ function plot_data_resolution(data; completeness = nothing, yscale = log10)
     ]
     logscale = yscale === log10
 
-    fig = Figure(size = (600, 550))
+    fig = Figure(; size)
     ax = [
         Axis(
                 fig[i, 1]; yscale, ylabel = "Count", titlealign = :left, titlesize = 12,
@@ -141,8 +142,8 @@ Module voltage, current and temperature for all 27 modules, coloured by module I
 covers the full window decimated by `N`; group B redraws the `zoom` hours shaded in A at full
 resolution, where the individual switching events are resolvable.
 """
-function plot_module_data(data; N = 5, zoom = (3.05, 3.22))
-    fig = Figure(size = (600, 660))
+function plot_module_data(data; N = 5, zoom = (3.05, 3.22), size = (600, 660))
+    fig = Figure(; size)
     gl_full = fig[1, 1] = GridLayout()
     gl_zoom = fig[2, 1] = GridLayout()
     axf = [Axis(gl_full[i, 1]) for i in 1:3]
@@ -221,8 +222,8 @@ end
 Two modules side by side over the full window, four rows each: cell voltages, module voltage,
 current and temperature. `id_norm` and `id_out` are the `(phase, module)` pairs to draw.
 """
-function plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5))
-    fig = Figure(size = (700, 450))
+function plot_dataset_overview(data; id_norm = (3, 7), id_out = (3, 5), size = (700, 450))
+    fig = Figure(; size)
     colors = Makie.wong_colors()
 
     df_v = copy(data[:cell_voltage])

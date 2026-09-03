@@ -36,8 +36,8 @@ SOC trajectories of two modules side by side, each from a [`calc_module_soc`](@r
 12 cells in gray behind the aggregated string SOC and the module model's own estimate, all
 with 2σ bands.
 """
-function plot_soc_comparison(df_norm, df_out; titles = ("", ""), colors = Makie.wong_colors()[[1, 2]])
-    fig = Figure(size = (700, 320))
+function plot_soc_comparison(df_norm, df_out; titles = ("", ""), colors = Makie.wong_colors()[[1, 2]], size = (700, 320))
+    fig = Figure(; size)
     gl = GridLayout(fig[1, 1])
     ax1 = plot_soc_trajectories!(GridLayout(gl[1, 1]), df_norm; colors, title = titles[1])
     ax2 = plot_soc_trajectories!(GridLayout(gl[1, 2]), df_out; colors, title = titles[2])
@@ -81,8 +81,8 @@ Distribution of each module's SOC error over time, as a boxplot per module, from
 [`calc_soc_error`](@ref) matrix. `plot_soc_discrepancy!(layout, soc_err)` draws it into an
 existing layout.
 """
-function plot_soc_discrepancy(soc_err)
-    fig = Figure(size = (700, 300))
+function plot_soc_discrepancy(soc_err; size = (700, 300))
+    fig = Figure(; size)
     plot_soc_discrepancy!(GridLayout(fig[1, 1]), soc_err)
     return fig
 end
@@ -96,8 +96,9 @@ it (B, C) the two example modules of [`plot_soc_comparison`](@ref).
 function plot_soc_overview(
         df_norm, df_out, soc_err;
         titles = ("", ""), colors = Makie.wong_colors()[[1, 2]],
+        size = (700, 530),
     )
-    fig = Figure(size = (700, 530))
+    fig = Figure(; size)
 
     ax_disc = plot_soc_discrepancy!(GridLayout(fig[1, 1:2]), soc_err)
 
@@ -203,8 +204,8 @@ Module quantities are drawn per cell (÷12) so all three sit on one scale. The c
 not the mean of the per-cell RMSEs, is the like-for-like counterpart to the module model,
 since both score a sum of cell voltages. Cells above the axis limit are named in place.
 """
-function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]])
-    fig = Figure(size = (700, 360))
+function plot_v_accuracy(df_v_cell, df_v_module; colors = Makie.wong_colors()[[1, 2, 6]], size = (700, 360))
+    fig = Figure(; size)
     plot_v_accuracy!(GridLayout(fig[1, 1]), df_v_cell, df_v_module; colors)
     return fig
 end
@@ -215,8 +216,8 @@ end
 One example open-loop cell fit from [`plot_sim`](@ref) over the fleet-wide accuracy of
 [`plot_v_accuracy`](@ref), as panels A and B.
 """
-function plot_v_accuracy_overview(model::AbstractBatteryModel, sol, df_v_cell, df_v_module; Ts = 1.0, title = "")
-    fig = Figure(size = (700, 550))
+function plot_v_accuracy_overview(model::AbstractBatteryModel, sol, df_v_cell, df_v_module; Ts = 1.0, title = "", size = (700, 550))
+    fig = Figure(; size)
 
     gl_sim = GridLayout(fig[1, 1])
     ax_v, _ = plot_sim!(gl_sim, model, sol; Ts)
@@ -264,8 +265,8 @@ One column per injected-fault scenario from [`calc_soc_diagnostic`](@ref): the c
 trajectory on top and its error below, for the oscilloscope reference, Coulomb counting, and
 the filter estimate with a 2σ band.
 """
-function plot_soc_diagnostic(diag; color = :dodgerblue)
-    fig = Figure(size = (700, 400))
+function plot_soc_diagnostic(diag; color = :dodgerblue, size = (700, 400))
+    fig = Figure(; size)
     ax = [Axis(fig[i, j]) for i in 1:2, j in 1:2]
     for (col, d) in enumerate(diag)
         e_cc, e = d.q_cc .- d.q_ref, d.q .- d.q_ref
@@ -309,10 +310,10 @@ end
 The [`calc_soc_error`](@ref) trajectories as a module × time heatmap, keeping the temporal
 structure that [`plot_soc_discrepancy`](@ref) collapses.
 """
-function plot_soc_discrepancy_heatmap(tg, soc_err)
-    fig = Figure(size = (700, 340))
+function plot_soc_discrepancy_heatmap(tg, soc_err; size = (700, 340))
+    fig = Figure(; size)
     ax = Axis(fig[1, 1], xlabel = "Time / h", ylabel = "Module ID")
-    n_mod = size(soc_err, 2)
+    n_mod = Base.size(soc_err, 2)
 
     soc_err_v = Measurements.value.(soc_err) * 100
     cr = maximum(abs, soc_err_v)
