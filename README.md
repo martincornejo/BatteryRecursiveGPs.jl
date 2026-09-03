@@ -1,48 +1,45 @@
-# Online-gp
+# BatteryRecursiveGPs.jl
 
-### Kalman filter
+*Online battery state and parameter estimation with equivalent-circuit models and recursive Gaussian processes.*
 
-A Kalman filter in discrete time solves the problem of estimating an state $x$ of a discrete-time controlled process governed by a linear Stochastic difference equation:
+Model-based battery state estimation tracks state of charge (SOC) and state of health (SOH) by Kalman-filtering an equivalent circuit model (ECM). As the battery degrades, the model's parameters drift and must be adapted throughout its lifetime. Even the shape of the open-circuit voltage (OCV) curve changes with aging, so a lab characterization from the beginning of life is no longer representative. BatteryRecursiveGPs jointly estimates the battery states *and* the ECM parameters online, directly from field operation data and without prior characterization. This is enabled by recursive Gaussian process regression: functional parameters, such as the OCV curve or the SOC-dependent resistance, are reconstructed within the filter and refined with every new measurement, uncertainty quantification included.
 
-$$
-x_t \sim \mathcal{N}(\hat{x}_t, P_t)
-$$
+The general-purpose recursive Gaussian process regression is provided by [RecursiveGPs.jl](https://github.com/martincornejo/RecursiveGPs.jl), this package applies it to battery ECMs.
 
-$$
-x_t = A \cdot x_{t -1} + B \cdot u_{t -1} + w_{t -1}, \quad w \sim \mathcal{N}(0, Q)
-$$
+This repository serves two purposes:
 
-On the next steps $u_{t-1}$ is set as $0$ for simplicity
-And the relation with the measurement $y_k$ as:
+- **A Julia package** for building ECM battery models with recursive GP components and running them through extended Kalman filters and smoothers. The package is currently shaped around the models and dataset of the paper, a more general API may follow.
+- **Companion code** for the paper *Estimating the Health and State of Charge of Each Cell in a Second-Life Battery System from Field Data*. The `yuasa/` directory contains the data and scripts that reproduce its results.
 
-$$
-y_t = H \cdot x_t + v_t, \quad v \sim \mathcal{N}(0, R)
-$$
+<!-- TODO: learning animation (yuasa/src/plot/ecm_animation.jl) goes here once refined -->
 
-With this set up, the Kalman filter is solved by two steps:
+## Installation
 
-- Predict step:
+Requires Julia ≥ 1.12. The package is not registered. To use it as a dependency in another project, add RecursiveGPs.jl first (Pkg only applies a package's `[sources]` when that package is the active project, so it cannot resolve the unregistered dependency on its own):
 
-$$
-\hat{x}_{t|t-1} = A \cdot \hat{x}\_{t|t-1} +  w_t
-$$
+```julia
+pkg> add https://github.com/martincornejo/RecursiveGPs.jl
+pkg> add https://github.com/martincornejo/BatteryRecursiveGPs.jl
+```
 
-$$
-P_{t | t-1} = A P_{t - 1| t-1} A^T + Q
-$$
+To work on the repository itself, clone it and instantiate the project. Here the pinned [RecursiveGPs.jl](https://github.com/martincornejo/RecursiveGPs.jl) dependency is resolved automatically from its URL:
 
-- Update step:
+```julia
+pkg> activate .
+pkg> instantiate
+```
 
-$$
-K_t = P_{t | t-1} H^T(H P_{t | t-1} H^T + R)^{-1}
-$$
+## Case study: second-life battery system
 
-$$
-\hat{x}_{t | t} = \hat{x}\_{t | t-1}+ K_t(y_t - H\hat{x}\_{t | t-1})
-$$
+The `yuasa/` directory is a workspace project with the full analysis of the paper: the field dataset of a second-life battery system (27 modules, 324 cells) and the scripts that generate all results. It doubles as the usage example of the package. Run the scripts from the repository root:
 
-$$
-P_{t | t} = P_{t | t-1} (I - K_t H)
-$$
+1. `yuasa/scripts/reference.jl`: builds the measured OCV reference from the low-power rig measurement, upstream of everything else.
+2. `yuasa/scripts/hyperparams.jl`: distributed hyperparameter selection for all cell and lumped-module models.
+3. `yuasa/scripts/main.jl`: the main analysis, fits every cell and module, derives the SOH and SOC results, and produces the paper figures.
+4. `yuasa/scripts/validation.jl`: validates the reconstructed OCV curves against the reference measurement.
 
+`yuasa/scripts/animation.jl` renders the learning animation shown above.
 
+## License
+
+[MIT](LICENSE)
