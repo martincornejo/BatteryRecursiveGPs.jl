@@ -31,7 +31,15 @@ pkg> instantiate
 
 ## Case study: second-life battery system
 
-The `yuasa/` directory is a workspace project with the full analysis of the paper: the field dataset of a second-life battery system (27 modules, 324 cells) and the scripts that generate all results. It doubles as the usage example of the package. Run the scripts from the repository root:
+The `yuasa/` directory is a workspace project with the full analysis of the paper: the field dataset of a second-life battery system (27 modules, 324 cells) and the scripts that generate all results. It doubles as the usage example of the package. From the repository root, activate the `yuasa` environment:
+
+```julia
+pkg> activate yuasa
+```
+
+The scripts can be run start to finish, but they are also meant to be explored interactively (the VS Code Julia extension is recommended, evaluating them line by line).
+
+The scripts, in order:
 
 1. `yuasa/scripts/reference.jl`: builds the measured OCV reference from the low-power rig measurement, upstream of everything else.
 2. `yuasa/scripts/hyperparams.jl`: distributed hyperparameter selection for all cell and lumped-module models.
