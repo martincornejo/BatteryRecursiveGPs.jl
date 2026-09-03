@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+title: "BatteryRecursiveGPs.jl"
+authors:
+  - family-names: Cornejo
+    given-names: Martín
+    affiliation: "Technical University of Munich"
+    orcid: "https://orcid.org/0009-0008-0560-9620"
+  - family-names: Sandalinas
+    given-names: Juan Victor
+    affiliation: "Technical University of Munich"
+    # orcid: "https://orcid.org/XXXX-XXXX-XXXX-XXXX"
+license: MIT
+repository-code: "https://github.com/martincornejo/BatteryRecursiveGPs.jl"
+abstract: >-
+  Online battery state and parameter estimation with equivalent-circuit models
+  and recursive Gaussian processes. Functional parameters such as the OCV curve
+  or the SOC-dependent resistance are reconstructed within the filter directly
+  from field operation data, with uncertainty quantification.
