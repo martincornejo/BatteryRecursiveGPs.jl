@@ -11,7 +11,9 @@ This repository serves two purposes:
 - **A Julia package** for building ECM battery models with recursive GP components and running them through extended Kalman filters and smoothers. The package is currently shaped around the models and dataset of the paper, a more general API may follow.
 - **Companion code** for the paper *Estimating the Health and State of Charge of Each Cell in a Second-Life Battery System from Field Data*. The `yuasa/` directory contains the data and scripts that reproduce its results.
 
-<!-- TODO: learning animation (yuasa/src/plot/ecm_animation.jl) goes here once refined -->
+<!-- ECM learning animation (yuasa/src/plot/ecm_animation.jl) -->
+https://github.com/user-attachments/assets/0f384f7c-6973-4115-8f35-fefba1fea5a1
+
 
 ## Installation
 
