@@ -1,5 +1,5 @@
 """
-    FeneconModel(θ, u, zt; n = 21)
+    FeneconModel(θ, zt)
 
 Full identification model: OCV is the only recursive GP; both resistances are scalar
 random-walk states.
@@ -13,17 +13,15 @@ random-walk states.
 | GP domain   | charge (Ah)        |
 | RC branches | 1                  |
 
-`n` sets the number of GP basis points.
-
-`θ` must supply `ocv = (; σ, ℓ)`, `r0 = (; σ0, σ1)`, `r0μ`, `vσ`, `Ts`,
+`θ` must supply `ocv = (; σ, ℓ, b0)`, `r0 = (; σ0, σ1)`, `r0μ`, `vσ`, `Ts`,
 `rc = (; v0, σ0_v, σ1_v, r0, σ0_r, σ1_r, τ0, σ0_τ, σ1_τ)`, `cc` and
-`arr = (; T0, k0, σ0_k, σ1_k)`.
+`arr = (; T0, k0, σ0_k, σ1_k)`. `ocv.b0` holds the GP basis points in normalised charge.
 """
 struct FeneconModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
 end
 
-FeneconModel(θ, u, zt; n = 21) = FeneconModel(_build_fenecon_kf(θ, u, zt; n))
+FeneconModel(θ, zt) = FeneconModel(_build_fenecon_kf(θ, zt))
 
 
 # === private dynamics / measurement / R2
@@ -66,15 +64,10 @@ end
 
 # === builder
 
-function _build_fenecon_kf(θ, u, zt; n = 21)
-    # basis vectors (OCV only)
-    qmin, qmax = extrema([x.q for x in u])
-    Δq = qmax - qmin
-    b0 = range(qmin + 0.05Δq, qmax + 0.05Δq, n) |> collect
-
+function _build_fenecon_kf(θ, zt)
     # OCV GP
     kernel1 = θ.ocv.σ * with_lengthscale(SEKernel(), θ.ocv.ℓ)
-    rgp1 = RGP(kernel1, b0)
+    rgp1 = RGP(kernel1, collect(θ.ocv.b0))
 
     # R0 scalar component
     r0 = R0(;

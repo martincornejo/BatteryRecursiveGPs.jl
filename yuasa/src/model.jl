@@ -193,8 +193,9 @@ function _scale_θ(u, y, θ)
     qlo, qhi = extrema(x.q for x in u)
     v̂_span = vhi - vlo
     q̂_span = qhi - qlo
-    ocv = (; σ = θ.ocv.σ * v̂_span, ℓ = θ.ocv.ℓ * q̂_span / v̂_span)
-    r1 = (; σ = θ.r1.σ * v̂_span, ℓ = θ.r1.ℓ * q̂_span)
+    b0 = range(qlo - 0.05q̂_span, qhi + 0.05q̂_span, 21) |> collect
+    ocv = (; σ = θ.ocv.σ * v̂_span, ℓ = θ.ocv.ℓ * q̂_span / v̂_span, b0)
+    r1 = (; σ = θ.r1.σ * v̂_span, ℓ = θ.r1.ℓ * q̂_span, b0)
     return merge(θ, (; ocv, r1))
 end
 
@@ -206,7 +207,8 @@ data. `ϑ` must supply `ocv = (; ℓ, σ)` and `r1 = (; ℓ, σ)` — the two th
 per unit; everything else comes from the defaults. `n` is the number of series cells.
 
 The returned `θ` is what a model builder consumes: `ocv.σ` and `r1.σ` scaled by the observed
-voltage span, and the length scales by the observed charge span.
+voltage span, the length scales by the observed charge span, and both GPs' basis `b0` as 21
+points over the observed charge, padded by 5 % of its span past each edge.
 """
 function scale_θ(u, y, ϑ; n = 1)
     θ = merge(default_θ(; n), ϑ)

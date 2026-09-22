@@ -1,12 +1,12 @@
 """
     fit_model(make_model, u, y, θ, zt) -> (; model, sol, time)
 
-Build a model with `make_model(θ, u, zt)` and run it once over `u` and `y`, closed loop, so
+Build a model with `make_model(θ, zt)` and run it once over `u` and `y`, closed loop, so
 the returned `model` carries the identified posterior. `sol` is the reduced solution and
 `time` the elapsed seconds of the filter run.
 """
 function fit_model(make_model, u, y, θ, zt)
-    model = make_model(θ, u, zt)
+    model = make_model(θ, zt)
     stats = @timed begin
         sol = run_kf!(model, u, y)
     end
@@ -46,12 +46,13 @@ function eval_model(model, sol)
 end
 
 """
-    fit_models_threaded(make_model, make_uy, ids, θ, zt) -> (; models, sols)
+    fit_models_threaded(make_model, make_uy, make_θ, ids, zt) -> (; models, sols)
 
-Fit one model per id on the available threads, `make_uy(id)` supplying that id's `(; u, y)`.
-Failures are logged and the id dropped, so both dictionaries can be shorter than `ids`.
+Fit one model per id on the available threads, `make_uy(id)` supplying that id's `(; u, y)`
+and `make_θ(u, y, id)` its `θ`. Failures are logged and the id dropped, so both dictionaries
+can be shorter than `ids`.
 """
-function fit_models_threaded(make_model, make_uy, ids, θ, zt)
+function fit_models_threaded(make_model, make_uy, make_θ, ids, zt)
     models = Dict()
     sols = Dict()
 
@@ -59,7 +60,7 @@ function fit_models_threaded(make_model, make_uy, ids, θ, zt)
         tasks = Dict(
             id => Threads.@spawn begin
                     (; u, y) = make_uy(id)
-                    fit_model(make_model, u, y, θ, zt)
+                    fit_model(make_model, u, y, make_θ(u, y, id), zt)
                 end for id in batch
         )
         for (id, task) in tasks
@@ -79,19 +80,19 @@ end
 
 
 """
-    fit_models_distributed(make_model, make_uy, ids, θ, zt) -> (; models, sols)
+    fit_models_distributed(make_model, make_uy, make_θ, ids, zt) -> (; models, sols)
 
 Fit one model per id across the available worker processes, `make_uy(id)` supplying that id's
-`(; u, y)` on the master. Failures are logged and the id dropped, so both dictionaries can be
-shorter than `ids`. Workers need the model type loaded, e.g. via
-`@everywhere using BatteryRecursiveGPs`.
+`(; u, y)` and `make_θ(u, y, id)` its `θ`, both on the master. Failures are logged and the id
+dropped, so both dictionaries can be shorter than `ids`. Workers need the model type loaded,
+e.g. via `@everywhere using BatteryRecursiveGPs`.
 """
-function fit_models_distributed(make_model, make_uy, ids, θ, zt)
+function fit_models_distributed(make_model, make_uy, make_θ, ids, zt)
     pool = WorkerPool(workers())
     tasks = Dict(
         id => begin
                 (; u, y) = make_uy(id)
-                remotecall(fit_model, pool, make_model, u, y, θ, zt)
+                remotecall(fit_model, pool, make_model, u, y, make_θ(u, y, id), zt)
             end for id in ids
     )
 

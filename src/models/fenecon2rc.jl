@@ -1,5 +1,5 @@
 """
-    Fenecon2RCModel(θ, u, zt; n = 21)
+    Fenecon2RCModel(θ, zt)
 
 As [`FeneconModel`](@ref), but with two RC branches in series — a fast and a slow one.
 
@@ -12,8 +12,6 @@ As [`FeneconModel`](@ref), but with two RC branches in series — a fast and a s
 | GP domain   | charge (Ah)         |
 | RC branches | 2                   |
 
-`n` sets the number of GP basis points.
-
 `θ` is as [`FeneconModel`](@ref) but with `rc1` and `rc2` in place of `rc`, each carrying the
 same fields.
 """
@@ -21,7 +19,7 @@ struct Fenecon2RCModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
 end
 
-Fenecon2RCModel(θ, u, zt; n = 21) = Fenecon2RCModel(_build_fenecon2rc_kf(θ, u, zt; n))
+Fenecon2RCModel(θ, zt) = Fenecon2RCModel(_build_fenecon2rc_kf(θ, zt))
 
 
 # === private dynamics / measurement / R2
@@ -65,15 +63,10 @@ end
 
 # === builder
 
-function _build_fenecon2rc_kf(θ, u, zt; n = 21)
-    # basis vectors (OCV only)
-    qmin, qmax = extrema([x.q for x in u])
-    Δq = qmax - qmin
-    b0 = range(qmin + 0.05Δq, qmax + 0.05Δq, n) |> collect
-
+function _build_fenecon2rc_kf(θ, zt)
     # OCV GP
     kernel1 = θ.ocv.σ * with_lengthscale(SEKernel(), θ.ocv.ℓ)
-    rgp1 = RGP(kernel1, b0)
+    rgp1 = RGP(kernel1, collect(θ.ocv.b0))
 
     # R0 scalar component
     r0 = R0(;

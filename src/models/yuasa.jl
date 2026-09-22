@@ -1,5 +1,5 @@
 """
-    YuasaModel(θ, u, zt; n = 21, pad = 0.05)
+    YuasaModel(θ, zt)
 
 Full identification model: OCV **and** the RC-branch resistance R1 are recursive GPs over
 charge, R0 is a scalar random walk.
@@ -12,19 +12,16 @@ charge, R0 is a scalar random walk.
 | GP domain   | charge (Ah)        |
 | RC branches | 1                  |
 
-`n` sets the number of GP basis points; `pad` extends the basis past each observed charge
-edge by that fraction of the span, so boundary basis points sit inside the data rather than
-on its edge.
-
-`θ` must supply `ocv = (; σ, ℓ)`, `r1 = (; σ, ℓ)`, `r1μ`, `r0 = (; σ0, σ1)`, `r0μ`, `vσ`,
-`Ts`, `rc = (; v0, σ0_v, σ1_v, τ0, σ0_τ, σ1_τ)`, `cc = (; σ0, σ1)` and
-`arr = (; T0, k0, σ0_k, σ1_k)`.
+`θ` must supply `ocv = (; σ, ℓ, b0)`, `r1 = (; σ, ℓ, b0)`, `r1μ`, `r0 = (; σ0, σ1)`, `r0μ`,
+`vσ`, `Ts`, `rc = (; v0, σ0_v, σ1_v, τ0, σ0_τ, σ1_τ)`, `cc = (; σ0, σ1)` and
+`arr = (; T0, k0, σ0_k, σ1_k)`. `ocv.b0` and `r1.b0` hold each GP's basis points in normalised
+charge.
 """
 struct YuasaModel <: AbstractBatteryModel
     kf::ExtendedKalmanFilter
 end
 
-YuasaModel(θ, u, zt; n = 21, pad = 0.05) = YuasaModel(_build_yuasa_kf(θ, u, zt; n, pad))
+YuasaModel(θ, zt) = YuasaModel(_build_yuasa_kf(θ, zt))
 
 
 # === private dynamics / measurement / R2
@@ -69,19 +66,15 @@ end
 
 # === builder
 
-function _build_yuasa_kf(θ, u, zt; n = 21, pad = 0.05)
-    qmin, qmax = extrema([x.q for x in u])
-    Δq = qmax - qmin
-    b0 = range(qmin - pad * Δq, qmax + pad * Δq, n) |> collect
-
+function _build_yuasa_kf(θ, zt)
     # OCV GP — absolute ℓ (no Δv scaling)
     kernel1 = θ.ocv.σ * with_lengthscale(SEKernel(), θ.ocv.ℓ)
-    rgp1 = RGP(kernel1, b0)
+    rgp1 = RGP(kernel1, collect(θ.ocv.b0))
 
     # R1 GP — absolute ℓ (no * Δq)
     r1μ̂ = StatsBase.transform(zt.r, [θ.r1μ]) |> first
     kernel2 = θ.r1.σ * with_lengthscale(SEKernel(), θ.r1.ℓ)
-    rgp2 = RGP(r1μ̂, kernel2, b0)
+    rgp2 = RGP(r1μ̂, kernel2, collect(θ.r1.b0))
 
     r0 = R0(;
         r0 = StatsBase.transform(zt.r, [θ.r0μ]) |> first,
