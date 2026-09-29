@@ -9,7 +9,7 @@ The general-purpose recursive Gaussian process regression is provided by [Recurs
 This repository serves two purposes:
 
 - **A Julia package** for building ECM battery models with recursive GP components and running them through extended Kalman filters and smoothers. The package is currently shaped around the models and dataset of the paper, a more general API may follow.
-- **Companion code** for the paper *Estimating the Health and State of Charge of Each Cell in a Second-Life Battery System from Field Data*. The `yuasa/` directory contains the data and scripts that reproduce its results.
+- **Companion code** for the paper [*Estimating the Health and State of Charge of Each Cell in a Second-Life Battery System from Field Data*](https://arxiv.org/abs/2609.04487). The `yuasa/` directory contains the data and scripts that reproduce its results.
 
 <!-- ECM learning animation (yuasa/src/plot/ecm_animation.jl) -->
 https://github.com/user-attachments/assets/0f384f7c-6973-4115-8f35-fefba1fea5a1
@@ -48,6 +48,23 @@ The scripts, in order:
 4. `yuasa/scripts/validation.jl`: validates the reconstructed OCV curves against the reference measurement.
 
 `yuasa/scripts/animation.jl` renders the learning animation shown above.
+
+## Citation
+
+If you use this package, the dataset, or the results of the analysis, please cite the paper:
+
+```bibtex
+@misc{cornejo2026estimating,
+  title         = {Estimating the Health and State of Charge of Each Cell in a Second-Life Battery System from Field Data},
+  author        = {Cornejo, Martin and Meyer-Schwickerath, Julian and Sandalinas, Juan Victor and Jossen, Andreas},
+  year          = {2026},
+  eprint        = {2609.04487},
+  archivePrefix = {arXiv},
+  primaryClass  = {eess.SY},
+  doi           = {10.48550/arXiv.2609.04487},
+  url           = {https://arxiv.org/abs/2609.04487}
+}
+```
 
 ## License
 

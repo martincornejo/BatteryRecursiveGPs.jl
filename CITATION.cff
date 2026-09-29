@@ -18,3 +18,26 @@ abstract: >-
   and recursive Gaussian processes. Functional parameters such as the OCV curve
   or the SOC-dependent resistance are reconstructed within the filter directly
   from field operation data, with uncertainty quantification.
+preferred-citation:
+  type: article
+  status: preprint
+  title: "Estimating the Health and State of Charge of Each Cell in a Second-Life Battery System from Field Data"
+  authors:
+    - family-names: Cornejo
+      given-names: Martín
+      affiliation: "Technical University of Munich"
+      orcid: "https://orcid.org/0009-0008-0560-9620"
+    - family-names: Meyer-Schwickerath
+      given-names: Julian
+      affiliation: "STABL Energy GmbH"
+    - family-names: Sandalinas
+      given-names: Juan Victor
+      affiliation: "Technical University of Munich"
+    - family-names: Jossen
+      given-names: Andreas
+      affiliation: "Technical University of Munich"
+  journal: "arXiv preprint"
+  year: 2026
+  month: 9
+  doi: "10.48550/arXiv.2609.04487"
+  url: "https://arxiv.org/abs/2609.04487"
