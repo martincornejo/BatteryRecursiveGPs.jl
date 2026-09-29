@@ -17,14 +17,13 @@ https://github.com/user-attachments/assets/0f384f7c-6973-4115-8f35-fefba1fea5a1
 
 ## Installation
 
-Requires Julia ≥ 1.12. The package is not registered. To use it as a dependency in another project, add RecursiveGPs.jl first (Pkg only applies a package's `[sources]` when that package is the active project, so it cannot resolve the unregistered dependency on its own):
+Requires Julia ≥ 1.12. The package is not registered, to install it run:
 
 ```julia
-pkg> add https://github.com/martincornejo/RecursiveGPs.jl
 pkg> add https://github.com/martincornejo/BatteryRecursiveGPs.jl
 ```
 
-To work on the repository itself, clone it and instantiate the project. Here the pinned [RecursiveGPs.jl](https://github.com/martincornejo/RecursiveGPs.jl) dependency is resolved automatically from its URL:
+To work on the repository itself, clone it and instantiate the project.
 
 ```julia
 pkg> activate .

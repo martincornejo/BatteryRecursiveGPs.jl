@@ -6,9 +6,6 @@ authors = ["Martin Cornejo <martin.cornejo@tum.de>"]
 [workspace]
 projects = ["yuasa"]
 
-[sources]
-RecursiveGPs = {url = "https://github.com/martincornejo/RecursiveGPs.jl", rev = "d6b6b435ddfb3d49415c8c51ff4fa8a0151aaffb"}
-
 [deps]
 AbstractGPs = "99985d1d-32ba-4be9-9821-2ec096f28918"
 ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
