@@ -21,7 +21,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 [compat]
 AbstractGPs = "0.5.24"
 ComponentArrays = "0.15.39"
-DataInterpolations = "8.10.0"
+DataInterpolations = "8.10, 9, 10"
 Distributed = "1.11.0"
 LinearAlgebra = "1.12.0"
 LowLevelParticleFilters = "3.31.1"
